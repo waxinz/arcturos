@@ -34,14 +34,18 @@ class StreamBenchPoint:
 
 
 def run_stream_point(base_url: str, prompt: str, n_predict: int,
-                     timeout_s: float = 600.0) -> StreamBenchPoint:
+                     timeout_s: float = 600.0,
+                     api_key: str | None = None) -> StreamBenchPoint:
     """One cold streaming measurement; raises on connection failure."""
     body = json.dumps({
         "prompt": prompt, "n_predict": n_predict,
         "stream": True, "cache_prompt": False,
     }).encode()
+    headers = {"Content-Type": "application/json"}
+    if api_key:
+        headers["Authorization"] = f"Bearer {api_key}"
     req = urlreq.Request(base_url.rstrip("/") + "/completion", data=body,
-                         headers={"Content-Type": "application/json"})
+                         headers=headers)
     t_start = time.monotonic()
     ttft_ms: float | None = None
     pred_first: int | None = None

@@ -251,15 +251,17 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
     # ------------------------------------------------------------- ops ----
     @app.post("/api/ops/bench")
     def ops_bench(body: dict, db=Depends(get_db)):
-        """Kick off a bench sweep: {server_url, targets: [...], n_predict}.
+        """Kick off a bench sweep: {server_url, targets: [...], n_predict, api_key?}.
 
         Synchronous: returns the stored run_id + per-point metrics. The UI
         shows a spinner for the duration; long sweeps use a small target
         list first (targets are context lengths, e.g. [4096, 16384]).
+        ``api_key`` authenticates against key-protected servers.
         """
         server_url = body.get("server_url")
         targets = body.get("targets")
         n_predict = body.get("n_predict", 256)
+        api_key = body.get("api_key")
         if not isinstance(server_url, str) or not server_url.startswith("http"):
             raise HTTPException(status_code=422, detail="server_url must be an http(s) URL")
         if not isinstance(targets, list) or not all(
@@ -270,7 +272,7 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
         try:
             return ops.dispatch_bench(
                 db_path=db_path, server_url=server_url,
-                targets=targets, n_predict=n_predict)
+                targets=targets, n_predict=n_predict, api_key=api_key)
         except ops.DispatchError as exc:
             raise HTTPException(status_code=422, detail=str(exc))
         except (RuntimeError, ValueError) as exc:
