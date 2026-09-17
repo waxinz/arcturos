@@ -88,14 +88,16 @@ arcturos/
 - [x] Repo initialized on taupo (`~/arcturos`, branch `main`)
 - [x] AGENTS.md created (this file)
 - [x] PRD.md drafted from key user journeys
-- [ ] PRD reviewed and signed off by Alexei
-- [ ] UX design doc (journey walkthroughs, wireframe-level flows)
+- [x] PRD reviewed and signed off by Alexei
+- [x] UX design doc (journey walkthroughs, wireframe-level flows)
 - [ ] QA test plan + suites
 - [ ] Implementation (bench runner → storage → comparison UI → evals → judge → reports)
 - [ ] First real benchmark captured against a live server (validation)
 
 ### Log (newest first)
 
+- 2026-09-17 — UX design doc written: `docs/ux-design.md` — journey
+  walkthroughs J1–J6, CLI surface spec, dashboard view specs (M2).
 - 2026-09-17 — PRD signed off; dashboard decided: web UI on 0.0.0.0:24816.
 - 2026-09-17 — Repo created on taupo; AGENTS.md + PRD.md committed (Phase 1).
 
