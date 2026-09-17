@@ -25,7 +25,9 @@ Companion docs: `PRD.md` (requirements), `docs/decisions/` (methodology/ADR).
    `null` with a reason string, never as `0` or a dash implying zero.
 5. **Local-first, LAN-trust.** No auth screens; the dashboard is a LAN tool.
    All destructive-adjacent actions (re-run, re-judge) get confirm dialogs,
-   not credentials.
+   not credentials. (Outbound API keys for key-protected inference servers
+   are entered per-dispatch as optional password fields — J6, added
+   2026-09-17 — and are never stored; the dashboard itself stays unauthenticated.)
 6. **Keyboard-first CLI, glance-first UI — plus launch-first CRUD.** The
    operator (P1) lives in the terminal, but the dashboard also LAUNCHES work
    (J7, added 2026-09-17 from UI feedback): every entity is creatable from
@@ -60,7 +62,7 @@ J7 adds the CRUD/launch surface to the dashboard:
 
 ```
 Dashboard → /create (Create & Run)
-├─ Bench dispatch      (server URL, ctx targets, n_predict → real sweep)
+├─ Bench dispatch      (server URL, ctx targets, n_predict [+ api key] → real sweep)
 ├─ Eval suite create   (name + version → suite id echoed to replay form)
 ├─ Suite item editor   (JSON textarea, client-side validated)
 ├─ Eval replay dispatch(suite id + target + fingerprint [+ api key])
@@ -82,9 +84,9 @@ bookmarked and re-shared over the LAN.
 1. Operator picks target + model. Either via flags or interactively:
    `arcturos bench http://ruapehu:8000/vllm --model ds4-flash --ctx 4096 32768 131072 250000`
 2. **Health preflight (J6)** runs automatically before launch: server reachability,
-   `/tokenize` availability, model loaded, context size discovered, GPU visible
-   for power sampling. Failures abort with an actionable message
-   ("server reports 200k ctx max; drop 250k point or pass `--force-ctx`").
+   `/tokenize` availability (with the dispatch's API key when provided), model loaded,
+   context size discovered, GPU visible for power sampling. Failures abort with an
+   actionable message ("server reports 200k ctx max; drop 250k point or pass `--force-ctx`").
 3. Harness tokenizes each context point via `/tokenize`, prepends a fresh UUID
    prefix, and runs. Live progress prints per context point:
    `[32k] prefill 8,412 tok/s · decode 3,120 tok/s · ttft 214ms · 12% MTP accept · 412W`
@@ -276,9 +278,11 @@ version, last refresh). No auth. All views URL-addressable.
 - **Reports:** as §4.5.
 - **Models:** registry cards; alias edit inline; fingerprint copy button.
 - **Create & Run (`/create`, J7):** six form cards in a responsive grid —
-  (1) bench dispatch, (2) eval suite create, (3) suite item JSON editor with
-  client-side validation, (4) eval replay dispatch, (5) manual benchmark
-  point, (6) judgment record. Every card posts to the API synchronously;
+  (1) bench dispatch (server URL, ctx targets, n_predict, optional API key
+   password field), (2) eval suite create, (3) suite item JSON editor with
+   client-side validation, (4) eval replay dispatch (target, fingerprint,
+   optional API key password field), (5) manual benchmark
+   point, (6) judgment record. Every card posts to the API synchronously;
   busy state disables the button with a spinner label; result messages are
   green (success + stored ids echoed for the next form) or red (422/502
   detail shown verbatim). Suite-create echoes the new id into the replay
@@ -313,3 +317,9 @@ version, last refresh). No auth. All views URL-addressable.
   visible) not the pixel layout.
 - Dashboard serves LAN without auth (PRD §5 / AGENTS.md §4); any future
   hardening is out of scope for this doc.
+- Outbound API keys (J6, added 2026-09-17): optional `api_key` accepted on
+  `/api/ops/bench` + `/api/ops/eval` bodies and `/api/ops/preflight`
+  probes; `/create` bench + eval cards have password fields. Keys ride
+  `Authorization: Bearer` on every outbound request (bench tokenize/
+  completion/props, streaming bench, eval chat, preflight probes) and are
+  never persisted to the store, logs, or exports.
