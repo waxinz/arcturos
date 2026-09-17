@@ -112,6 +112,13 @@ tie 4%".
 - [ ] Export to at least one portable format (CSV or JSON).
 
 ### J6 — Supporting features (proposed)
+- **API keys everywhere:** every outbound request (bench tokenize/
+  completion/props, streaming bench, eval chat calls, health preflight
+  probes) optionally carries an `Authorization: Bearer <api_key>` header.
+  Open servers ignore it; key-protected servers (llama.cpp `--api-key`,
+  litellm proxy, vLLM) require it. Keys are entered per-dispatch (UI
+  password field / CLI flag / API body field) and are **never persisted**
+  to the store, logs, or exports.
 - **Model registry:** every benchmark/eval result references a model
   fingerprint (file hash / repo id / quant / engine build) so comparisons
   never rely on a label alone.
@@ -130,22 +137,25 @@ extends the original "glance-first UI" principle: the dashboard is now also
 the launch surface, not only the reading surface).
 
 - **Create & Run view (`/create`)** with six cards:
-  1. **Bench dispatch** — pick server URL, context targets, n_predict; the
-     API replays a real cold-cache sweep (tokenize → UUID-prefixed prompts →
-     native `/completion`), stores run + benchmark points, returns metrics.
+  1. **Bench dispatch** — pick server URL, context targets, n_predict,
+     optional API key; the API replays a real cold-cache sweep (tokenize →
+     UUID-prefixed prompts → native `/completion`), stores run + benchmark
+     points, returns metrics.
   2. **Eval suite create** — name + version; the API echoes the new suite id
      straight into the replay form.
   3. **Suite item editor** — JSON textarea, client-side validated
      (non-empty items, ids present, prompts present; multi-turn shape checked).
   4. **Eval replay dispatch** — suite id + OpenAI-compatible target + model
-     fingerprint + optional API key; single- and multi-turn items replay and
+     fingerprint + optional API key (password field, never stored);
+     single- and multi-turn items replay and
      store eval_results.
   5. **Manual benchmark point** — add externally-measured rows to an existing
      run; power provenance (host + GPU index) required with any watts value.
   6. **Judgment record** — blind A/B verdict between two stored results.
 - **API dispatch endpoints** (thin wrappers over ops.py): `POST /api/ops/bench`,
-  `POST /api/ops/eval`. Synchronous, bounded by timeouts; validation errors
-  are 422, server-side failures 502.
+  `POST /api/ops/eval`. Both accept an optional `api_key` body field passed
+  through to every outbound request. Synchronous, bounded by timeouts;
+  validation errors are 422, server-side failures 502.
 - **Append-only preserved:** dispatch only ever INSERTs. Re-runs supersede.
   There is no edit/delete of stored data anywhere in the UI or API.
 - **Power provenance (ADR 002):** `benchmarks.power_host` /
