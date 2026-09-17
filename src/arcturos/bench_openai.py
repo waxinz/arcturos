@@ -61,6 +61,7 @@ def run_openai_stream_point(base_url: str, model: str, messages: list,
     prompt_tokens = None
     stop_reason = None
     err = None
+    reasoning_seen = False
     try:
         with urlreq.urlopen(req, timeout=timeout_s) as resp:
             for line in resp:
@@ -77,11 +78,18 @@ def run_openai_stream_point(base_url: str, model: str, messages: list,
                 choices = chunk.get("choices") or []
                 if choices:
                     delta = choices[0].get("delta", {})
+                    now = time.monotonic()
+                    # TTFT = first chunk of ANY stream payload — reasoning
+                    # models emit reasoning_content before content, and that
+                    # latency is real user-facing latency
+                    if ttft_ms is None and (delta.get("reasoning_content")
+                                            or delta.get("content")):
+                        ttft_ms = (now - t_start) * 1000.0
+                    if delta.get("reasoning_content"):
+                        reasoning_seen = True
                     if delta.get("content"):
-                        now = time.monotonic()
                         if first_content_t is None:
                             first_content_t = now
-                            ttft_ms = (now - t_start) * 1000.0
                         last_content_t = now
                     fr = choices[0].get("finish_reason")
                     if fr:

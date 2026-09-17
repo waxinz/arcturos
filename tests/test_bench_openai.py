@@ -83,3 +83,23 @@ def test_empty_stream():
     assert p.ttft_ms is None
     assert p.completion_tokens is None
     assert p.error is None
+
+
+def test_reasoning_model_ttft_uses_first_reasoning_chunk():
+    import json as _json
+    lines = []
+    for rc in ["We", " need"]:
+        lines.append("data: " + _json.dumps(
+            {"choices": [{"delta": {"reasoning_content": rc}, "finish_reason": None}]}))
+    lines.append("data: " + _json.dumps(
+        {"choices": [{"delta": {"content": "answer"}, "finish_reason": None}]}))
+    lines.append("data: " + _json.dumps(
+        {"choices": [{"delta": {}, "finish_reason": "stop"}],
+         "usage": {"prompt_tokens": 10, "completion_tokens": 5}}))
+    fake = "\n\n".join(lines) + "\n\n"
+    with patch("arcturos.bench_openai.urlreq.urlopen", return_value=_FakeResp(fake)):
+        p = run_openai_stream_point("http://fake:4000/v1", "m",
+                                    [{"role": "user", "content": "x"}])
+    assert p.ttft_ms is not None  # first reasoning chunk counts
+    assert p.completion_tokens == 5
+    assert p.decode_tps_client is not None  # content span measured
