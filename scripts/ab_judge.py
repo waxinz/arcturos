@@ -52,11 +52,17 @@ def get_json(url: str) -> dict:
         return json.loads(resp.read())
 
 
+def _normalize_base(url: str) -> str:
+    """Accept both http://host:port and http://host:port/v1 bases."""
+    url = url.rstrip("/")
+    return url[:-3] if url.endswith("/v1") else url
+
+
 def judge_pair(judge_url: str, judge_model: str, prompt: str,
                resp1: str, resp2: str, template_version: str) -> dict:
     """Send blind pair to judge; returns parsed verdict dict."""
     payload_text = JUDGE_PROMPT_TEMPLATE.format(prompt=prompt, resp1=resp1, resp2=resp2)
-    resp = post_json(judge_url.rstrip("/") + "/v1/chat/completions", {
+    resp = post_json(_normalize_base(judge_url) + "/v1/chat/completions", {
         "model": judge_model,
         "messages": [{"role": "user", "content": payload_text}],
         "max_tokens": 4,
