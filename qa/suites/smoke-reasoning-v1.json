@@ -1,0 +1,61 @@
+{
+  "//": "Fixture eval suite: smoke-reasoning v1. Single-turn + multi-turn examples exercising J3 (replay) and J4 (blind A/B) implementations. Schema: items[].id unique; multi-turn items carry ordered messages ending with an assistant placeholder.",
+  "suite": "smoke-reasoning",
+  "version": "v1",
+  "items": [
+    {
+      "id": "sr-001",
+      "type": "single-turn",
+      "category": "logic",
+      "system": "You are a precise assistant. Answer concisely.",
+      "prompt": "A bat and a ball cost $1.10 together. The bat costs $1.00 more than the ball. How much does the ball cost? Explain.",
+      "tags": ["classic-trap", "arithmetic"]
+    },
+    {
+      "id": "sr-002",
+      "type": "single-turn",
+      "category": "counting",
+      "system": "You are a precise assistant. Answer concisely.",
+      "prompt": "How many times does the letter R appear in the word 'strawberry'? Answer with just the count.",
+      "tags": ["classic-trap", "letter-counting"]
+    },
+    {
+      "id": "sr-003",
+      "type": "single-turn",
+      "category": "writing",
+      "system": "You are a helpful assistant.",
+      "prompt": "Summarize the plot of Hamlet in exactly three sentences.",
+      "tags": ["constrained-generation"]
+    },
+    {
+      "id": "sr-004",
+      "type": "single-turn",
+      "category": "coding",
+      "system": "You are an expert Python developer. Output code only, no prose.",
+      "prompt": "Write a function is_palindrome(s: str) -> bool that ignores case and non-alphanumeric characters.",
+      "tags": ["code"]
+    },
+    {
+      "id": "sr-101",
+      "type": "multi-turn",
+      "category": "reasoning",
+      "turns": [
+        {"role": "user", "content": "I have a 3-liter and a 5-liter jug. How can I measure exactly 4 liters of water?"},
+        {"role": "assistant", "content": null, "//": "assistant placeholder — runner fills from model output"},
+        {"role": "user", "content": "Now do the same with a 4-liter and a 9-liter jug, measuring 6 liters."}
+      ],
+      "tags": ["water-jugs", "state-tracking"]
+    },
+    {
+      "id": "sr-102",
+      "type": "multi-turn",
+      "category": "instruction-following",
+      "turns": [
+        {"role": "user", "content": "My name is Alexei. Remember it."},
+        {"role": "assistant", "content": null},
+        {"role": "user", "content": "What is my name? Answer with the name only."}
+      ],
+      "tags": ["memory", "multi-turn"]
+    }
+  ]
+}
