@@ -93,15 +93,20 @@ def _check_chat(base_url: str, client: httpx.Client, model: str | None) -> dict:
 
 
 def preflight(base_url: str, kind: str = "bench", model: str | None = None,
-              transport=None, timeout: float = 20.0) -> PreflightResult:
+              transport=None, timeout: float = 20.0,
+              api_key: str | None = None) -> PreflightResult:
     """Run the checks relevant to the dispatch kind.
 
     kind='bench' (native llama.cpp): reachable + tokenize.
     kind='eval'  (OpenAI-compatible): reachable + chat.
+    ``api_key`` authenticates the chat probe for key-protected targets
+    (litellm/vLLM) — without it a 401 detail names the auth requirement,
+    which is itself diagnostic.
     """
     if kind not in ("bench", "eval"):
         raise ValueError(f"unknown preflight kind: {kind!r}")
-    with httpx.Client(timeout=timeout,
+    headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
+    with httpx.Client(timeout=timeout, headers=headers,
                       transport=transport) as client:
         checks = [_check_reachable(base_url, client)]
         checks.append(_check_tokenize(base_url, client) if kind == "bench"
