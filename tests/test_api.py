@@ -15,7 +15,7 @@ EXPECTED_COLUMNS = {
     "benchmarks": {
         "run_id", "context_tokens", "prefill_tps", "decode_tps", "ttft_ms",
         "wall_s", "output_tokens", "mtp_draft_n", "mtp_accepted", "power_watts",
-        "created_at",
+        "power_host", "power_gpu_index", "created_at",
     },
     "eval_suites": {"id", "name", "version"},
     "eval_results": {
@@ -81,6 +81,8 @@ def test_runs_benchmarks_roundtrip(client):
             "mtp_draft_n": 3,
             "mtp_accepted": 2,
             "power_watts": 250.0,
+            "power_host": "alexei@10.10.10.122",
+            "power_gpu_index": 0,
         },
     )
     assert bench.status_code == 201, bench.text

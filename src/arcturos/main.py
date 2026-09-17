@@ -26,6 +26,8 @@ Routes (all data paths are append-only — no UPDATE/DELETE exists):
   GET  /evals                           -> eval suite results view HTML
   GET  /judgments                       -> judgment list view HTML
   GET  /reports                         -> suite report view HTML
+  POST /api/ops/bench                   -> kick off a bench sweep against a server (stores run+points)
+  POST /api/ops/eval                    -> replay a suite against a target (stores eval_results)
 """
 
 from __future__ import annotations
@@ -37,7 +39,7 @@ from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from . import compare, reports
+from . import compare, ops, reports
 from .db import DEFAULT_DB_PATH, connect, init_db
 from .schemas import (
     BenchmarkCreate,
@@ -110,6 +112,10 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
     def reports_page() -> FileResponse:
         return FileResponse(STATIC_DIR / "reports.html")
 
+    @app.get("/create", include_in_schema=False)
+    def create_page() -> FileResponse:
+        return FileResponse(STATIC_DIR / "create.html")
+
     @app.get("/health")
     def health() -> dict:
         return {"status": "ok"}
@@ -143,11 +149,11 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
         require_parent(db, "runs", run_id)
         cur = db.execute(
             "INSERT INTO benchmarks (run_id, context_tokens, prefill_tps, decode_tps, ttft_ms, "
-            "wall_s, output_tokens, mtp_draft_n, mtp_accepted, power_watts, created_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "wall_s, output_tokens, mtp_draft_n, mtp_accepted, power_watts, power_host, "
+            "power_gpu_index, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (run_id, body.context_tokens, body.prefill_tps, body.decode_tps, body.ttft_ms,
              body.wall_s, body.output_tokens, body.mtp_draft_n, body.mtp_accepted,
-             body.power_watts, body.created_at),
+             body.power_watts, body.power_host, body.power_gpu_index, body.created_at),
         )
         db.commit()  # durable before the response is sent (teardown runs after send)
         return fetch_one(db, "SELECT rowid AS id, * FROM benchmarks WHERE rowid = ?",
@@ -240,6 +246,67 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
         except ValueError as exc:
             raise HTTPException(status_code=404, detail=str(exc))
         return {"report": report, "csv": reports.export_report_csv(report)}
+
+    # ------------------------------------------------------------- ops ----
+    @app.post("/api/ops/bench")
+    def ops_bench(body: dict, db=Depends(get_db)):
+        """Kick off a bench sweep: {server_url, targets: [...], n_predict}.
+
+        Synchronous: returns the stored run_id + per-point metrics. The UI
+        shows a spinner for the duration; long sweeps use a small target
+        list first (targets are context lengths, e.g. [4096, 16384]).
+        """
+        server_url = body.get("server_url")
+        targets = body.get("targets")
+        n_predict = body.get("n_predict", 256)
+        if not isinstance(server_url, str) or not server_url.startswith("http"):
+            raise HTTPException(status_code=422, detail="server_url must be an http(s) URL")
+        if not isinstance(targets, list) or not all(
+                isinstance(t, int) and t >= 1 for t in targets):
+            raise HTTPException(status_code=422, detail="targets must be a list of ints >= 1")
+        if not isinstance(n_predict, int) or n_predict < 1:
+            raise HTTPException(status_code=422, detail="n_predict must be an int >= 1")
+        try:
+            return ops.dispatch_bench(
+                db_path=db_path, server_url=server_url,
+                targets=targets, n_predict=n_predict)
+        except ops.DispatchError as exc:
+            raise HTTPException(status_code=422, detail=str(exc))
+        except (RuntimeError, ValueError) as exc:
+            raise HTTPException(status_code=502, detail=f"bench failed: {exc}")
+
+    @app.post("/api/ops/eval")
+    def ops_eval(body: dict):
+        """Replay a suite: {suite_id, target, model_fingerprint, suite, api_key?}.
+
+        ``suite`` is the inline JSON payload: {"items": [...]} where each item
+        is {"id": ..., "prompt": ...} (single-turn) or
+        {"type": "multi-turn", "id": ..., "turns": [...]} (multi-turn). The
+        target must be an OpenAI-compatible chat endpoint. Results land in
+        eval_results and are returned.
+        """
+        suite_id = body.get("suite_id")
+        target = body.get("target")
+        model_fingerprint = body.get("model_fingerprint")
+        api_key = body.get("api_key")
+        suite = body.get("suite")
+        if not isinstance(suite_id, int) or suite_id < 1:
+            raise HTTPException(status_code=422, detail="suite_id must be a positive int")
+        if not isinstance(target, str) or not target.startswith("http"):
+            raise HTTPException(status_code=422, detail="target must be an http(s) URL")
+        if not isinstance(model_fingerprint, str) or not model_fingerprint:
+            raise HTTPException(status_code=422, detail="model_fingerprint required")
+        if not isinstance(suite, dict):
+            raise HTTPException(status_code=422, detail="suite must be an inline JSON object with 'items'")
+        try:
+            return ops.dispatch_eval(
+                db_path=db_path, suite_id=suite_id, target=target,
+                model_fingerprint=model_fingerprint, suite=suite,
+                api_key=api_key)
+        except ops.DispatchError as exc:
+            raise HTTPException(status_code=422, detail=str(exc))
+        except (ValueError, KeyError) as exc:
+            raise HTTPException(status_code=502, detail=f"eval replay failed: {exc}")
 
     # ------------------------------------------------------------ compare ----
     def parse_run_ids(raw: str) -> list[int]:
