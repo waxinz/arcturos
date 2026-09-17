@@ -1,0 +1,322 @@
+"""API + storage tests for the Arcturos dashboard skeleton.
+
+Covers: schema creation, inserts, full API round trips per endpoint group
+(runs/benchmarks, eval suites/results, judgments), append-only enforcement
+(no update/delete API paths + storage-layer triggers), and Pydantic input
+validation.
+"""
+
+import sqlite3
+
+import pytest
+
+EXPECTED_COLUMNS = {
+    "runs": {"id", "server_url", "model_fingerprint", "engine", "context_size", "created_at"},
+    "benchmarks": {
+        "run_id", "context_tokens", "prefill_tps", "decode_tps", "ttft_ms",
+        "wall_s", "output_tokens", "mtp_draft_n", "mtp_accepted", "power_watts",
+        "created_at",
+    },
+    "eval_suites": {"id", "name", "version"},
+    "eval_results": {
+        "id", "suite_id", "model_fingerprint", "item_id", "output", "prompt_tokens",
+        "completion_tokens", "latency_ms", "created_at",
+    },
+    "judgments": {
+        "id", "eval_result_a", "eval_result_b", "judge_model", "judge_template_version",
+        "winner", "confidence", "rationale", "created_at",
+    },
+}
+
+RUN = {
+    "server_url": "http://10.10.10.222:8000/v1",
+    "model_fingerprint": "GLM-5.3-Flash-UD-IQ2_XXS",
+    "engine": "llama.cpp",
+    "context_size": 262144,
+}
+
+
+# ------------------------------------------------------------ schema -------
+
+
+def test_schema_creation(client):
+    db = sqlite3.connect(client.app.state.db_path)
+    tables = {r[0] for r in db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+    assert set(EXPECTED_COLUMNS) <= tables
+    for table, cols in EXPECTED_COLUMNS.items():
+        actual = {r[1] for r in db.execute(f"PRAGMA table_info({table})")}
+        assert actual == cols, f"{table}: expected {cols}, got {actual}"
+    db.close()
+
+
+def test_append_only_triggers_installed(client):
+    db = sqlite3.connect(client.app.state.db_path)
+    triggers = {r[0] for r in db.execute("SELECT name FROM sqlite_master WHERE type='trigger'")}
+    for table in EXPECTED_COLUMNS:
+        assert f"trg_{table}_no_update" in triggers
+        assert f"trg_{table}_no_delete" in triggers
+    db.close()
+
+
+# ------------------------------------------------------------ runs ---------
+
+
+def test_runs_benchmarks_roundtrip(client):
+    created = client.post("/api/runs", json=RUN)
+    assert created.status_code == 201, created.text
+    run = created.json()
+    assert run["id"] >= 1
+    assert run["server_url"] == RUN["server_url"]
+    assert run["engine"] == "llama.cpp"
+
+    bench = client.post(
+        f"/api/runs/{run['id']}/benchmarks",
+        json={
+            "context_tokens": 4096,
+            "prefill_tps": 174.2,
+            "decode_tps": 20.1,
+            "ttft_ms": 512.0,
+            "wall_s": 12.4,
+            "output_tokens": 250,
+            "mtp_draft_n": 3,
+            "mtp_accepted": 2,
+            "power_watts": 250.0,
+        },
+    )
+    assert bench.status_code == 201, bench.text
+    row = bench.json()
+    assert row["run_id"] == run["id"]
+    assert row["decode_tps"] == 20.1
+    assert row["mtp_accepted"] == 2
+
+    runs = client.get("/api/runs")
+    assert runs.status_code == 200
+    assert any(r["id"] == run["id"] for r in runs.json())
+
+    assert client.get(f"/api/runs/{run['id']}").json()["id"] == run["id"]
+
+    benchs = client.get(f"/api/runs/{run['id']}/benchmarks")
+    assert benchs.status_code == 200
+    assert len(benchs.json()) == 1
+
+    # Same context point re-run appends a new row, never overwrites (PRD J1).
+    again = client.post(
+        f"/api/runs/{run['id']}/benchmarks",
+        json={"context_tokens": 4096, "decode_tps": 19.8},
+    )
+    assert again.status_code == 201
+    assert len(client.get(f"/api/runs/{run['id']}/benchmarks").json()) == 2
+
+
+def test_benchmark_requires_existing_run(client):
+    r = client.post("/api/runs/999/benchmarks", json={"context_tokens": 4096})
+    assert r.status_code == 404
+
+
+def test_benchmark_mtp_validation(client):
+    run = client.post("/api/runs", json=RUN).json()
+    r = client.post(
+        f"/api/runs/{run['id']}/benchmarks",
+        json={"context_tokens": 4096, "mtp_draft_n": 3, "mtp_accepted": 5},
+    )
+    assert r.status_code == 422
+
+
+# ------------------------------------------------------ eval suites ---------
+
+
+def test_eval_suites_results_roundtrip(client):
+    suite = client.post("/api/eval-suites", json={"name": "reasoning", "version": "1.0.0"})
+    assert suite.status_code == 201, suite.text
+    suite_id = suite.json()["id"]
+
+    res = client.post(
+        f"/api/eval-suites/{suite_id}/results",
+        json={
+            "model_fingerprint": "GLM-5.3-Flash-UD-IQ2_XXS",
+            "item_id": "math-001",
+            "output": "42",
+            "prompt_tokens": 120,
+            "completion_tokens": 3,
+            "latency_ms": 240.0,
+        },
+    )
+    assert res.status_code == 201, res.text
+    assert res.json()["suite_id"] == suite_id
+
+    suites = client.get("/api/eval-suites")
+    assert suites.status_code == 200
+    assert len(suites.json()) == 1
+
+    assert client.get(f"/api/eval-suites/{suite_id}").json()["name"] == "reasoning"
+
+    results = client.get(f"/api/eval-suites/{suite_id}/results")
+    assert results.status_code == 200
+    assert len(results.json()) == 1
+
+    assert len(client.get("/api/eval-results").json()) == 1
+
+
+def test_eval_result_requires_existing_suite(client):
+    r = client.post(
+        "/api/eval-suites/999/results",
+        json={
+            "model_fingerprint": "x", "item_id": "i", "output": "o",
+            "prompt_tokens": 1, "completion_tokens": 1, "latency_ms": 1.0,
+        },
+    )
+    assert r.status_code == 404
+
+
+# --------------------------------------------------------- judgments -------
+
+
+def _seed_results(client, n=2):
+    suite = client.post("/api/eval-suites", json={"name": "s", "version": "1"}).json()
+    ids = []
+    for i in range(n):
+        r = client.post(
+            f"/api/eval-suites/{suite['id']}/results",
+            json={
+                "model_fingerprint": f"model-{i}",
+                "item_id": "q1",
+                "output": f"answer {i}",
+                "prompt_tokens": 10,
+                "completion_tokens": 5,
+                "latency_ms": 50.0,
+            },
+        )
+        assert r.status_code == 201
+        ids.append(r.json()["id"])
+    return ids
+
+
+def test_judgments_roundtrip(client):
+    a, b = _seed_results(client)
+    j = client.post(
+        "/api/judgments",
+        json={
+            "eval_result_a": a,
+            "eval_result_b": b,
+            "judge_model": "qwen-3.6-27b",
+            "judge_template_version": "blind-v1",
+            "winner": "a",
+            "confidence": 0.8,
+            "rationale": "concise and correct",
+        },
+    )
+    assert j.status_code == 201, j.text
+    assert j.json()["winner"] == "a"
+
+    got = client.get("/api/judgments")
+    assert got.status_code == 200
+    assert len(got.json()) == 1
+    assert got.json()[0]["judge_model"] == "qwen-3.6-27b"
+
+
+def test_judgment_requires_existing_results(client):
+    a, _ = _seed_results(client)
+    r = client.post(
+        "/api/judgments",
+        json={
+            "eval_result_a": a,
+            "eval_result_b": 9999,
+            "judge_model": "qwen-3.6-27b",
+            "judge_template_version": "blind-v1",
+            "winner": "b",
+        },
+    )
+    assert r.status_code == 404
+
+
+def test_judgment_self_comparison_rejected(client):
+    a, _ = _seed_results(client)
+    r = client.post(
+        "/api/judgments",
+        json={
+            "eval_result_a": a,
+            "eval_result_b": a,
+            "judge_model": "qwen-3.6-27b",
+            "judge_template_version": "blind-v1",
+            "winner": "tie",
+        },
+    )
+    assert r.status_code == 422
+
+
+# -------------------------------------------------------- append-only --------
+
+
+def test_api_has_no_update_or_delete_paths(client):
+    methods = {m for r in client.app.routes for m in getattr(r, "methods", set())}
+    assert not ({"PUT", "PATCH", "DELETE"} & methods)
+
+
+def test_db_rejects_update_and_delete(client):
+    # Seed at least one row in every table: SQLite triggers are row-level and
+    # only fire when the statement actually matches rows.
+    run = client.post("/api/runs", json=RUN).json()
+    client.post(f"/api/runs/{run['id']}/benchmarks", json={"context_tokens": 4096})
+    suite = client.post("/api/eval-suites", json={"name": "s", "version": "1"}).json()
+    ids = []
+    for i in range(2):
+        r = client.post(
+            f"/api/eval-suites/{suite['id']}/results",
+            json={
+                "model_fingerprint": f"model-{i}", "item_id": "q1", "output": "x",
+                "prompt_tokens": 10, "completion_tokens": 5, "latency_ms": 50.0,
+            },
+        )
+        assert r.status_code == 201
+        ids.append(r.json()["id"])
+    client.post("/api/judgments", json={
+        "eval_result_a": ids[0], "eval_result_b": ids[1], "judge_model": "j",
+        "judge_template_version": "v1", "winner": "a",
+    })
+
+    db = sqlite3.connect(client.app.state.db_path)
+    cases = [
+        ("UPDATE runs SET engine = 'hacked' WHERE id = ?", (run["id"],)),
+        ("DELETE FROM runs WHERE id = ?", (run["id"],)),
+        ("UPDATE benchmarks SET decode_tps = 999", ()),
+        ("DELETE FROM benchmarks", ()),
+        ("UPDATE eval_suites SET name = 'hacked'", ()),
+        ("DELETE FROM eval_suites", ()),
+        ("UPDATE eval_results SET output = 'hacked'", ()),
+        ("DELETE FROM eval_results", ()),
+        ("UPDATE judgments SET winner = 'b'", ()),
+        ("DELETE FROM judgments", ()),
+    ]
+    for sql, params in cases:
+        with pytest.raises(sqlite3.DatabaseError, match="append-only"):
+            db.execute(sql, params)
+    db.close()
+
+    # Everything survived every attempted mutation.
+    assert len(client.get("/api/runs").json()) == 1
+    assert len(client.get("/api/eval-suites").json()) == 1
+    assert len(client.get("/api/judgments").json()) == 1
+
+
+# -------------------------------------------------------- validation --------
+
+
+def test_input_validation(client):
+    assert client.post("/api/runs", json={}).status_code == 422
+    assert client.post("/api/runs", json={**RUN, "server_url": "not-a-url"}).status_code == 422
+    assert client.post("/api/runs", json={**RUN, "context_size": -5}).status_code == 422
+    assert client.post("/api/eval-suites", json={"name": "", "version": "1"}).status_code == 422
+    assert client.post("/api/judgments", json={
+        "eval_result_a": 1, "eval_result_b": 2, "judge_model": "j",
+        "judge_template_version": "v1", "winner": "invalid",
+    }).status_code == 422
+
+
+# -------------------------------------------------------- frontend ----------
+
+
+def test_frontend_served(client):
+    r = client.get("/")
+    assert r.status_code == 200
+    assert "text/html" in r.headers["content-type"]
+    assert "Arcturos" in r.text

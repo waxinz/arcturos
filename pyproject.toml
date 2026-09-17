@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "arcturos"
+version = "0.1.0"
+description = "Local-first LLM benchmarking & evaluation suite (dashboard skeleton)"
+requires-python = ">=3.10"
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn>=0.30",
+    "pydantic>=2.8",
+]
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+packages = ["arcturos"]
+
+[tool.setuptools.package-data]
+arcturos = ["static/*.html"]
