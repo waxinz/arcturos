@@ -94,6 +94,7 @@ arcturos/
 - [x] J1 bench core: bench.py (tokenize sizing, cold UUID prompts, timings parser, storage, export) — commit f7c2fee
 - [x] J1 validated end-to-end: real bench of ruapehu DeepSeek-V4-Flash (512+4096 tok) stored via API, visible at :24816/api/runs/1/benchmarks
 - [x] M3 QA: test plan + fixture eval suites + demo seed script + J3/J4 contract tests — commit 4e0cb3b
+- [x] API key auth end-to-end (J6): optional `api_key` on every outbound request — bench (tokenize/completion/props), bench_stream, eval dispatch, preflight probes, `/api/ops/bench` + `/api/ops/eval` body field, `/create` UI password fields (bench + eval); keys never persisted to the store. Authed-mock tests added (98 green).
 - [x] J2 comparison UI: compare/diff endpoints + chart views at /compare /diff (ef887c5)
 - [x] J4 blind A/B judge runner: scripts/ab_judge.py (e958d32+fixes 69d6c21, 785bc1f, 2708523, b73ea6f)
 - [x] J5 report aggregation: src/arcturos/reports.py (5ee2768)
@@ -109,6 +110,15 @@ arcturos/
 
 ### Log (newest first)
 
+- 2026-09-17 — API key auth end-to-end (14edfb2 + 5733999): optional
+  `api_key` threaded through the whole outbound path — bench.py
+  (_client headers), bench_stream.py, ops.dispatch_bench/dispatch_eval,
+  preflight module + `/api/ops/preflight?api_key=`, `/api/ops/bench` +
+  `/api/ops/eval` body fields, `/create` UI password fields (bench card +
+  eval card + preflight "Check target" buttons pass them). Keys are
+  never persisted (store/log/export). Authed-mock tests (llama.cpp
+  `--api-key` behavior) added; 98 tests green. Docs updated: PRD J6/J7,
+  ux-design §1/§3, test-plan J7.
 - 2026-09-17 — UX design doc written: `docs/ux-design.md` — journey
   walkthroughs J1–J6, CLI surface spec, dashboard view specs (M2).
 - 2026-09-17 — J7 CRUD + dispatch landed (8cfd214 + f979b12): ops.py dispatch layer, /api/ops/bench + /api/ops/eval endpoints, /create view (6 form cards), power provenance (benchmarks.power_host + power_gpu_index with db migration; API rejects watts without host per ADR 002), bench.py nounlets→nounits fix (second instance of the same typo bug). PRD J7 + ux-design §6/§8 + qa/test-plan J7 written to match. 86 tests green. Dispatch validation contract: bad shapes → 422, server failure → 502, unknown suite checked BEFORE calling the target, eval batches transactional (rollback on failure). Live-validated on taupo: suite create 201 → eval replay vs qwen rotation 200, result stored. Follow-up fixes: model_fingerprint passed as chat model name (litellm 400 root cause — hardcoded "test" was rejected, d77ff9d); single-turn wall latency real (was stub 0.0, 5820b6d).
