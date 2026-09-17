@@ -1,0 +1,225 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Arcturos — Judgments</title>
+  <style>
+    body { font-family: system-ui, -apple-system, sans-serif; margin: 2rem auto;
+           max-width: 1080px; color: #1a1a1a; background: #fafafa; }
+    header { border-bottom: 2px solid #222; padding-bottom: .5rem; margin-bottom: 1.5rem; }
+    h1 { font-size: 1.6rem; margin: 0; }
+    h2 { font-size: 1.3rem; }
+    .sub { color: #666; margin-top: .25rem; }
+    nav a { margin-right: 1rem; color: #1a1a1a; text-decoration: none; font-weight: 600; }
+    nav a.active { text-decoration: underline; }
+    .controls { margin: 1rem 0; display: flex; gap: 1.5rem; flex-wrap: wrap; align-items: end; }
+    .controls label { font-size: .9rem; font-weight: 600; color: #444; }
+    .controls select { margin-left: .4rem; padding: .3rem; font-size: .9rem; min-width: 240px; }
+    button { padding: .4rem .8rem; font-size: .88rem; cursor: pointer; }
+    table { border-collapse: collapse; width: 100%; background: #fff; margin-bottom: 1.5rem; }
+    th, td { text-align: left; padding: .45rem .6rem; border-bottom: 1px solid #e5e5e5;
+             font-size: .88rem; vertical-align: top; }
+    th { font-weight: 600; color: #444; }
+    td.mono { font-family: ui-monospace, monospace; font-size: .8rem; }
+    td.out { max-width: 300px; word-break: break-word; }
+    .winner { display: inline-block; padding: .05rem .45rem; border-radius: 4px;
+              font-weight: 700; font-size: .82rem; }
+    .winner.a { background: #d9f2e0; color: #14532d; }
+    .winner.b { background: #fde8d3; color: #7c2d12; }
+    .winner.tie { background: #e5e5e5; color: #444; }
+    td.win-a { background: #f0faf2; }
+    td.win-b { background: #fff7ed; }
+    td.win-tie { background: #fafafa; }
+    .status { color: #666; font-size: .85rem; margin-top: .75rem; }
+    .empty { color: #666; padding: 2rem; text-align: center; }
+    .note { color: #666; font-size: .85rem; margin: .5rem 0; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Arcturos</h1>
+    <div class="sub">Local-first LLM benchmarking &amp; evaluation dashboard</div>
+    <nav>
+      <a href="/">Runs</a>
+      <a href="/compare">Compare</a>
+      <a href="/diff">Diff</a>
+      <a href="/evals">Evals</a>
+      <a href="/judgments" class="active">Judgments</a>
+      <a href="/reports">Reports</a>
+    </nav>
+  </header>
+
+  <h2>Judgments</h2>
+
+  <div class="controls">
+    <label>Judge model
+      <select id="judge-filter"><option value="">All judges</option></select>
+    </label>
+    <button id="clear-filter">Clear filters</button>
+  </div>
+  <p id="note" class="note"></p>
+
+  <table>
+    <thead>
+      <tr>
+        <th>Item</th><th>Judge model</th><th>Template</th><th>Winner</th>
+        <th>Response A</th><th>Response B</th><th>Confidence</th>
+      </tr>
+    </thead>
+    <tbody id="judgments-body"></tbody>
+  </table>
+  <p id="status" class="status"></p>
+
+  <script>
+    let judgments = [];
+    let resultsById = {};
+    let resultFilter = null;
+
+    function preview(s, n) {
+      if (!s) return '(empty)';
+      s = s.replace(/\s+/g, ' ').trim();
+      return s.length > n ? s.slice(0, n) + '…' : s;
+    }
+
+    async function load() {
+      const [jres, rres] = await Promise.all([
+        fetch('/api/judgments'),
+        fetch('/api/eval-results'),
+      ]);
+      if (!jres.ok) throw new Error('HTTP ' + jres.status);
+      if (!rres.ok) throw new Error('HTTP ' + rres.status);
+      judgments = await jres.json();
+      const results = await rres.json();
+      resultsById = {};
+      for (const r of results) resultsById[r.id] = r;
+    }
+
+    function populateJudgeFilter(list) {
+      const judges = [...new Set(list.map(j => j.judge_model))].sort();
+      const sel = document.getElementById('judge-filter');
+      const current = sel.value;
+      sel.innerHTML = '<option value="">All judges</option>';
+      for (const j of judges) {
+        const opt = document.createElement('option');
+        opt.value = j;
+        opt.textContent = j;
+        sel.appendChild(opt);
+      }
+      sel.value = current;
+    }
+
+    function render() {
+      const status = document.getElementById('status');
+      const note = document.getElementById('note');
+      const tbody = document.getElementById('judgments-body');
+      const judgeFilter = document.getElementById('judge-filter').value;
+      tbody.innerHTML = '';
+
+      let list = judgments;
+      if (resultFilter !== null) {
+        list = list.filter(j => j.eval_result_a === resultFilter || j.eval_result_b === resultFilter);
+      }
+      if (judgeFilter) list = list.filter(j => j.judge_model === judgeFilter);
+
+      note.textContent = resultFilter !== null
+        ? 'Filtered to judgments touching result #' + resultFilter + '.'
+        : '';
+
+      if (!list.length) {
+        status.textContent = 'No judgments match the current filters.';
+        return;
+      }
+
+      for (const j of list) {
+        const ra = resultsById[j.eval_result_a];
+        const rb = resultsById[j.eval_result_b];
+        const itemId = ra ? ra.item_id : ('#' + j.eval_result_a);
+        const modelA = ra ? ra.model_fingerprint : '#' + j.eval_result_a;
+        const modelB = rb ? rb.model_fingerprint : '#' + j.eval_result_b;
+        const outA = ra ? ra.output : '';
+        const outB = rb ? rb.output : '';
+        const tr = document.createElement('tr');
+        const winCls = 'winner ' + j.winner;
+
+        const tdItem = document.createElement('td');
+        tdItem.className = 'mono';
+        tdItem.textContent = itemId;
+        tr.appendChild(tdItem);
+
+        const tdJudge = document.createElement('td');
+        tdJudge.className = 'mono';
+        tdJudge.textContent = j.judge_model;
+        tr.appendChild(tdJudge);
+
+        const tdTpl = document.createElement('td');
+        tdTpl.className = 'mono';
+        tdTpl.textContent = j.judge_template_version;
+        tr.appendChild(tdTpl);
+
+        const tdWin = document.createElement('td');
+        const badge = document.createElement('span');
+        badge.className = winCls;
+        badge.textContent = j.winner;
+        tdWin.appendChild(badge);
+        tr.appendChild(tdWin);
+
+        // Winner's column gets a tint; loser column stays plain.
+        const clsA = j.winner === 'a' ? 'win-a' : (j.winner === 'tie' ? 'win-tie' : '');
+        const clsB = j.winner === 'b' ? 'win-b' : (j.winner === 'tie' ? 'win-tie' : '');
+
+        const tdA = document.createElement('td');
+        tdA.className = 'out ' + clsA;
+        tdA.title = modelA + ' (result #' + j.eval_result_a + ')';
+        tdA.appendChild(strongSpan(modelA));
+        tdA.appendChild(document.createTextNode(preview(outA, 180)));
+        tr.appendChild(tdA);
+
+        const tdB = document.createElement('td');
+        tdB.className = 'out ' + clsB;
+        tdB.title = modelB + ' (result #' + j.eval_result_b + ')';
+        tdB.appendChild(strongSpan(modelB));
+        tdB.appendChild(document.createTextNode(preview(outB, 180)));
+        tr.appendChild(tdB);
+
+        const tdConf = document.createElement('td');
+        tdConf.className = 'mono';
+        tdConf.textContent = j.confidence === null || j.confidence === undefined ? '—' : j.confidence;
+        tr.appendChild(tdConf);
+
+        tbody.appendChild(tr);
+      }
+      status.textContent = list.length + ' judgment(s).';
+    }
+
+    function strongSpan(text) {
+      const s = document.createElement('span');
+      s.className = 'mono';
+      s.style.display = 'block';
+      s.style.marginBottom = '.2rem';
+      s.style.fontWeight = '600';
+      s.textContent = text;
+      return s;
+    }
+
+    document.getElementById('judge-filter').addEventListener('change', render);
+    document.getElementById('clear-filter').addEventListener('click', () => {
+      document.getElementById('judge-filter').value = '';
+      resultFilter = null;
+      history.replaceState(null, '', '/judgments');
+      render();
+    });
+
+    load().then(() => {
+      // ?result=<id> pre-filters to judgments touching that result.
+      const params = new URLSearchParams(location.search);
+      const r = params.get('result');
+      if (r && /^\d+$/.test(r)) resultFilter = parseInt(r, 10);
+      populateJudgeFilter(judgments);
+      render();
+    }).catch(err => {
+      document.getElementById('status').textContent = 'Failed to load judgments: ' + err;
+    });
+  </script>
+</body>
+</html>

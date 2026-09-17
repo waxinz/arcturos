@@ -20,8 +20,12 @@ Routes (all data paths are append-only — no UPDATE/DELETE exists):
   GET  /api/judgments                   -> list judgments
   GET  /api/compare/benchmarks          -> metric series per run (J2)
   GET  /api/compare/run-diff/{a}/{b}    -> per-context deltas between runs (J2)
+  GET  /api/reports/suite/{suite_id}    -> J5 report {report, csv} for one suite
   GET  /compare                         -> compare view HTML
   GET  /diff                            -> run-diff view HTML
+  GET  /evals                           -> eval suite results view HTML
+  GET  /judgments                       -> judgment list view HTML
+  GET  /reports                         -> suite report view HTML
 """
 
 from __future__ import annotations
@@ -33,7 +37,7 @@ from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from . import compare
+from . import compare, reports
 from .db import DEFAULT_DB_PATH, connect, init_db
 from .schemas import (
     BenchmarkCreate,
@@ -93,6 +97,18 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
     @app.get("/diff", include_in_schema=False)
     def diff_page() -> FileResponse:
         return FileResponse(STATIC_DIR / "diff.html")
+
+    @app.get("/evals", include_in_schema=False)
+    def evals_page() -> FileResponse:
+        return FileResponse(STATIC_DIR / "evals.html")
+
+    @app.get("/judgments", include_in_schema=False)
+    def judgments_page() -> FileResponse:
+        return FileResponse(STATIC_DIR / "judgments.html")
+
+    @app.get("/reports", include_in_schema=False)
+    def reports_page() -> FileResponse:
+        return FileResponse(STATIC_DIR / "reports.html")
 
     @app.get("/health")
     def health() -> dict:
@@ -210,6 +226,20 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
     @app.get("/api/judgments")
     def list_judgments(db=Depends(get_db)):
         return fetch_all(db, "SELECT * FROM judgments ORDER BY id")
+
+    # ------------------------------------------------------------- reports ----
+    @app.get("/api/reports/suite/{suite_id}")
+    def suite_report_endpoint(suite_id: int, db=Depends(get_db)):
+        """J5 report for one suite: win-rate aggregation + CSV export.
+
+        Thin wrapper over reports.suite_report / export_report_csv; unknown
+        suite ids surface as 404 (ValueError from the aggregator).
+        """
+        try:
+            report = reports.suite_report(db, suite_id)
+        except ValueError as exc:
+            raise HTTPException(status_code=404, detail=str(exc))
+        return {"report": report, "csv": reports.export_report_csv(report)}
 
     # ------------------------------------------------------------ compare ----
     def parse_run_ids(raw: str) -> list[int]:

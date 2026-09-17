@@ -1,0 +1,211 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Arcturos — Evals</title>
+  <style>
+    body { font-family: system-ui, -apple-system, sans-serif; margin: 2rem auto;
+           max-width: 1080px; color: #1a1a1a; background: #fafafa; }
+    header { border-bottom: 2px solid #222; padding-bottom: .5rem; margin-bottom: 1.5rem; }
+    h1 { font-size: 1.6rem; margin: 0; }
+    h2 { font-size: 1.3rem; }
+    .sub { color: #666; margin-top: .25rem; }
+    nav a { margin-right: 1rem; color: #1a1a1a; text-decoration: none; font-weight: 600; }
+    nav a.active { text-decoration: underline; }
+    .controls { margin: 1rem 0; display: flex; gap: 1.5rem; flex-wrap: wrap; align-items: end; }
+    .controls label { font-size: .9rem; font-weight: 600; color: #444; }
+    .controls select, .controls input { margin-left: .4rem; padding: .3rem; font-size: .9rem; }
+    .controls input { min-width: 220px; }
+    .item-card { background: #fff; border: 1px solid #e5e5e5; border-radius: 6px;
+                 padding: .8rem; margin-bottom: 1.2rem; }
+    .item-card h3 { margin: 0 0 .5rem; font-size: 1rem; color: #222; }
+    .item-card h3 .meta { color: #777; font-weight: 400; font-size: .82rem; }
+    table { border-collapse: collapse; width: 100%; }
+    th, td { text-align: left; padding: .4rem .6rem; border-bottom: 1px solid #e5e5e5;
+             font-size: .88rem; vertical-align: top; }
+    th { font-weight: 600; color: #444; }
+    td.mono { font-family: ui-monospace, monospace; font-size: .8rem; }
+    td.num { text-align: right; font-family: ui-monospace, monospace; font-size: .8rem; }
+    .out { max-width: 360px; word-break: break-word; }
+    .status { color: #666; font-size: .85rem; margin-top: .75rem; }
+    .empty { color: #666; padding: 2rem; text-align: center; }
+    a.jump { font-size: .82rem; white-space: nowrap; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Arcturos</h1>
+    <div class="sub">Local-first LLM benchmarking &amp; evaluation dashboard</div>
+    <nav>
+      <a href="/">Runs</a>
+      <a href="/compare">Compare</a>
+      <a href="/diff">Diff</a>
+      <a href="/evals" class="active">Evals</a>
+      <a href="/judgments">Judgments</a>
+      <a href="/reports">Reports</a>
+    </nav>
+  </header>
+
+  <h2>Evals</h2>
+
+  <div class="controls">
+    <label>Suite
+      <select id="suite-select"><option value="">— choose a suite —</option></select>
+    </label>
+    <label>Model
+      <select id="model-filter"><option value="">All models</option></select>
+    </label>
+    <label>Item
+      <input id="item-filter" placeholder="filter by item id (e.g. sr-101)">
+    </label>
+  </div>
+
+  <div id="results"></div>
+  <p id="status" class="status"></p>
+
+  <script>
+    let suites = [];
+    let results = [];
+
+    function preview(s, n) {
+      if (!s) return '(empty)';
+      s = s.replace(/\s+/g, ' ').trim();
+      return s.length > n ? s.slice(0, n) + '…' : s;
+    }
+
+    function baseId(itemId) {
+      // multi-turn turn records share a base id: sr-101, sr-101#t2 -> sr-101
+      return itemId.split('#')[0];
+    }
+
+    function turnLabel(itemId) {
+      const m = itemId.match(/#t(\d+)$/);
+      return m ? 't' + m[1] : '—';
+    }
+
+    async function loadSuites() {
+      const res = await fetch('/api/eval-suites');
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      suites = await res.json();
+      const sel = document.getElementById('suite-select');
+      sel.innerHTML = '<option value="">— choose a suite —</option>';
+      for (const s of suites) {
+        const opt = document.createElement('option');
+        opt.value = s.id;
+        opt.textContent = s.name + ' ' + s.version + ' (#' + s.id + ')';
+        sel.appendChild(opt);
+      }
+    }
+
+    async function loadResults(suiteId) {
+      const res = await fetch('/api/eval-suites/' + suiteId + '/results');
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      results = await res.json();
+      // populate model filter from the actual data
+      const models = [...new Set(results.map(r => r.model_fingerprint))].sort();
+      const mf = document.getElementById('model-filter');
+      mf.innerHTML = '<option value="">All models</option>';
+      for (const m of models) {
+        const opt = document.createElement('option');
+        opt.value = m;
+        opt.textContent = m;
+        mf.appendChild(opt);
+      }
+    }
+
+    function render() {
+      const box = document.getElementById('results');
+      const status = document.getElementById('status');
+      const modelFilter = document.getElementById('model-filter').value;
+      const itemFilter = document.getElementById('item-filter').value.trim().toLowerCase();
+      box.innerHTML = '';
+      if (!results.length) {
+        status.textContent = 'No results for this suite yet.';
+        return;
+      }
+      // results arrive ORDER BY id; group by base item id preserving first-seen
+      // order, and keep every group's rows sorted by id (multi-turn turn rows
+      // therefore appear in replay order).
+      const groups = new Map();
+      for (const r of results) {
+        if (modelFilter && r.model_fingerprint !== modelFilter) continue;
+        if (itemFilter && !r.item_id.toLowerCase().includes(itemFilter)) continue;
+        const key = baseId(r.item_id);
+        if (!groups.has(key)) groups.set(key, []);
+        groups.get(key).push(r);
+      }
+      if (!groups.size) {
+        status.textContent = 'No results match the current filters.';
+        return;
+      }
+      for (const [itemId, rows] of groups) {
+        const card = document.createElement('div');
+        card.className = 'item-card';
+        const turnCount = rows.filter(r => r.item_id.includes('#')).length;
+        card.innerHTML = '<h3>' + itemId +
+          ' <span class="meta">' + rows.length + ' result' + (rows.length === 1 ? '' : 's') +
+          (turnCount ? ' · ' + turnCount + ' multi-turn turn' + (turnCount === 1 ? '' : 's') : '') +
+          '</span></h3>';
+        const table = document.createElement('table');
+        table.innerHTML = '<thead><tr>' +
+          '<th>ID</th><th>Turn</th><th>Model fingerprint</th><th>Output</th>' +
+          '<th class="num">prompt_tokens</th><th class="num">completion_tokens</th>' +
+          '<th class="num">latency_ms</th><th></th></tr></thead>';
+        const tbody = document.createElement('tbody');
+        for (const r of rows) {
+          const tr = document.createElement('tr');
+          const full = r.output || '';
+          const cells = [
+            ['td', r.id, 'mono'],
+            ['td', turnLabel(r.item_id), ''],
+            ['td', r.model_fingerprint, 'mono'],
+            ['td', preview(full, 120), 'out'],
+            ['td', r.prompt_tokens, 'num'],
+            ['td', r.completion_tokens, 'num'],
+            ['td', r.latency_ms == null ? '—' : Math.round(r.latency_ms), 'num'],
+          ];
+          for (const [tag, text, cls] of cells) {
+            const cell = document.createElement(tag);
+            cell.textContent = text;
+            if (cls) cell.className = cls;
+            tr.appendChild(cell);
+          }
+          const linkTd = document.createElement('td');
+          const link = document.createElement('a');
+          link.href = '/judgments?result=' + r.id;
+          link.textContent = 'judgments';
+          link.className = 'jump';
+          linkTd.appendChild(link);
+          tr.appendChild(linkTd);
+          tbody.appendChild(tr);
+        }
+        table.appendChild(tbody);
+        card.appendChild(table);
+        box.appendChild(card);
+      }
+      const shown = [...groups.values()].reduce((n, g) => n + g.length, 0);
+      status.textContent = shown + ' result(s) across ' + groups.size + ' item(s).';
+    }
+
+    document.getElementById('suite-select').addEventListener('change', async () => {
+      const status = document.getElementById('status');
+      const suiteId = document.getElementById('suite-select').value;
+      if (!suiteId) { document.getElementById('results').innerHTML = ''; status.textContent = ''; return; }
+      status.textContent = 'Loading…';
+      try {
+        await loadResults(suiteId);
+        render();
+      } catch (err) {
+        status.textContent = 'Failed to load results: ' + err;
+      }
+    });
+    document.getElementById('model-filter').addEventListener('change', render);
+    document.getElementById('item-filter').addEventListener('input', render);
+
+    loadSuites().catch(err => {
+      document.getElementById('status').textContent = 'Failed to load suites: ' + err;
+    });
+  </script>
+</body>
+</html>

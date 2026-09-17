@@ -1,0 +1,263 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Arcturos — Reports</title>
+  <style>
+    body { font-family: system-ui, -apple-system, sans-serif; margin: 2rem auto;
+           max-width: 1080px; color: #1a1a1a; background: #fafafa; }
+    header { border-bottom: 2px solid #222; padding-bottom: .5rem; margin-bottom: 1.5rem; }
+    h1 { font-size: 1.6rem; margin: 0; }
+    h2 { font-size: 1.3rem; }
+    .sub { color: #666; margin-top: .25rem; }
+    nav a { margin-right: 1rem; color: #1a1a1a; text-decoration: none; font-weight: 600; }
+    nav a.active { text-decoration: underline; }
+    .controls { margin: 1rem 0; display: flex; gap: 1.5rem; flex-wrap: wrap; align-items: end; }
+    .controls label { font-size: .9rem; font-weight: 600; color: #444; }
+    .controls select { margin-left: .4rem; padding: .3rem; font-size: .9rem; min-width: 280px; }
+    .card { background: #fff; border: 1px solid #e5e5e5; border-radius: 6px;
+            padding: .8rem; margin-bottom: 1.2rem; }
+    .card h3 { margin: 0 0 .5rem; font-size: 1rem; color: #222; }
+    table { border-collapse: collapse; width: 100%; }
+    th, td { text-align: left; padding: .4rem .6rem; border-bottom: 1px solid #e5e5e5;
+             font-size: .88rem; vertical-align: top; }
+    th { font-weight: 600; color: #444; }
+    td.mono { font-family: ui-monospace, monospace; font-size: .8rem; }
+    td.num { text-align: right; font-family: ui-monospace, monospace; font-size: .8rem; }
+    .pct { color: #555; }
+    pre { background: #fff; border: 1px solid #e5e5e5; border-radius: 6px;
+          padding: .8rem; overflow-x: auto; font-size: .8rem; line-height: 1.4; }
+    .status { color: #666; font-size: .85rem; margin-top: .75rem; }
+    .empty { color: #666; padding: 2rem; text-align: center; }
+    .big { font-size: 1.05rem; font-weight: 600; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Arcturos</h1>
+    <div class="sub">Local-first LLM benchmarking &amp; evaluation dashboard</div>
+    <nav>
+      <a href="/">Runs</a>
+      <a href="/compare">Compare</a>
+      <a href="/diff">Diff</a>
+      <a href="/evals">Evals</a>
+      <a href="/judgments">Judgments</a>
+      <a href="/reports" class="active">Reports</a>
+    </nav>
+  </header>
+
+  <h2>Reports</h2>
+
+  <div class="controls">
+    <label>Suite
+      <select id="suite-select"><option value="">— choose a suite —</option></select>
+    </label>
+  </div>
+
+  <div id="report"></div>
+  <p id="status" class="status"></p>
+
+  <script>
+    async function loadSuites() {
+      const res = await fetch('/api/eval-suites');
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      const suites = await res.json();
+      const sel = document.getElementById('suite-select');
+      sel.innerHTML = '<option value="">— choose a suite —</option>';
+      for (const s of suites) {
+        const opt = document.createElement('option');
+        opt.value = s.id;
+        opt.textContent = s.name + ' ' + s.version + ' (#' + s.id + ')';
+        sel.appendChild(opt);
+      }
+      if (suites.length === 1) {
+        sel.value = suites[0].id;
+        loadReport(suites[0].id);
+      }
+    }
+
+    function pctCell(v) {
+      return v === null || v === undefined ? '—' : v + '%';
+    }
+
+    function overallCard(report) {
+      const o = report.overall;
+      const card = document.createElement('div');
+      card.className = 'card';
+      card.innerHTML = '<h3>Overall — ' + (o.total || 0) + ' judgment(s)</h3>';
+      const t = document.createElement('table');
+      t.innerHTML = '<thead><tr><th>Winner</th><th class="num">Count</th><th class="num">Percent</th></tr></thead>';
+      const tbody = document.createElement('tbody');
+      for (const side of ['a', 'b', 'tie']) {
+        const tr = document.createElement('tr');
+        const tdName = document.createElement('td');
+        tdName.textContent = side;
+        const tdCount = document.createElement('td');
+        tdCount.className = 'num';
+        tdCount.textContent = o.counts[side];
+        const tdPct = document.createElement('td');
+        tdPct.className = 'num pct';
+        tdPct.textContent = pctCell(o.percent[side]);
+        tr.appendChild(tdName); tr.appendChild(tdCount); tr.appendChild(tdPct);
+        tbody.appendChild(tr);
+      }
+      t.appendChild(tbody);
+      card.appendChild(t);
+      return card;
+    }
+
+    function pairsCard(report) {
+      const card = document.createElement('div');
+      card.className = 'card';
+      card.innerHTML = '<h3>Pairs — win rates</h3>';
+      if (!report.pairs.length) {
+        card.appendChild(empty('No judged pairs yet.'));
+        return card;
+      }
+      const t = document.createElement('table');
+      t.innerHTML = '<thead><tr><th>Model A</th><th>Model B</th>' +
+        '<th class="num">A wins</th><th class="num">B wins</th><th class="num">Ties</th>' +
+        '<th class="num">n</th><th class="num">A%</th><th class="num">B%</th><th class="num">Tie%</th></tr></thead>';
+      const tbody = document.createElement('tbody');
+      for (const p of report.pairs) {
+        const tr = document.createElement('tr');
+        const cells = [
+          ['td', p.model_a, 'mono'], ['td', p.model_b, 'mono'],
+          ['td', p.counts.a, 'num'], ['td', p.counts.b, 'num'],
+          ['td', p.counts.tie, 'num'], ['td', p.total, 'num'],
+          ['td', pctCell(p.percent.a), 'num pct'],
+          ['td', pctCell(p.percent.b), 'num pct'],
+          ['td', pctCell(p.percent.tie), 'num pct'],
+        ];
+        for (const [tag, text, cls] of cells) {
+          const cell = document.createElement(tag);
+          cell.textContent = text;
+          if (cls) cell.className = cls;
+          tr.appendChild(cell);
+        }
+        tbody.appendChild(tr);
+      }
+      t.appendChild(tbody);
+      card.appendChild(t);
+      return card;
+    }
+
+    function categoryCard(report) {
+      const card = document.createElement('div');
+      card.className = 'card';
+      card.innerHTML = '<h3>By category</h3>';
+      const cats = Object.keys(report.by_category);
+      if (!cats.length) {
+        card.appendChild(empty('No category breakdown yet.'));
+        return card;
+      }
+      const t = document.createElement('table');
+      t.innerHTML = '<thead><tr><th>Category</th><th class="num">A</th>' +
+        '<th class="num">B</th><th class="num">Tie</th><th class="num">Total</th></tr></thead>';
+      const tbody = document.createElement('tbody');
+      for (const cat of cats) {
+        const c = report.by_category[cat];
+        const tr = document.createElement('tr');
+        const cells = [
+          ['td', cat, ''], ['td', c.a, 'num'], ['td', c.b, 'num'],
+          ['td', c.tie, 'num'], ['td', c.total, 'num'],
+        ];
+        for (const [tag, text, cls] of cells) {
+          const cell = document.createElement(tag);
+          cell.textContent = text;
+          if (cls) cell.className = cls;
+          tr.appendChild(cell);
+        }
+        tbody.appendChild(tr);
+      }
+      t.appendChild(tbody);
+      card.appendChild(t);
+      return card;
+    }
+
+    function itemLevelCard(report) {
+      const card = document.createElement('div');
+      card.className = 'card';
+      card.innerHTML = '<h3>Item drill-down</h3>';
+      if (!report.item_level.length) {
+        card.appendChild(empty('No item-level judgments yet.'));
+        return card;
+      }
+      const t = document.createElement('table');
+      t.innerHTML = '<thead><tr><th>Item</th><th>Winner</th><th>Model A</th><th>Model B</th>' +
+        '<th>Judge</th><th>Template</th><th class="num">Confidence</th><th>Rationale</th></tr></thead>';
+      const tbody = document.createElement('tbody');
+      for (const it of report.item_level) {
+        const tr = document.createElement('tr');
+        const cells = [
+          ['td', it.item_id, 'mono'], ['td', it.winner, ''],
+          ['td', it.model_a, 'mono'], ['td', it.model_b, 'mono'],
+          ['td', it.judge_model, 'mono'], ['td', it.template, 'mono'],
+          ['td', it.confidence === null || it.confidence === undefined ? '—' : it.confidence, 'num'],
+          ['td', it.rationale || '—', ''],
+        ];
+        for (const [tag, text, cls] of cells) {
+          const cell = document.createElement(tag);
+          cell.textContent = text;
+          if (cls) cell.className = cls;
+          tr.appendChild(cell);
+        }
+        tbody.appendChild(tr);
+      }
+      t.appendChild(tbody);
+      card.appendChild(t);
+      return card;
+    }
+
+    function csvCard(report) {
+      const card = document.createElement('div');
+      card.className = 'card';
+      card.innerHTML = '<h3>CSV export</h3>';
+      const pre = document.createElement('pre');
+      pre.textContent = report.csv || '—';
+      card.appendChild(pre);
+      return card;
+    }
+
+    function empty(text) {
+      const p = document.createElement('p');
+      p.className = 'empty';
+      p.textContent = text;
+      return p;
+    }
+
+    async function loadReport(suiteId) {
+      const box = document.getElementById('report');
+      const status = document.getElementById('status');
+      box.innerHTML = '';
+      status.textContent = 'Loading…';
+      try {
+        const res = await fetch('/api/reports/suite/' + suiteId);
+        if (!res.ok) throw new Error('HTTP ' + res.status + ': ' + await res.text());
+        const data = await res.json();
+        const report = data.report;
+        box.appendChild(overallCard(report));
+        box.appendChild(pairsCard(report));
+        box.appendChild(categoryCard(report));
+        box.appendChild(itemLevelCard(report));
+        box.appendChild(csvCard(data));
+        status.textContent = 'Suite #' + suiteId + ' — ' + report.suite.name +
+          ' ' + report.suite.version + ' · ' + report.prompts + ' prompt(s), ' +
+          report.results_stored + ' result(s), ' + report.judgments_stored + ' judgment(s).';
+      } catch (err) {
+        status.textContent = 'Failed to load report: ' + err;
+      }
+    }
+
+    document.getElementById('suite-select').addEventListener('change', () => {
+      const suiteId = document.getElementById('suite-select').value;
+      if (suiteId) loadReport(suiteId);
+    });
+
+    loadSuites().catch(err => {
+      document.getElementById('status').textContent = 'Failed to load suites: ' + err;
+    });
+  </script>
+</body>
+</html>
