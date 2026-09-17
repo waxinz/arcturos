@@ -17,7 +17,7 @@ def _query_power(host: str, gpu_index: int = 0) -> float | None:
     try:
         out = subprocess.run(
             ["ssh", host, "nvidia-smi --query-gpu=power.draw "
-             "--format=csv,noheader,nounlets -i %d" % gpu_index],
+             "--format=csv,noheader,nounits -i %d" % gpu_index],
             capture_output=True, text=True, timeout=15,
         )
         if out.returncode != 0:
