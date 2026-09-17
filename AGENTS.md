@@ -110,6 +110,13 @@ arcturos/
 
 ### Log (newest first)
 
+- 2026-09-17 — UX review and fixes (862ef4e): run drill-down view
+  /runs/{id} (meta + per-point metrics, honest nulls) + clickable run ids
+  on /runs; interactive preflight 8s per-check timeout (dead target
+  answers <=16s, was 40s). Eval dispatch verified to consume api_key
+  end-to-end (single + multi-turn + UI). 99 tests green, live-verified
+  on taupo. Remaining UX backlog: confirm dialogs for re-judge,
+  eval-results drill-down view, multi-host compare metadata (M9).
 - 2026-09-17 — API key auth end-to-end (14edfb2 + 5733999): optional
   `api_key` threaded through the whole outbound path — bench.py
   (_client headers), bench_stream.py, ops.dispatch_bench/dispatch_eval,
