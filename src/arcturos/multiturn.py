@@ -34,8 +34,14 @@ def validate_multiturn_item(item: dict[str, Any]) -> None:
             raise ValueError("user turns need string 'content'")
 
 
-def post_openai_chat(target: str, messages: list[dict], api_key: str | None = None) -> dict:
-    """POST /v1/chat/completions; base URL may or may not include /v1."""
+def post_openai_chat(target: str, messages: list[dict],
+                     api_key: str | None = None, model: str = "test") -> dict:
+    """POST /v1/chat/completions; base URL may or may not include /v1.
+
+    ``model`` defaults to 'test' (llama.cpp native servers ignore the model
+    field); proxy-fronted targets (litellm/vLLM multi-model) need the real
+    model name — pass it through.
+    """
     base = target.rstrip("/")
     if base.endswith("/v1"):
         base = base[:-3]
@@ -45,7 +51,7 @@ def post_openai_chat(target: str, messages: list[dict], api_key: str | None = No
     req = urlreq.Request(
         base + "/v1/chat/completions",
         data=json.dumps({
-            "model": "test", "messages": messages,
+            "model": model, "messages": messages,
             "max_tokens": 512, "temperature": 0.0, "stream": False,
         }).encode(),
         headers=headers, method="POST",
@@ -71,7 +77,7 @@ def extract_output(resp: dict) -> tuple[str, int, int]:
 
 
 def replay_multiturn(target: str, item: dict[str, Any],
-                     api_key: str | None = None) -> list[dict[str, Any]]:
+                     api_key: str | None = None, model: str = "test") -> list[dict[str, Any]]:
     """Replay one multi-turn item; return one record per assistant turn.
 
     Record: {turn_index, item_id (suffixed), output, prompt_tokens,
@@ -93,7 +99,7 @@ def replay_multiturn(target: str, item: dict[str, Any],
         elif t["role"] == "assistant":
             turn_no += 1
             t0 = time.monotonic()
-            resp = post_openai_chat(target, messages, api_key)
+            resp = post_openai_chat(target, messages, api_key, model=model)
             latency_ms = (time.monotonic() - t0) * 1000
             content, ptok, ctok = extract_output(resp)
             messages.append({"role": "assistant", "content": content})
