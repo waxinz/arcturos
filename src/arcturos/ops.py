@@ -12,6 +12,8 @@ eval_results). There is no UPDATE/DELETE path anywhere.
 
 from __future__ import annotations
 
+import time
+
 from typing import Any
 
 from arcturos import bench
@@ -112,13 +114,15 @@ def dispatch_eval(
                 prompt = item.get("prompt") or item.get("content")
                 if not prompt:
                     raise DispatchError(f"item {item_id!r} missing prompt")
+                t0 = time.monotonic()
                 resp = mt.post_openai_chat(
                     target, [{"role": "user", "content": prompt}],
                     api_key=api_key, model=model_fingerprint)
+                latency_ms = round((time.monotonic() - t0) * 1000, 1)
                 content, ptoks, ctoks = mt.extract_output(resp)
                 stored.append(_store_eval_result(
                     conn, suite_id, model_fingerprint, item_id,
-                    content, ptoks, ctoks, _latency_ms(resp)))
+                    content, ptoks, ctoks, latency_ms))
         conn.commit()
     except Exception:
         conn.rollback()
@@ -141,10 +145,3 @@ def _store_eval_result(conn, suite_id: int, model_fingerprint: str,
     row = dict(conn.execute(
         "SELECT * FROM eval_results WHERE id = ?", (cur.lastrowid,)).fetchone())
     return row
-
-
-def _latency_ms(resp: dict) -> float:
-    """Wall latency per request is recorded by callers when measurable; the
-    OpenAI response itself carries none, so default 0.0 keeps NOT NULL happy
-    and marks 'unknown'."""
-    return 0.0
