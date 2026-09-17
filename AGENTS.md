@@ -1,6 +1,7 @@
 # AGENTS.md — Arcturos
 
 **Project:** Arcturos — local-first LLM benchmarking & evaluation suite
+**Interface:** local web dashboard, `0.0.0.0:24816` (owner decision 2026-09-17)
 **Repo host:** taupo (`alexei@192.168.122.1`), path `~/arcturos`
 **Owner:** Alexei
 **Created:** 2026-09-17
@@ -64,8 +65,9 @@ arcturos/
 - **Bench methodology:** cold-cache measurement (fresh UUID prompt prefix,
   server restart between context-size tests where applicable). See
   `docs/decisions/` for the full methodology record.
-- Language: Python 3.10+, SQLite via stdlib or `sqlite3`/SQLAlchemy. CLI-first;
-  web UI is a later phase.
+- Language: Python 3.10+ (taupo has 3.12.3). SQLite stdlib. Dashboard: local
+  web app bound `0.0.0.0:24816` (LAN-accessible; no auth beyond LAN boundary
+  for v1). Charts rendered client-side (Chart.js or similar); API = JSON/REST.
 
 ## 5. Environment facts (taupo)
 
@@ -80,8 +82,8 @@ arcturos/
 
 ## 6. Current Status
 
-**Phase:** 1 of 6 — Foundation & PRD
-**Next phase:** 2 — PRD review/refinement with owner, then Phase 3 UX design.
+**Phase:** 2 of 6 — PRD signed off; UX design + implementation underway.
+**Next:** dashboard skeleton live on taupo :24816, then J1 bench core.
 
 - [x] Repo initialized on taupo (`~/arcturos`, branch `main`)
 - [x] AGENTS.md created (this file)
@@ -94,6 +96,7 @@ arcturos/
 
 ### Log (newest first)
 
+- 2026-09-17 — PRD signed off; dashboard decided: web UI on 0.0.0.0:24816.
 - 2026-09-17 — Repo created on taupo; AGENTS.md + PRD.md committed (Phase 1).
 
 ## 7. How to pick up work (any agent)
