@@ -89,6 +89,8 @@ class BenchPoint:
     stop_reason: Optional[str] = None
     prompt_tokens: Optional[int] = None
     power_watts: Optional[float] = None
+    power_host: Optional[str] = None
+    power_gpu_index: Optional[int] = None
 
 
 class RunNotFoundError(ValueError):
@@ -316,7 +318,7 @@ def power_draw_avg(gpu_index: int, duration_s: int) -> Optional[float]:
     cmd = [
         "nvidia-smi",
         "--query-gpu=power.draw",
-        "--format=csv,noheader,nounlets",
+        "--format=csv,noheader,nounits",
         "-i",
         str(gpu_index),
     ]
@@ -405,7 +407,8 @@ def store_benchmark_run(
             conn.execute(
                 "INSERT INTO benchmarks (run_id, context_tokens, prefill_tps, decode_tps,"
                 " ttft_ms, wall_s, output_tokens, mtp_draft_n, mtp_accepted, power_watts,"
-                " created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                " power_host, power_gpu_index, created_at)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     run_id,
                     point.target_tokens,
@@ -417,6 +420,8 @@ def store_benchmark_run(
                     point.mtp_draft_n,
                     point.mtp_accepted,
                     point.power_watts,
+                    point.power_host,
+                    point.power_gpu_index,
                     now,
                 ),
             )

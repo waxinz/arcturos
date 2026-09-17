@@ -25,17 +25,19 @@ CREATE TABLE IF NOT EXISTS runs (
 );
 
 CREATE TABLE IF NOT EXISTS benchmarks (
-    run_id         INTEGER NOT NULL REFERENCES runs(id),
-    context_tokens INTEGER NOT NULL,
-    prefill_tps    REAL,
-    decode_tps     REAL,
-    ttft_ms        REAL,
-    wall_s         REAL,
-    output_tokens  INTEGER,
-    mtp_draft_n    INTEGER,
-    mtp_accepted   INTEGER,
-    power_watts    REAL,
-    created_at     TEXT    NOT NULL
+    run_id          INTEGER NOT NULL REFERENCES runs(id),
+    context_tokens  INTEGER NOT NULL,
+    prefill_tps     REAL,
+    decode_tps      REAL,
+    ttft_ms         REAL,
+    wall_s          REAL,
+    output_tokens   INTEGER,
+    mtp_draft_n     INTEGER,
+    mtp_accepted    INTEGER,
+    power_watts     REAL,
+    power_host      TEXT,
+    power_gpu_index INTEGER,
+    created_at      TEXT    NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS eval_suites (
@@ -138,5 +140,34 @@ def connect(db_path: str | Path = DEFAULT_DB_PATH) -> sqlite3.Connection:
 def init_db(conn: sqlite3.Connection) -> None:
     """Create tables + append-only triggers. Idempotent (IF NOT EXISTS)."""
     conn.executescript(SCHEMA)
+    _migrate(conn)
     conn.executescript(TRIGGERS)
     conn.commit()
+
+
+# Columns added after v0.1: (table, column, DDL type). ALTER TABLE adds them to
+# pre-existing databases; fresh databases already have them from SCHEMA (the
+# duplicate-column error is swallowed for that case).
+_MIGRATIONS = (
+    ("benchmarks", "power_host", "TEXT"),
+    ("benchmarks", "power_gpu_index", "INTEGER"),
+)
+
+
+def _migrate(conn: sqlite3.Connection) -> None:
+    """Add post-v0.1 columns to pre-existing databases (idempotent).
+
+    Schema evolution only — never touches row data, so append-only semantics
+    are untouched. ALTER TABLE is metadata DDL, not a data mutation.
+    """
+    existing: dict[str, set[str]] = {}
+    for table, _col, _ddl in _MIGRATIONS:
+        if table not in existing:
+            cols = {r[1] for r in conn.execute(f"PRAGMA table_info({table})")}
+            existing[table] = cols
+        if _col not in existing[table]:
+            try:
+                conn.execute(f"ALTER TABLE {table} ADD COLUMN {_col} {_ddl}")
+            except sqlite3.OperationalError as exc:
+                if "duplicate column" not in str(exc).lower():
+                    raise

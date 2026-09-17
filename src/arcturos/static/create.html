@@ -1,0 +1,253 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Arcturos — Create &amp; Run</title>
+  <style>
+    body { font-family: system-ui, -apple-system, sans-serif; margin: 2rem auto;
+           max-width: 1080px; color: #1a1a1a; background: #fafafa; }
+    header { border-bottom: 2px solid #222; padding-bottom: .5rem; margin-bottom: 1.5rem; }
+    h1 { font-size: 1.6rem; margin: 0; }
+    h2 { font-size: 1.25rem; margin-top: 2rem; }
+    .sub { color: #666; margin-top: .25rem; }
+    nav a { margin-right: 1rem; color: #1a1a1a; text-decoration: none; font-weight: 600; }
+    nav a.active { text-decoration: underline; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 1rem; }
+    .card { background: #fff; border: 1px solid #e5e5e5; border-radius: 6px; padding: 1rem; }
+    .card h3 { margin: 0 0 .75rem; font-size: 1rem; }
+    label { display: block; font-size: .85rem; font-weight: 600; color: #444;
+            margin: .5rem 0 .2rem; }
+    input, textarea, select { width: 100%; box-sizing: border-box; padding: .35rem;
+            font-size: .9rem; border: 1px solid #ccc; border-radius: 4px; }
+    textarea { font-family: ui-monospace, monospace; font-size: .8rem; min-height: 90px; }
+    button { margin-top: .6rem; padding: .45rem 1rem; font-size: .9rem;
+             background: #222; color: #fff; border: 0; border-radius: 4px; cursor: pointer; }
+    button:disabled { background: #999; cursor: wait; }
+    .msg { margin-top: .5rem; font-size: .85rem; min-height: 1.1em; }
+    .msg.err { color: #b00020; }
+    .msg.ok { color: #0a7d2c; }
+    .hint { color: #777; font-size: .78rem; margin: .3rem 0; }
+    .row2 { display: flex; gap: .6rem; } .row2 > div { flex: 1; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Arcturos</h1>
+    <div class="sub">Local-first LLM benchmarking &amp; evaluation dashboard</div>
+    <nav>
+      <a href="/">Runs</a>
+      <a href="/compare">Compare</a>
+      <a href="/diff">Diff</a>
+      <a href="/evals">Evals</a>
+      <a href="/judgments">Judgments</a>
+      <a href="/reports">Reports</a>
+      <a href="/create" class="active">Create &amp; Run</a>
+    </nav>
+  </header>
+
+  <h2>Create &amp; Run</h2>
+  <p class="hint">Append-only store: creating adds rows; nothing is ever overwritten. Dispatches are synchronous — wait for the result message before re-submitting.</p>
+
+  <div class="grid">
+    <div class="card">
+      <h3>1 · Benchmark run — kick off</h3>
+      <p class="hint">Runs a cold-cache sweep against a llama.cpp server (native /completion). Stores a run + one benchmark row per context target.</p>
+      <label>Server URL
+        <input id="bench-url" value="http://10.10.10.122:8000">
+      </label>
+      <label>Context targets (tokens, comma-separated)
+        <input id="bench-targets" value="2048, 8192">
+      </label>
+      <label>n_predict (tokens per point)
+        <input id="bench-npredict" value="256">
+      </label>
+      <button id="bench-btn">▶ Kick off bench</button>
+      <div id="bench-msg" class="msg"></div>
+    </div>
+
+    <div class="card">
+      <h3>2 · Eval suite — create</h3>
+      <p class="hint">Creates the suite record; populate results afterwards by replaying it (card 4).</p>
+      <label>Suite name <input id="suite-name" placeholder="smoke-reasoning"></label>
+      <label>Version <input id="suite-version" value="v1"></label>
+      <button id="suite-btn">＋ Create suite</button>
+      <div id="suite-msg" class="msg"></div>
+    </div>
+
+    <div class="card">
+      <h3>3 · Eval suite items — define (optional, pre-store)</h3>
+      <p class="hint">Suite JSON kept in the browser for dispatch: {"items":[{"id":"x","prompt":"…"}]} or multi-turn {"type":"multi-turn","id":"x","turns":[…]}.</p>
+      <textarea id="suite-json" placeholder='{"items": [{"id": "q1", "prompt": "What is 2+2?"}]}'>{"items": [{"id": "q1", "prompt": "What is 2+2?"}]}</textarea>
+      <button id="suite-validate-btn">✔ Validate JSON</button>
+      <div id="suite-json-msg" class="msg"></div>
+    </div>
+
+    <div class="card">
+      <h3>4 · Eval replay — kick off</h3>
+      <p class="hint">Replays the JSON from card 3 against an OpenAI-compatible chat endpoint, stores eval_results.</p>
+      <label>Suite ID (from card 2 result) <input id="eval-suite-id" placeholder="e.g. 3"></label>
+      <label>Target (OpenAI-compatible base URL incl. /v1)
+        <input id="eval-target" value="http://192.168.122.1:4000/v1">
+      </label>
+      <div class="row2">
+        <div><label>Model fingerprint <input id="eval-model" placeholder="qwen3.8-27b-rotation"></label></div>
+        <div><label>API key (optional) <input id="eval-key" type="password" placeholder="sk-…"></label></div>
+      </div>
+      <button id="eval-btn">▶ Kick off eval replay</button>
+      <div id="eval-msg" class="msg"></div>
+    </div>
+
+    <div class="card">
+      <h3>5 · Benchmark point — add manually</h3>
+      <p class="hint">For external measurements: add one benchmark row to an existing run.</p>
+      <label>Run ID <input id="mb-run-id" placeholder="1"></label>
+      <div class="row2">
+        <div><label>Context tokens <input id="mb-ctx" value="4096"></label></div>
+        <div><label>Decode tok/s <input id="mb-decode" placeholder="20.5"></label></div>
+      </div>
+      <div class="row2">
+        <div><label>Prefill tok/s <input id="mb-prefill"></label></div>
+        <div><label>TTFT ms <input id="mb-ttft"></label></div>
+      </div>
+      <div class="row2">
+        <div><label>Power W <input id="mb-power"></label></div>
+        <div><label>Power host <input id="mb-power-host" placeholder="alexei@10.10.10.122"></label></div>
+      </div>
+      <button id="mb-btn">＋ Add benchmark point</button>
+      <div id="mb-msg" class="msg"></div>
+    </div>
+
+    <div class="card">
+      <h3>6 · Judgment — record</h3>
+      <p class="hint">Blind A/B verdict between two stored eval results (see /judgments for ids).</p>
+      <div class="row2">
+        <div><label>Result A id <input id="j-a"></label></div>
+        <div><label>Result B id <input id="j-b"></label></div>
+      </div>
+      <div class="row2">
+        <div><label>Winner <select id="j-winner"><option>a</option><option>b</option><option>tie</option></select></label></div>
+        <div><label>Confidence <input id="j-conf" placeholder="0.8"></label></div>
+      </div>
+      <label>Judge model <input id="j-judge" placeholder="qwen-3.6-27b"></label>
+      <label>Rationale <textarea id="j-rationale"></textarea></label>
+      <button id="j-btn">＋ Record judgment</button>
+      <div id="j-msg" class="msg"></div>
+    </div>
+  </div>
+
+  <script>
+    function $(id) { return document.getElementById(id); }
+    function setMsg(el, text, ok) {
+      el.textContent = text;
+      el.className = ok ? 'msg ok' : 'msg err';
+    }
+    function busy(btn, on, label) {
+      btn.disabled = on;
+      btn.textContent = on ? '⏳ ' + label : label.replace('⏳ ', '');
+    }
+    async function post(url, body, btn, msg, label) {
+      busy(btn, true, label);
+      setMsg(msg, 'Working…');
+      try {
+        const res = await fetch(url, {method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify(body)});
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          setMsg(msg, 'Failed: ' + (data.detail || ('HTTP ' + res.status)));
+          return null;
+        }
+        return data;
+      } catch (err) {
+        setMsg(msg, 'Failed: ' + err);
+        return null;
+      } finally {
+        busy(btn, false, label);
+      }
+    }
+
+    $('bench-btn').onclick = async () => {
+      const targets = $('bench-targets').value.split(',').map(s => parseInt(s.trim(), 10)).filter(n => !isNaN(n));
+      const data = await post('/api/ops/bench', {
+        server_url: $('bench-url').value.trim(),
+        targets: targets,
+        n_predict: parseInt($('bench-npredict').value, 10) || 256,
+      }, $('bench-btn'), $('bench-msg'), 'Kick off bench');
+      if (data) setMsg($('bench-msg'),
+        'Run #' + data.run_id + ' stored: ' +
+        data.points.map(p => p.context_tokens + '→' + (p.decode_tps || '?') + ' tok/s').join(', '),
+        true);
+    };
+
+    $('suite-validate-btn').onclick = () => {
+      try {
+        const suite = JSON.parse($('suite-json').value);
+        if (!Array.isArray(suite.items) || !suite.items.length)
+          throw new Error('need non-empty "items" array');
+        for (const it of suite.items) {
+          if (!it.id) throw new Error('item missing id');
+          if (it.type === 'multi-turn') continue;
+          if (!it.prompt) throw new Error('item ' + it.id + ' missing prompt');
+        }
+        setMsg($('suite-json-msg'), 'Valid: ' + suite.items.length + ' item(s)', true);
+      } catch (err) { setMsg($('suite-json-msg'), 'Invalid: ' + err.message); }
+    };
+
+    $('suite-btn').onclick = async () => {
+      const data = await post('/api/eval-suites', {
+        name: $('suite-name').value.trim(),
+        version: $('suite-version').value.trim() || 'v1',
+      }, $('suite-btn'), $('suite-msg'), 'Create suite');
+      if (data) {
+        setMsg($('suite-msg'), 'Suite #' + data.id + ' created (' + data.name + ')', true);
+        $('eval-suite-id').value = data.id;
+      }
+    };
+
+    $('eval-btn').onclick = async () => {
+      let suite;
+      try { suite = JSON.parse($('suite-json').value); }
+      catch (err) { setMsg($('eval-msg'), 'Suite JSON invalid: ' + err.message); return; }
+      const data = await post('/api/ops/eval', {
+        suite_id: parseInt($('eval-suite-id').value, 10),
+        target: $('eval-target').value.trim(),
+        model_fingerprint: $('eval-model').value.trim(),
+        api_key: $('eval-key').value.trim() || null,
+        suite: suite,
+      }, $('eval-btn'), $('eval-msg'), 'Replay eval suite');
+      if (data) setMsg($('eval-msg'),
+        'Stored ' + data.stored.length + ' result(s) in suite #' + data.suite_id, true);
+    };
+
+    $('mb-btn').onclick = async () => {
+      const runId = parseInt($('mb-run-id').value, 10);
+      const body = {context_tokens: parseInt($('mb-ctx').value, 10)};
+      for (const [id, key] of [['mb-decode','decode_tps'], ['mb-prefill','prefill_tps'],
+                               ['mb-ttft','ttft_ms'], ['mb-power','power_watts']]) {
+        const v = parseFloat($(id).value);
+        if (!isNaN(v)) body[key] = v;
+      }
+      if ($('mb-power-host').value.trim()) body.power_host = $('mb-power-host').value.trim();
+      const data = await post('/api/runs/' + runId + '/benchmarks', body,
+        $('mb-btn'), $('mb-msg'), 'Add benchmark point');
+      if (data) setMsg($('mb-msg'), 'Benchmark row #' + data.id + ' added to run ' + runId, true);
+    };
+
+    $('j-btn').onclick = async () => {
+      const body = {
+        eval_result_a: parseInt($('j-a').value, 10),
+        eval_result_b: parseInt($('j-b').value, 10),
+        judge_model: $('j-judge').value.trim(),
+        judge_template_version: 'ui-v1',
+        winner: $('j-winner').value,
+      };
+      const conf = parseFloat($('j-conf').value);
+      if (!isNaN(conf)) body.confidence = conf;
+      if ($('j-rationale').value.trim()) body.rationale = $('j-rationale').value.trim();
+      const data = await post('/api/judgments', body, $('j-btn'), $('j-msg'), 'Record judgment');
+      if (data) setMsg($('j-msg'), 'Judgment #' + data.id + ' recorded (' + data.winner + ')', true);
+    };
+  </script>
+</body>
+</html>

@@ -35,7 +35,19 @@ class BenchmarkCreate(BaseModel):
     mtp_draft_n: Optional[int] = Field(None, ge=0)
     mtp_accepted: Optional[int] = Field(None, ge=0)
     power_watts: Optional[float] = Field(None, ge=0)
+    power_host: Optional[str] = Field(None, min_length=1)
+    power_gpu_index: Optional[int] = Field(None, ge=0)
     created_at: str = Field(default_factory=_utcnow)
+
+    @model_validator(mode="after")
+    def _check_power_consistency(self) -> "BenchmarkCreate":
+        # A power number without provenance is unverifiable — reject it so
+        # no stored row can ever show watts with a missing host (ADR 002).
+        if self.power_watts is not None and not self.power_host:
+            raise ValueError("power_watts requires power_host (provenance)")
+        if self.power_host is not None and self.power_watts is None:
+            raise ValueError("power_host without power_watts is meaningless")
+        return self
 
     @model_validator(mode="after")
     def _check_mtp_acceptance(self) -> "BenchmarkCreate":
