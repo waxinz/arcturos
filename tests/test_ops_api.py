@@ -87,8 +87,14 @@ def test_ops_eval_requires_existing_suite(client):
     assert "not found" in r.json()["detail"]
 
 
-def test_ops_eval_roundtrip(client):
+def test_ops_eval_roundtrip(client, monkeypatch):
     suite = client.post("/api/eval-suites", json={"name": "s", "version": "1"}).json()
+    # preflight would hit real DNS for the fake target — stub it passing
+    from arcturos.ops import preflight as pf_mod
+    monkeypatch.setattr(pf_mod, "preflight", lambda *a, **kw: pf_mod.PreflightResult(
+        target=a[0], kind="eval",
+        checks=[{"name": "reachable", "ok": True, "detail": "stub"},
+                {"name": "chat", "ok": True, "detail": "stub"}]))
     with patch("arcturos.multiturn.post_openai_chat") as fake_post:
         fake_post.return_value = {
             "choices": [{"message": {"content": "4"}}],
