@@ -62,7 +62,10 @@
       <label>n_predict (tokens per point)
         <input id="bench-npredict" value="256">
       </label>
-      <button id="bench-btn">▶ Kick off bench</button>
+      <div class="row2">
+        <div><button id="bench-btn" style="width:100%">▶ Kick off bench</button></div>
+        <div><button id="bench-pf-btn" style="width:100%; background:#555">✔ Check target</button></div>
+      </div>
       <div id="bench-msg" class="msg"></div>
     </div>
 
@@ -94,7 +97,10 @@
         <div><label>Model fingerprint <input id="eval-model" placeholder="qwen3.8-27b-rotation"></label></div>
         <div><label>API key (optional) <input id="eval-key" type="password" placeholder="sk-…"></label></div>
       </div>
-      <button id="eval-btn">▶ Kick off eval replay</button>
+      <div class="row2">
+        <div><button id="eval-btn" style="width:100%">▶ Kick off eval replay</button></div>
+        <div><button id="eval-pf-btn" style="width:100%; background:#555">✔ Check target</button></div>
+      </div>
       <div id="eval-msg" class="msg"></div>
     </div>
 
@@ -166,6 +172,27 @@
         busy(btn, false, label);
       }
     }
+
+    async function checkPreflight(kindBtn, targetEl, msgEl, kind) {
+      kindBtn.disabled = true; kindBtn.textContent = '⏳ Checking…';
+      setMsg(msgEl, 'Preflight…');
+      try {
+        const u = '/api/ops/preflight?target=' + encodeURIComponent(targetEl.value.trim()) +
+                  '&kind=' + kind;
+        const res = await fetch(u);
+        const data = await res.json();
+        if (!res.ok) { setMsg(msgEl, 'Preflight failed: ' + (data.detail || res.status)); return; }
+        const fails = (data.checks || []).filter(c => !c.ok);
+        if (!fails.length) {
+          setMsg(msgEl, '✔ ' + (data.checks || []).map(c => c.name).join(' ✓, ') + ' ✓ — target ready', true);
+        } else {
+          setMsg(msgEl, '✘ ' + fails.map(c => c.name + ': ' + c.detail).join(' | '));
+        }
+      } catch (err) { setMsg(msgEl, 'Preflight failed: ' + err); }
+      finally { kindBtn.disabled = false; kindBtn.textContent = '✔ Check target'; }
+    }
+    $('bench-pf-btn').onclick = () => checkPreflight($('bench-pf-btn'), $('bench-url'), $('bench-msg'), 'bench');
+    $('eval-pf-btn').onclick = () => checkPreflight($('eval-pf-btn'), $('eval-target'), $('eval-msg'), 'eval');
 
     $('bench-btn').onclick = async () => {
       const targets = $('bench-targets').value.split(',').map(s => parseInt(s.trim(), 10)).filter(n => !isNaN(n));
