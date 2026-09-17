@@ -62,6 +62,7 @@ def run_openai_stream_point(base_url: str, model: str, messages: list,
     stop_reason = None
     err = None
     reasoning_seen = False
+    content_chunk_count = 0
     try:
         with urlreq.urlopen(req, timeout=timeout_s) as resp:
             for line in resp:
@@ -88,6 +89,7 @@ def run_openai_stream_point(base_url: str, model: str, messages: list,
                     if delta.get("reasoning_content"):
                         reasoning_seen = True
                     if delta.get("content"):
+                        content_chunk_count += 1
                         if first_content_t is None:
                             first_content_t = now
                         last_content_t = now
@@ -110,9 +112,10 @@ def run_openai_stream_point(base_url: str, model: str, messages: list,
     decode_tps_client = None
     if first_content_t and last_content_t and last_content_t > first_content_t:
         gen_span = last_content_t - first_content_t
-        n = (completion_tokens or 1) - 1
-        if gen_span > 0 and n > 0:
-            decode_tps_client = round(n / gen_span, 2)
+        if gen_span > 0:
+            # client-side count of content chunks is honest for reasoning
+            # models whose completion_tokens include reasoning tokens
+            decode_tps_client = round(content_chunk_count / gen_span, 2)
     prefill_est = None
     if ttft_ms and prompt_tokens:
         prefill_est = round(prompt_tokens / (ttft_ms / 1000.0), 1)
