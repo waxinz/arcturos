@@ -155,7 +155,13 @@
       btn.disabled = on;
       btn.textContent = on ? '⏳ ' + label : label.replace('⏳ ', '');
     }
-    async function post(url, body, btn, msg, label) {
+    async function post(url, body, btn, msg, label, confirmText) {
+      // Destructive-adjacent posts (append-only records that pair with
+      // existing rows) get a confirm dialog per ux-design principle 5.
+      if (confirmText && !window.confirm(confirmText)) {
+        setMsg(msg, 'Cancelled.');
+        return null;
+      }
       busy(btn, true, label);
       setMsg(msg, 'Working…');
       try {
@@ -263,7 +269,9 @@
       }
       if ($('mb-power-host').value.trim()) body.power_host = $('mb-power-host').value.trim();
       const data = await post('/api/runs/' + runId + '/benchmarks', body,
-        $('mb-btn'), $('mb-msg'), 'Add benchmark point');
+        $('mb-btn'), $('mb-msg'), 'Add benchmark point',
+        'Add an externally-measured benchmark point to run #' + runId +
+        '? This appends a new row (existing rows are never overwritten).');
       if (data) setMsg($('mb-msg'), 'Benchmark row #' + data.id + ' added to run ' + runId, true);
     };
 
@@ -278,7 +286,10 @@
       const conf = parseFloat($('j-conf').value);
       if (!isNaN(conf)) body.confidence = conf;
       if ($('j-rationale').value.trim()) body.rationale = $('j-rationale').value.trim();
-      const data = await post('/api/judgments', body, $('j-btn'), $('j-msg'), 'Record judgment');
+      const data = await post('/api/judgments', body, $('j-btn'), $('j-msg'),
+        'Record judgment',
+        'Record judgment #' + body.eval_result_a + ' vs #' + body.eval_result_b +
+        ' (winner: ' + body.winner + ')? This appends a new blind verdict row.');
       if (data) setMsg($('j-msg'), 'Judgment #' + data.id + ' recorded (' + data.winner + ')', true);
     };
   </script>
