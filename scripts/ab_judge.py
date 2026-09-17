@@ -57,6 +57,23 @@ def get_json(url: str) -> dict:
         return json.loads(resp.read())
 
 
+def serialize_multiturn(item: dict, outputs_a: list[str], outputs_b: list[str]) -> str:
+    """Render a multi-turn item + both models' assistant turns as judge text."""
+    turn_no = 0
+    lines = []
+    for t in item.get("turns", []):
+        if t["role"] == "user":
+            lines.append(f"USER: {t.get('content', '')}")
+        elif t["role"] == "assistant":
+            turn_no += 1
+            idx = turn_no - 1
+            a = outputs_a[idx] if idx < len(outputs_a) else "(missing)"
+            b = outputs_b[idx] if idx < len(outputs_b) else "(missing)"
+            lines.append(f"ASSISTANT A (response A): {a}")
+            lines.append(f"ASSISTANT B (response B): {b}")
+    return "\n".join(lines)
+
+
 def _normalize_base(url: str) -> str:
     """Accept both http://host:port and http://host:port/v1 bases."""
     url = url.rstrip("/")
@@ -151,39 +168,102 @@ def main() -> None:
     print(f"judging {len(by_item)} items with judge {args.judge_model or '(server default)'}"
           f" @ {args.judge_url}")
     stored = 0
-    for item_id, pair in sorted(by_item.items()):
-        if len(pair) != 2:
-            print(f"  {item_id}: skipped (have {len(pair)} results, need 2)")
+    judged_base_ids: set = set()
+    for item_id, _ in sorted(by_item.items()):
+        base_id = item_id.split("#")[0]  # multi-turn turn records share base id
+        if base_id in judged_base_ids:
+            continue  # judge each base item once, not once per turn record
+        if base_id not in item_by_id:
+            print(f"  {item_id}: skipped (not in suite definition)")
             continue
-        ra, rb = pair[0], pair[1]
-        prompt_text = item_by_id.get(item_id, {}).get("prompt", "")
-        # randomize presentation order per item (true blind A/B)
-        order = random.random() < 0.5
-        r1, r2 = (ra, rb) if order else (rb, ra)
-        verdict = judge_pair(args.judge_url, args.judge_model or "test",
-                             prompt_text, r1["output"], r2["output"],
-                             args.template)
-        if not verdict["valid"]:
-            print(f"  {item_id}: INVALID judge output: {verdict['raw']!r}")
+        item = item_by_id[base_id]
+        is_multiturn = item.get("type") == "multi-turn"
+        # group all turn records of this base item by normalized model
+        group: dict[str, list] = {}
+        for iid, rs in by_item.items():
+            if iid.split("#")[0] != base_id:
+                continue
+            for r in rs:
+                group.setdefault(normalize_fingerprint(r["model_fingerprint"]),
+                                 []).append(r)
+        if len(group) != 2:
+            print(f"  {base_id}: skipped (models: {len(group)}, need 2)")
             continue
-        # map back: winner 1 -> whichever result was presented first
-        winner_side = {"1": r1["id"], "2": r2["id"], "tie": None}[verdict["winner"]]
-        if winner_side == ra["id"]:
-            winner = "a"
-        elif winner_side == rb["id"]:
-            winner = "b"
+        m_keys = sorted(group)
+        model_a_fp, model_b_fp = m_keys
+        id_a = group[model_a_fp][0]["id"]          # representative result ids
+        id_b = group[model_b_fp][0]["id"]
+        if is_multiturn:
+            o_a = [r["output"] for r in sorted(group[model_a_fp], key=lambda x: x["id"])]
+            o_b = [r["output"] for r in sorted(group[model_b_fp], key=lambda x: x["id"])]
+            # judge each turn pair separately: clearer verdicts than a whole-
+            # conversation blob, and each judgment links its turn's result ids
+            turn_records_a = sorted(group[model_a_fp], key=lambda x: x["id"])
+            turn_records_b = sorted(group[model_b_fp], key=lambda x: x["id"])
+            for t_idx, (ra_t, rb_t) in enumerate(zip(turn_records_a, turn_records_b)):
+                context = serialize_multiturn(item, [ra_t["output"]], [rb_t["output"]])
+                order = random.random() < 0.5
+                first_was_a = order
+                resp1, resp2 = (ra_t["output"], rb_t["output"]) if order else \
+                               (rb_t["output"], ra_t["output"])
+                verdict = judge_pair(args.judge_url, args.judge_model or "test",
+                                     context, resp1, resp2, args.template)
+                if not verdict["valid"]:
+                    print(f"  {base_id} t{t_idx+1}: INVALID: {verdict['raw']!r}")
+                    continue
+                winner_raw = verdict["winner"]
+                if winner_raw == "1":
+                    winner = "a" if first_was_a else "b"
+                elif winner_raw == "2":
+                    winner = "a" if not first_was_a else "b"
+                else:
+                    winner = "tie"
+                # judgment links the turn-specific result ids; item_id of the
+                # stored eval_result already carries the turn suffix
+                post_json(f"{args.api}/api/judgments", {
+                    "eval_result_a": ra_t["id"] if first_was_a else rb_t["id"],
+                    "eval_result_b": rb_t["id"] if first_was_a else ra_t["id"],
+                    "judge_model": args.judge_model or "(default)",
+                    "judge_template_version": verdict["template_version"],
+                    "winner": winner,
+                    "confidence": None,
+                    "rationale": None,
+                })
+                print(f"  {base_id} t{t_idx+1}: {verdict['winner']} (winner={winner})")
+                stored += 1
+            judged_base_ids.add(base_id)
         else:
-            winner = "tie"
-        post_json(f"{args.api}/api/judgments", {
-            "eval_result_a": ra["id"], "eval_result_b": rb["id"],
-            "judge_model": args.judge_model or "(default)",
-            "judge_template_version": verdict["template_version"],
-            "winner": winner,
-            "confidence": None,
-            "rationale": None,
-        })
-        print(f"  {item_id}: {verdict['winner']} (stored winner={winner})")
-        stored += 1
+            ra, rb = group[model_a_fp][0], group[model_b_fp][0]
+            id_a, id_b = ra["id"], rb["id"]
+            order = random.random() < 0.5
+            first_was_a = order
+            resp1, resp2 = (ra["output"], rb["output"]) if order else \
+                           (rb["output"], ra["output"])
+            verdict = judge_pair(args.judge_url, args.judge_model or "test",
+                                 item.get("prompt", ""), resp1, resp2,
+                                 args.template)
+            if not verdict["valid"]:
+                print(f"  {base_id}: INVALID: {verdict['raw']!r}")
+                continue
+            winner_raw = verdict["winner"]
+            if winner_raw == "1":
+                winner = "a" if first_was_a else "b"
+            elif winner_raw == "2":
+                winner = "a" if not first_was_a else "b"
+            else:
+                winner = "tie"
+            post_json(f"{args.api}/api/judgments", {
+                "eval_result_a": ra["id"] if first_was_a else rb["id"],
+                "eval_result_b": rb["id"] if first_was_a else ra["id"],
+                "judge_model": args.judge_model or "(default)",
+                "judge_template_version": verdict["template_version"],
+                "winner": winner,
+                "confidence": None,
+                "rationale": None,
+            })
+            print(f"  {base_id}: {verdict['winner']} (winner={winner})")
+            stored += 1
+            judged_base_ids.add(base_id)
     print(f"stored {stored} judgments")
 
 
