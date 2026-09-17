@@ -26,8 +26,11 @@ Companion docs: `PRD.md` (requirements), `docs/decisions/` (methodology/ADR).
 5. **Local-first, LAN-trust.** No auth screens; the dashboard is a LAN tool.
    All destructive-adjacent actions (re-run, re-judge) get confirm dialogs,
    not credentials.
-6. **Keyboard-first CLI, glance-first UI.** The operator (P1) lives in the
-   terminal; the dashboard is for reading and comparing, not data entry.
+6. **Keyboard-first CLI, glance-first UI — plus launch-first CRUD.** The
+   operator (P1) lives in the terminal, but the dashboard also LAUNCHES work
+   (J7, added 2026-09-17 from UI feedback): every entity is creatable from
+   `/create`, and bench/eval dispatches kick off real work. Creation only:
+   the UI never edits or deletes stored rows (append-only).
 
 ## 2. Personas and surfaces
 
@@ -51,6 +54,18 @@ arcturos models              ├─ Reports       (win-rate matrix, exports)
 arcturos export              ├─ Models        (registry, fingerprints)
 arcturos health              └─ Baselines     (pin reference runs)
 arcturos serve
+```
+
+J7 adds the CRUD/launch surface to the dashboard:
+
+```
+Dashboard → /create (Create & Run)
+├─ Bench dispatch      (server URL, ctx targets, n_predict → real sweep)
+├─ Eval suite create   (name + version → suite id echoed to replay form)
+├─ Suite item editor   (JSON textarea, client-side validated)
+├─ Eval replay dispatch(suite id + target + fingerprint [+ api key])
+├─ Manual bench point  (external measurement; power provenance required)
+└─ Judgment record     (blind A/B verdict between stored results)
 ```
 
 Dashboard nav is a persistent left rail (7 items above), each opening a
@@ -260,6 +275,14 @@ version, last refresh). No auth. All views URL-addressable.
   judgment history list with generation selector.
 - **Reports:** as §4.5.
 - **Models:** registry cards; alias edit inline; fingerprint copy button.
+- **Create & Run (`/create`, J7):** six form cards in a responsive grid —
+  (1) bench dispatch, (2) eval suite create, (3) suite item JSON editor with
+  client-side validation, (4) eval replay dispatch, (5) manual benchmark
+  point, (6) judgment record. Every card posts to the API synchronously;
+  busy state disables the button with a spinner label; result messages are
+  green (success + stored ids echoed for the next form) or red (422/502
+  detail shown verbatim). Suite-create echoes the new id into the replay
+  form. Dispatches are append-only INSERTs — no edit/delete anywhere.
 
 ## 7. Cross-cutting UX rules
 
@@ -278,6 +301,10 @@ version, last refresh). No auth. All views URL-addressable.
   runs surface progress via the run detail page, not blocking the nav.
 
 ## 8. Open items for implementation
+
+- J7 dispatch is synchronous: long sweeps block the request. Accepted for
+  v1 (operator picks small target lists first); if sweeps grow, the ops
+  endpoints gain a job-id + polling variant behind the same API shape.
 
 - Chart library confirmed as Chart.js (PRD §5); SSE vs polling for live
   progress — implementer's choice, both fit this spec.

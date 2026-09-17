@@ -122,6 +122,45 @@ tie 4%".
 - **Health preflight:** verify target server health + model loaded before
   launching long benchmarks/evals (slots idle, context size discovery).
 
+### J7 — Create, run, and administer everything from the dashboard
+**Actor:** P1/P2 · **Goal:** define and kick off new benchmark or eval runs,
+create eval suites and populate them, add benchmark points manually, and
+record judgments — all from the web UI (added 2026-09-17 from UI feedback;
+extends the original "glance-first UI" principle: the dashboard is now also
+the launch surface, not only the reading surface).
+
+- **Create & Run view (`/create`)** with six cards:
+  1. **Bench dispatch** — pick server URL, context targets, n_predict; the
+     API replays a real cold-cache sweep (tokenize → UUID-prefixed prompts →
+     native `/completion`), stores run + benchmark points, returns metrics.
+  2. **Eval suite create** — name + version; the API echoes the new suite id
+     straight into the replay form.
+  3. **Suite item editor** — JSON textarea, client-side validated
+     (non-empty items, ids present, prompts present; multi-turn shape checked).
+  4. **Eval replay dispatch** — suite id + OpenAI-compatible target + model
+     fingerprint + optional API key; single- and multi-turn items replay and
+     store eval_results.
+  5. **Manual benchmark point** — add externally-measured rows to an existing
+     run; power provenance (host + GPU index) required with any watts value.
+  6. **Judgment record** — blind A/B verdict between two stored results.
+- **API dispatch endpoints** (thin wrappers over ops.py): `POST /api/ops/bench`,
+  `POST /api/ops/eval`. Synchronous, bounded by timeouts; validation errors
+  are 422, server-side failures 502.
+- **Append-only preserved:** dispatch only ever INSERTs. Re-runs supersede.
+  There is no edit/delete of stored data anywhere in the UI or API.
+- **Power provenance (ADR 002):** `benchmarks.power_host` /
+  `power_gpu_index` stored alongside every watts value; a watts number
+  without host is rejected at the API boundary (422). Power is meaningful
+  only on dedicated inference hosts — proxy-fronted models store `null`.
+
+**Acceptance criteria**
+- [x] All entities (runs, benchmarks, eval suites/results, judgments) creatable via the dashboard.
+- [x] Bench and eval runs kick off from the UI against live servers; results land in the store and appear in existing views.
+- [x] Dispatch validation: bad target/context/suite shapes rejected with actionable 422 detail.
+- [x] Suite existence checked before replay; eval batch is transactional (failure → nothing stored).
+- [x] Power numbers always carry host + GPU index provenance.
+- [ ] Health preflight before dispatch (J6 item, not yet wired into dispatch).
+
 ## 4. Non-goals (v1)
 - Distributed multi-node orchestration; multi-tenant UI; managed cloud.
 - Training/fine-tuning tooling.
