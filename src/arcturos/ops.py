@@ -18,6 +18,7 @@ from typing import Any
 
 from arcturos import bench
 from arcturos import multiturn as mt
+from arcturos import preflight
 
 
 class DispatchError(ValueError):
@@ -40,6 +41,11 @@ def dispatch_bench(
         raise DispatchError("every target must be >= 1 token")
     if n_predict < 1:
         raise DispatchError("n_predict must be >= 1")
+    pf = preflight.preflight(server_url, kind="bench", transport=transport)
+    if not pf.ok():
+        raise DispatchError(
+            "preflight failed: " + "; ".join(
+                c["detail"] for c in pf["checks"] if not c["ok"]))
     try:
         points = bench.run_benchmark(
             server_url, "default", targets, n_predict,
@@ -88,6 +94,16 @@ def dispatch_eval(
     items = suite.get("items")
     if not isinstance(items, list) or not items:
         raise DispatchError("suite has no items to replay")
+    # cheap shape validation BEFORE preflight: bad input needs no network
+    for item in items:
+        if item.get("type") == "multi-turn":
+            mt.validate_multiturn_item(item)
+        else:
+            item_id = item.get("id") or item.get("item_id")
+            if not item_id:
+                raise DispatchError(f"item missing id: {item!r}")
+            if not (item.get("prompt") or item.get("content")):
+                raise DispatchError(f"item {item_id!r} missing prompt")
 
     from arcturos import db as dbmod
     conn = dbmod.connect(db_path)
@@ -95,6 +111,14 @@ def dispatch_eval(
     if conn.execute("SELECT 1 FROM eval_suites WHERE id = ?", (suite_id,)).fetchone() is None:
         conn.close()
         raise DispatchError(f"eval suite {suite_id} not found (create it first)")
+    conn.close()
+    pf = preflight.preflight(target, kind="eval", model=model_fingerprint)
+    if not pf.ok():
+        raise DispatchError(
+            "preflight failed: " + "; ".join(
+                c["detail"] for c in pf["checks"] if not c["ok"]))
+    conn = dbmod.connect(db_path)
+    dbmod.init_db(conn)
     stored: list[dict] = []
     try:
         for item in items:

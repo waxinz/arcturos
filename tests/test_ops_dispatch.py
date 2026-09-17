@@ -27,6 +27,8 @@ def _bench_app(targets_tokenized: int = 27):
 
     def handler(request: httpx.Request) -> httpx.Response:
         path = request.url.path
+        if path == "/health":
+            return httpx.Response(200, json={"status": "ok"})
         if path == "/tokenize":
             return httpx.Response(200, json=_tokenize_resp(2))
         if path == "/completion":
@@ -71,6 +73,19 @@ def _mk_suite(db_path, suite_id=1):
     conn.close()
 
 
+def _pass_preflight(monkeypatch=None):
+    """Patch ops.preflight.preflight to a stub that always passes.
+
+    The eval-path tests exercise dispatch logic, not preflight — the target
+    URL is fake and would hit real DNS otherwise."""
+    from arcturos.ops import preflight as pf_mod
+    stub = pf_mod.PreflightResult(
+        target="stub", kind="eval",
+        checks=[{"name": "reachable", "ok": True, "detail": "stub"},
+                {"name": "chat", "ok": True, "detail": "stub"}])
+    pf_mod.preflight = lambda *a, **kw: stub
+
+
 def test_dispatch_bench_happy(db_path):
     transport = _bench_app()
     result = ops.dispatch_bench(
@@ -93,6 +108,7 @@ def test_dispatch_bench_validation(db_path):
 
 def test_dispatch_eval_single_turn(db_path):
     _mk_suite(db_path)
+    _pass_preflight()
     suite = {"items": [
         {"id": "q1", "prompt": "What is 2+2?"},
         {"id": "q2", "prompt": "Capital of France?"},
@@ -112,6 +128,7 @@ def test_dispatch_eval_single_turn(db_path):
 
 def test_dispatch_eval_multiturn(db_path):
     _mk_suite(db_path)
+    _pass_preflight()
     suite = {"items": [{
         "type": "multi-turn", "id": "mt-1",
         "turns": [
@@ -137,6 +154,7 @@ def test_dispatch_eval_multiturn(db_path):
 
 def test_dispatch_eval_empty_suite(db_path):
     _mk_suite(db_path)
+    _pass_preflight()
     with pytest.raises(ops.DispatchError, match="no items"):
         ops.dispatch_eval(db_path, 1, "http://fake:4000/v1", "m", {"items": []})
 
@@ -149,6 +167,7 @@ def test_dispatch_eval_unknown_suite(db_path):
 
 def test_dispatch_eval_missing_prompt(db_path):
     _mk_suite(db_path)
+    _pass_preflight()
     with pytest.raises(ops.DispatchError, match="missing prompt"):
         ops.dispatch_eval(db_path, 1, "http://fake:4000/v1", "m",
                           {"items": [{"id": "q1"}]})
@@ -157,6 +176,7 @@ def test_dispatch_eval_missing_prompt(db_path):
 def test_dispatch_eval_rolls_back_on_failure(db_path):
     """Second item raises -> nothing from the batch is stored."""
     _mk_suite(db_path)
+    _pass_preflight()
     suite = {"items": [
         {"id": "q1", "prompt": "ok"},
         {"id": "q2", "prompt": "boom"},

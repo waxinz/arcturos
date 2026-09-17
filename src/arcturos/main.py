@@ -28,6 +28,7 @@ Routes (all data paths are append-only — no UPDATE/DELETE exists):
   GET  /reports                         -> suite report view HTML
   POST /api/ops/bench                   -> kick off a bench sweep against a server (stores run+points)
   POST /api/ops/eval                    -> replay a suite against a target (stores eval_results)
+  GET  /api/ops/preflight               -> J6 health checks for a target (kind=bench|eval, model?)
 """
 
 from __future__ import annotations
@@ -309,6 +310,20 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
             if isinstance(exc, HTTPException):
                 raise
             raise HTTPException(status_code=502, detail=f"eval replay failed: {exc}")
+
+    @app.get("/api/ops/preflight")
+    def ops_preflight(target: str, kind: str = "bench", model: str | None = None):
+        """J6 health preflight: {target, kind=bench|eval, model?} -> checks."""
+        if not target.startswith("http"):
+            raise HTTPException(status_code=422, detail="target must be an http(s) URL")
+        if kind not in ("bench", "eval"):
+            raise HTTPException(status_code=422, detail="kind must be 'bench' or 'eval'")
+        try:
+            return ops.preflight.preflight(target, kind=kind, model=model)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc))
+        except Exception as exc:
+            raise HTTPException(status_code=502, detail=f"preflight failed: {exc}")
 
     # ------------------------------------------------------------ compare ----
     def parse_run_ids(raw: str) -> list[int]:
