@@ -112,3 +112,8 @@ def preflight(base_url: str, kind: str = "bench", model: str | None = None,
         checks.append(_check_tokenize(base_url, client) if kind == "bench"
                       else _check_chat(base_url, client, model))
     return PreflightResult(target=base_url, kind=kind, checks=checks)
+    # Note: checks run sequentially on one Client. Each check is bounded by
+    # the Client timeout (20s default), so a dead target costs ~2 timeouts
+    # (40s worst case) — the dispatch path accepts that, but the interactive
+    # "Check target" endpoint passes a shorter timeout (see main.py) so the
+    # button answers in <= ~16s worst case.

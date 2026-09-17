@@ -93,6 +93,10 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
     def runs_page() -> FileResponse:
         return FileResponse(STATIC_DIR / "index.html")
 
+    @app.get("/runs/{run_id}", include_in_schema=False)
+    def run_detail_view(run_id: int):
+        return FileResponse(STATIC_DIR / "run_detail.html")
+
     @app.get("/compare", include_in_schema=False)
     def compare_page() -> FileResponse:
         return FileResponse(STATIC_DIR / "compare.html")
@@ -316,14 +320,16 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
     @app.get("/api/ops/preflight")
     def ops_preflight(target: str, kind: str = "bench", model: str | None = None,
                       api_key: str | None = None):
-        """J6 health preflight: {target, kind=bench|eval, model?, api_key?} -> checks."""
+        """J6 interactive health preflight: {target, kind=bench|eval, model?,
+        api_key?} -> checks. Shorter per-check timeout than the dispatch
+        path (8s vs 20s) so a dead target answers in <= ~16s."""
         if not target.startswith("http"):
             raise HTTPException(status_code=422, detail="target must be an http(s) URL")
         if kind not in ("bench", "eval"):
             raise HTTPException(status_code=422, detail="kind must be 'bench' or 'eval'")
         try:
             return ops.preflight.preflight(target, kind=kind, model=model,
-                                           api_key=api_key)
+                                           api_key=api_key, timeout=8.0)
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc))
         except Exception as exc:

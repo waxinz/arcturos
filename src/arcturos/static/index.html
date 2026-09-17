@@ -62,10 +62,16 @@
             r.id, r.server_url, r.model_fingerprint,
             r.engine, r.context_size, r.created_at
           ];
-          for (const c of cells) {
+          const first = document.createElement('td');
+          const link = document.createElement('a');
+          link.href = '/runs/' + r.id;
+          link.textContent = r.id;
+          first.appendChild(link);
+          tr.appendChild(first);
+          for (let i = 1; i < cells.length; i++) {
             const td = document.createElement('td');
-            td.textContent = c;
-            td.className = (c === r.server_url || c === r.model_fingerprint) ? 'mono' : '';
+            td.textContent = cells[i];
+            td.className = (cells[i] === r.server_url || cells[i] === r.model_fingerprint) ? 'mono' : '';
             tr.appendChild(td);
           }
           tbody.appendChild(tr);
