@@ -312,14 +312,16 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
             raise HTTPException(status_code=502, detail=f"eval replay failed: {exc}")
 
     @app.get("/api/ops/preflight")
-    def ops_preflight(target: str, kind: str = "bench", model: str | None = None):
-        """J6 health preflight: {target, kind=bench|eval, model?} -> checks."""
+    def ops_preflight(target: str, kind: str = "bench", model: str | None = None,
+                      api_key: str | None = None):
+        """J6 health preflight: {target, kind=bench|eval, model?, api_key?} -> checks."""
         if not target.startswith("http"):
             raise HTTPException(status_code=422, detail="target must be an http(s) URL")
         if kind not in ("bench", "eval"):
             raise HTTPException(status_code=422, detail="kind must be 'bench' or 'eval'")
         try:
-            return ops.preflight.preflight(target, kind=kind, model=model)
+            return ops.preflight.preflight(target, kind=kind, model=model,
+                                           api_key=api_key)
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc))
         except Exception as exc:
