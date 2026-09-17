@@ -110,6 +110,10 @@ arcturos/
 
 ### Log (newest first)
 
+- 2026-09-17 — UX backlog landed (1b2dcaa): confirm dialogs on
+  judgment-record + manual-bench-point append posts (ux principle 5);
+  eval output click-to-expand drill-down in /evals. 99 tests green,
+  live on taupo. Backlog now: multi-host compare metadata (M9).
 - 2026-09-17 — UX review and fixes (862ef4e): run drill-down view
   /runs/{id} (meta + per-point metrics, honest nulls) + clickable run ids
   on /runs; interactive preflight 8s per-check timeout (dead target
