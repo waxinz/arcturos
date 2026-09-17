@@ -57,6 +57,7 @@ several context sizes and store them for future reference.
 - Export to PNG/SVG and shareable JSON.
 
 **Acceptance criteria**
+- [ ] Dashboard served at `0.0.0.0:24816` (owner decision 2026-09-17).
 - [ ] Compare ≥2 models × ≥1 metric × N context points in one view.
 - [ ] Compare two runs of the same model with deltas highlighted.
 - [ ] Charts exportable to PNG or SVG.
@@ -127,7 +128,9 @@ tie 4%".
 
 ## 5. Constraints & decisions
 - Local-first: SQLite storage; no cloud dependency except external judge API.
-- Python 3.10+ (taupo has 3.12.3); CLI-first, web UI later.
+- Python 3.10+ (taupo has 3.12.3). UI = local web dashboard bound
+  `0.0.0.0:24816`; server-side Python (stdlib or FastAPI+uvicorn), JSON API,
+  client-side charts (Chart.js).
 - Benchmarking targets: OpenAI-compatible endpoints on the LAN (llama.cpp,
   vLLM). Engine-specific metrics extracted where the engine exposes them
   (llama.cpp inline `timings`, vLLM `/metrics` spec-decode counters).
