@@ -98,6 +98,7 @@ arcturos/
 
 - 2026-09-17 — UX design doc written: `docs/ux-design.md` — journey
   walkthroughs J1–J6, CLI surface spec, dashboard view specs (M2).
+- 2026-09-17 — Dashboard skeleton live: FastAPI+SQLite append-only schema, 14 tests passing on taupo, systemd user service at 0.0.0.0:24816 (commit 789eaf3). UX design doc committed (f03ef37).
 - 2026-09-17 — PRD signed off; dashboard decided: web UI on 0.0.0.0:24816.
 - 2026-09-17 — Repo created on taupo; AGENTS.md + PRD.md committed (Phase 1).
 
