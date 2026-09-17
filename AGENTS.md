@@ -91,13 +91,17 @@ arcturos/
 - [x] PRD reviewed and signed off by Alexei
 - [x] UX design doc (journey walkthroughs, wireframe-level flows)
 - [ ] QA test plan + suites
-- [ ] Implementation (bench runner → storage → comparison UI → evals → judge → reports)
+- [x] J1 bench core: bench.py (tokenize sizing, cold UUID prompts, timings parser, storage, export) — commit f7c2fee
+- [x] J1 validated end-to-end: real bench of ruapehu DeepSeek-V4-Flash (512+4096 tok) stored via API, visible at :24816/api/runs/1/benchmarks
+- [x] M3 QA: test plan + fixture eval suites + demo seed script + J3/J4 contract tests — commit 4e0cb3b
+- [ ] Implementation (comparison UI → evals runner → judge → reports)
 - [ ] First real benchmark captured against a live server (validation)
 
 ### Log (newest first)
 
 - 2026-09-17 — UX design doc written: `docs/ux-design.md` — journey
   walkthroughs J1–J6, CLI surface spec, dashboard view specs (M2).
+- 2026-09-17 — J1 bench core landed (f7c2fee) + validated live; QA suite landed (4e0cb3b). 33 tests green on taupo. Bench targets: ruapehu .122:8000 (DeepSeek-V4-Flash) + pakuranga-inf .222:8000 (GLM-5.3-Flash) confirmed live; aotea .14:8080 down.
 - 2026-09-17 — Dashboard skeleton live: FastAPI+SQLite append-only schema, 14 tests passing on taupo, systemd user service at 0.0.0.0:24816 (commit 789eaf3). UX design doc committed (f03ef37).
 - 2026-09-17 — PRD signed off; dashboard decided: web UI on 0.0.0.0:24816.
 - 2026-09-17 — Repo created on taupo; AGENTS.md + PRD.md committed (Phase 1).
