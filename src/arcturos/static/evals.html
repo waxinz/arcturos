@@ -172,6 +172,26 @@
             if (cls) cell.className = cls;
             tr.appendChild(cell);
           }
+          const outTd = tr.querySelector('td.out');
+          // Drill-down: click toggles the full output inline (honest full
+          // text, no truncation) per ux-design journey drill-down spec.
+          outTd.title = 'Click to expand full output';
+          outTd.style.cursor = 'pointer';
+          let expanded = false;
+          outTd.addEventListener('click', () => {
+            expanded = !expanded;
+            if (expanded) {
+              outTd.textContent = full;
+              outTd.style.whiteSpace = 'pre-wrap';
+              outTd.style.maxWidth = 'none';
+              outTd.title = 'Click to collapse';
+            } else {
+              outTd.textContent = preview(full, 120);
+              outTd.style.whiteSpace = '';
+              outTd.style.maxWidth = '';
+              outTd.title = 'Click to expand full output';
+            }
+          });
           const linkTd = document.createElement('td');
           const link = document.createElement('a');
           link.href = '/judgments?result=' + r.id;
