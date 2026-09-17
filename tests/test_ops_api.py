@@ -23,6 +23,12 @@ def test_create_view_served(client):
     assert "text/html" in r.headers.get("content-type", "")
 
 
+def test_run_detail_view_served(client):
+    r = client.get("/runs/1")
+    assert r.status_code == 200
+    assert "text/html" in r.headers.get("content-type", "")
+
+
 def test_ops_bench_validation(client):
     assert client.post("/api/ops/bench", json={"server_url": "ftp://x", "targets": [1]}).status_code == 422
     assert client.post("/api/ops/bench", json={"server_url": "http://x:8000", "targets": ["a"]}).status_code == 422
