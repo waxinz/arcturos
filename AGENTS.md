@@ -97,13 +97,17 @@ arcturos/
 - [x] J2 comparison UI: compare/diff endpoints + chart views at /compare /diff (ef887c5)
 - [x] J4 blind A/B judge runner: scripts/ab_judge.py (e958d32+fixes 69d6c21, 785bc1f, 2708523, b73ea6f)
 - [x] J5 report aggregation: src/arcturos/reports.py (5ee2768)
-- [ ] Multi-turn eval replay (J3 multi-turn portion)
+- [x] J3 multi-turn replay: src/arcturos/multiturn.py + live validation (807f24d)
+- [x] J4 multi-turn judging: per-turn blind judgments (turn-suffixed item ids)
+- [ ] Eval/judgment views in dashboard UI (data served, views pending)
+- [ ] M9 hardening: TTFT streaming variant, power draw wiring, multi-turn report rows
 - [ ] First real benchmark captured against a live server (validation)
 
 ### Log (newest first)
 
 - 2026-09-17 — UX design doc written: `docs/ux-design.md` — journey
   walkthroughs J1–J6, CLI surface spec, dashboard view specs (M2).
+- 2026-09-17 — J3 multi-turn complete: sr-101/sr-102 replayed vs both models, per-turn records stored (item_id #t-suffix), per-turn blind judging working. Final smoke-reasoning v1 report (n=18 judgments, 2 judges): overall a/b/tie 3/11/4 — DeepSeek 16.7% / GLM 61.1% / tie 22.2%; per-judge: qwen 0/6/2, laguna 3/5/2. All 6 journeys J1-J6 now have working implementations with real data.
 - 2026-09-17 — J2/J4/J5 landed and validated with real data: smoke-reasoning suite replayed live vs DeepSeek-V4-Flash (ruapehu) + GLM-5.3-Flash (pakuranga-inf); blind judging via qwen rotation + laguna2.1-s judges on litellm (localhost:4000/v1, key sk-1234); report: overall 1/8/3 (a/b/tie, n=12), GLM 66.7% wins, per-judge + per-category breakdowns working. Judge is NOT a contestant. Lessons: reasoning models (DeepSeek-V4-Flash, qwen3.8) return empty content — read reasoning_content, max_tokens>=512; model fingerprints vary by server suffix — normalize identity in ab_judge; litellm /v1 suffix must be stripped.
 - 2026-09-17 — J1 bench core landed (f7c2fee) + validated live; QA suite landed (4e0cb3b). 33 tests green on taupo. Bench targets: ruapehu .122:8000 (DeepSeek-V4-Flash) + pakuranga-inf .222:8000 (GLM-5.3-Flash) confirmed live; aotea .14:8080 down.
 - 2026-09-17 — Dashboard skeleton live: FastAPI+SQLite append-only schema, 14 tests passing on taupo, systemd user service at 0.0.0.0:24816 (commit 789eaf3). UX design doc committed (f03ef37).
