@@ -15,6 +15,7 @@ results. Enforced with --allow-contestant-judge to override.
 
 import argparse
 import json
+import os
 import random
 import sys
 from pathlib import Path
@@ -41,8 +42,12 @@ Which response is better? Reply with EXACTLY one word: "1", "2", or "tie".
 
 
 def post_json(url: str, payload: dict, timeout: int = 120) -> dict:
+    headers = {"Content-Type": "application/json"}
+    api_key = os.environ.get("ARCTUROS_JUDGE_API_KEY")
+    if api_key:
+        headers["Authorization"] = f"Bearer {api_key}"
     req = urlreq.Request(url, data=json.dumps(payload).encode(),
-                         headers={"Content-Type": "application/json"})
+                         headers=headers)
     with urlreq.urlopen(req, timeout=timeout) as resp:
         return json.loads(resp.read())
 
