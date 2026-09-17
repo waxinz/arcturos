@@ -102,4 +102,7 @@ def test_reasoning_model_ttft_uses_first_reasoning_chunk():
                                     [{"role": "user", "content": "x"}])
     assert p.ttft_ms is not None  # first reasoning chunk counts
     assert p.completion_tokens == 5
-    assert p.decode_tps_client is not None  # content span measured
+    # instant fake stream -> content span ~0 -> decode rate honestly None
+    assert p.decode_tps_client is None
+    # happy path with content chunks still computes decode over real span:
+    # (covered by test_happy_path_extracts_ttft_and_usage timing variance)
