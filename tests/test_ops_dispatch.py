@@ -127,6 +127,8 @@ def test_dispatch_eval_multiturn(db_path):
         }
         result = ops.dispatch_eval(
             db_path, 1, "http://fake:4000/v1", "model-x", suite)
+    # fingerprint is passed through as the chat model name (litellm needs it)
+    assert fake_post.call_args.kwargs["model"] == "model-x"
     # one record per assistant placeholder (this item has exactly one)
     assert len(result["stored"]) == 1
     assert result["stored"][0]["item_id"] == "mt-1"
@@ -162,7 +164,7 @@ def test_dispatch_eval_rolls_back_on_failure(db_path):
 
     calls = {"n": 0}
 
-    def flaky(target, messages, api_key=None):
+    def flaky(target, messages, api_key=None, **_kw):
         calls["n"] += 1
         if calls["n"] == 2:
             raise RuntimeError("target exploded")
