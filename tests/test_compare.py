@@ -34,13 +34,13 @@ BENCH_A = [
         "context_tokens": 4096,
         "prefill_tps": 476.2, "decode_tps": 56.8, "ttft_ms": 214.0,
         "wall_s": 7.4, "output_tokens": 32, "mtp_draft_n": 96,
-        "mtp_accepted": 83, "power_watts": 249.5,
+        "mtp_accepted": 83, "power_watts": 249.5, "power_host": "h@10.0.0.1", "power_gpu_index": 0,
     },
     {
         "context_tokens": 65536,
         "prefill_tps": 458.1, "decode_tps": 61.2, "ttft_ms": 1429.0,
         "wall_s": 8.1, "output_tokens": 32, "mtp_draft_n": 96,
-        "mtp_accepted": 83, "power_watts": 250.1,
+        "mtp_accepted": 83, "power_watts": 250.1, "power_host": "h@10.0.0.1", "power_gpu_index": 0,
     },
 ]
 
@@ -49,13 +49,13 @@ BENCH_B = [
         "context_tokens": 4096,
         "prefill_tps": 512.7, "decode_tps": 74.3, "ttft_ms": 189.0,
         "wall_s": 6.2, "output_tokens": 32, "mtp_draft_n": 96,
-        "mtp_accepted": 86, "power_watts": 248.2,
+        "mtp_accepted": 86, "power_watts": 248.2, "power_host": "h@10.0.0.2", "power_gpu_index": 0,
     },
     {
         "context_tokens": 65536,
         "prefill_tps": 493.5, "decode_tps": 68.9, "ttft_ms": 1327.0,
         "wall_s": 7.0, "output_tokens": 32, "mtp_draft_n": 96,
-        "mtp_accepted": 84, "power_watts": 249.9,
+        "mtp_accepted": 84, "power_watts": 249.9, "power_host": "h@10.0.0.2", "power_gpu_index": 0,
     },
 ]
 
