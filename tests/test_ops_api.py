@@ -32,6 +32,8 @@ def test_ops_bench_validation(client):
 def test_ops_bench_roundtrip(client, monkeypatch):
     """Full dispatch through the API: bench runs, stores run + points."""
     def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/health":
+            return httpx.Response(200, json={"status": "ok"})
         if request.url.path == "/tokenize":
             return httpx.Response(200, json={"tokens": list(range(100))})
         if request.url.path == "/completion":

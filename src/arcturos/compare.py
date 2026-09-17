@@ -64,6 +64,19 @@ _METRIC_COLUMN = {
 _SHARD_SUFFIX = re.compile(r"-\d+-of-\d+$")
 
 
+def host_label(server_url: str) -> str:
+    """Compact host tag for legends: 'http://10.10.10.122:8000' -> '10.10.10.122'.
+
+    Distinguishes multi-host runs in compare views (ADR 002: power metrics
+    and queueing behavior are host-specific, so the host must be visible).
+    """
+    try:
+        from urllib.parse import urlparse
+        return urlparse(server_url).hostname or server_url
+    except (ValueError, TypeError):
+        return server_url
+
+
 def short_fingerprint(fingerprint: str) -> str:
     """Human-scale legend name for a model fingerprint.
 
@@ -146,7 +159,12 @@ def build_benchmarks_payload(
             {
                 "id": run["id"],
                 "model_fingerprint_short": short_fingerprint(run["model_fingerprint"]),
+                "model_fingerprint": run["model_fingerprint"],
                 "engine": run["engine"],
+                # multi-host compare (J7/ADR 002): the host is visible so two
+                # runs on different boxes are never silently conflated
+                "server_url": run["server_url"],
+                "host_label": host_label(run["server_url"]),
             }
             for run in runs
         ],
@@ -210,6 +228,8 @@ def build_run_diff_payload(
             ),
             "engine": _field_diff(run_a["engine"], run_b["engine"]),
             "server_url": _field_diff(run_a["server_url"], run_b["server_url"]),
+            "host": _field_diff(host_label(run_a["server_url"]),
+                                host_label(run_b["server_url"])),
         },
         "directions": dict(METRIC_DIRECTIONS),
         "deltas": deltas,
