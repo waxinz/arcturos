@@ -33,15 +33,21 @@ def dispatch_bench(
     timeout: float = 3600.0,
     transport=None,
     on_point=None,
+    api_key: str | None = None,
 ) -> dict:
-    """Run a cold-cache bench sweep; store run + points; return run payload."""
+    """Run a cold-cache bench sweep; store run + points; return run payload.
+
+    ``api_key`` authenticates every request (tokenize, completion, props)
+    for key-protected llama.cpp servers; None is fine for open ones.
+    """
     if not targets:
         raise DispatchError("targets list is empty")
     if any(t < 1 for t in targets):
         raise DispatchError("every target must be >= 1 token")
     if n_predict < 1:
         raise DispatchError("n_predict must be >= 1")
-    pf = preflight.preflight(server_url, kind="bench", transport=transport)
+    pf = preflight.preflight(server_url, kind="bench", transport=transport,
+                             api_key=api_key)
     if not pf.ok():
         raise DispatchError(
             "preflight failed: " + "; ".join(
@@ -50,10 +56,12 @@ def dispatch_bench(
         points = bench.run_benchmark(
             server_url, "default", targets, n_predict,
             timeout=timeout, transport=transport, on_point=on_point,
+            api_key=api_key,
         )
     except (RuntimeError, ValueError) as exc:
         raise DispatchError(str(exc)) from exc
-    engine_meta = bench.capture_engine_metadata(server_url, transport=transport)
+    engine_meta = bench.capture_engine_metadata(server_url, transport=transport,
+                                                api_key=api_key)
     run_id = bench.store_benchmark_run(db_path, server_url, engine_meta, points)
     return {
         "run_id": run_id,
@@ -112,7 +120,8 @@ def dispatch_eval(
         conn.close()
         raise DispatchError(f"eval suite {suite_id} not found (create it first)")
     conn.close()
-    pf = preflight.preflight(target, kind="eval", model=model_fingerprint)
+    pf = preflight.preflight(target, kind="eval", model=model_fingerprint,
+                             api_key=api_key)
     if not pf.ok():
         raise DispatchError(
             "preflight failed: " + "; ".join(

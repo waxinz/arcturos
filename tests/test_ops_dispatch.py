@@ -22,10 +22,16 @@ def _tokenize_resp(tokens_per_copy: int) -> dict:
     return {"tokens": list(range(tokens_per_copy * 50))}
 
 
-def _bench_app(targets_tokenized: int = 27):
-    """MockTransport serving /tokenize, /completion, /props."""
+def _bench_app(targets_tokenized: int = 27, authed: bool = False):
+    """MockTransport serving /tokenize, /completion, /props.
+
+    authed=True rejects requests without an Authorization header (mirrors
+    llama.cpp --api-key behavior) so the api_key path is testable.
+    """
 
     def handler(request: httpx.Request) -> httpx.Response:
+        if authed and not request.headers.get("authorization"):
+            return httpx.Response(401, json={"error": "unauthorized"})
         path = request.url.path
         if path == "/health":
             return httpx.Response(200, json={"status": "ok"})
@@ -51,6 +57,26 @@ def _bench_app(targets_tokenized: int = 27):
         return httpx.Response(404)
 
     return httpx.MockTransport(handler)
+
+
+def test_dispatch_bench_passes_api_key(db_path):
+    """authed mock + api_key -> preflight AND sweep succeed; header present."""
+    seen_headers: list[str | None] = []
+
+    transport = _bench_app(authed=True)
+
+    result = ops.dispatch_bench(
+        db_path, "http://fake:8000", [128], 8, transport=transport,
+        api_key="sk-test-key")
+    assert result["run_id"] == 1
+
+
+def test_dispatch_bench_authed_without_key_fails(db_path):
+    """authed mock + no key -> preflight 401 -> DispatchError with detail."""
+    transport = _bench_app(authed=True)
+    with pytest.raises(ops.DispatchError, match="401"):
+        ops.dispatch_bench(db_path, "http://fake:8000", [128], 8,
+                           transport=transport)
 
 
 @pytest.fixture()
@@ -87,7 +113,7 @@ def _pass_preflight(monkeypatch=None):
 
 
 def test_dispatch_bench_happy(db_path):
-    transport = _bench_app()
+    transport = _bench_app(authed=False)
     result = ops.dispatch_bench(
         db_path, "http://fake:8000", [128], 8, transport=transport)
     assert result["run_id"] == 1

@@ -124,10 +124,12 @@ def _first_present(d: dict, *keys):
     return None
 
 
-def _client(timeout: float, transport) -> httpx.Client:
+def _client(timeout: float, transport, api_key: str | None = None) -> httpx.Client:
     kwargs: dict = {"timeout": timeout}
     if transport is not None:
         kwargs["transport"] = transport
+    if api_key:
+        kwargs["headers"] = {"Authorization": f"Bearer {api_key}"}
     return httpx.Client(**kwargs)
 
 
@@ -145,6 +147,7 @@ def plan_prompt_sizes(
     unit_text: str,
     margin: int = DEFAULT_MARGIN,
     transport=None,
+    api_key: str | None = None,
 ) -> list[PromptPlan]:
     """Size prompts for each target using the server's real tokenizer.
 
@@ -159,7 +162,7 @@ def plan_prompt_sizes(
     if margin < 0:
         raise ValueError(f"margin must be >= 0, got {margin!r}")
     body = unit_text * _TOKENIZE_COPIES
-    with _client(60.0, transport) as client:
+    with _client(60.0, transport, api_key=api_key) as client:
         resp = client.post(tokenize_url, json={"content": body})
     _check_response(resp, f"tokenize sizing failed ({tokenize_url})")
     try:
@@ -204,6 +207,7 @@ def run_benchmark_point(
     n_predict: int,
     timeout: float = 3600,
     transport=None,
+    api_key: str | None = None,
 ) -> BenchPoint:
     """Run one cold prompt against the native llama.cpp ``/completion`` endpoint.
 
@@ -231,7 +235,7 @@ def run_benchmark_point(
         "cache_prompt": False,
     }
     url = f"{base_url.rstrip('/')}/completion"
-    with _client(timeout, transport) as client:
+    with _client(timeout, transport, api_key=api_key) as client:
         start = time.perf_counter()
         resp = client.post(url, json=payload)
         wall_s = time.perf_counter() - start
@@ -269,6 +273,7 @@ def run_benchmark(
     on_point: Optional[Callable[[BenchPoint], None]] = None,
     unit_text: str = DEFAULT_UNIT_TEXT,
     transport=None,
+    api_key: str | None = None,
 ) -> list[BenchPoint]:
     """Plan sizes for every target, then run each point sequentially.
 
@@ -278,11 +283,13 @@ def run_benchmark(
     stream results into the DB (or a UI) as they arrive.
     """
     tokenize_url = f"{base_url.rstrip('/')}/tokenize"
-    plans = plan_prompt_sizes(targets, tokenize_url, unit_text, transport=transport)
+    plans = plan_prompt_sizes(targets, tokenize_url, unit_text, transport=transport,
+                              api_key=api_key)
     points: list[BenchPoint] = []
     for plan in plans:
         point = run_benchmark_point(
-            base_url, model, plan, n_predict, timeout=timeout, transport=transport
+            base_url, model, plan, n_predict, timeout=timeout, transport=transport,
+            api_key=api_key
         )
         points.append(point)
         if on_point is not None:
@@ -347,7 +354,8 @@ def power_draw_avg(gpu_index: int, duration_s: int) -> Optional[float]:
 _PROPS_KEYS = ("n_ctx", "model_path", "build", "engine", "system_info")
 
 
-def capture_engine_metadata(base_url: str, timeout: float = 15.0, transport=None) -> dict:
+def capture_engine_metadata(base_url: str, timeout: float = 15.0, transport=None,
+                            api_key: str | None = None) -> dict:
     """Capture engine metadata from the llama.cpp ``/props`` endpoint.
 
     Returns a dict with ``n_ctx``, ``model_path``, ``build``, ``engine`` and
@@ -356,7 +364,7 @@ def capture_engine_metadata(base_url: str, timeout: float = 15.0, transport=None
     """
     empty = {key: None for key in _PROPS_KEYS}
     try:
-        with _client(timeout, transport) as client:
+        with _client(timeout, transport, api_key=api_key) as client:
             resp = client.get(f"{base_url.rstrip('/')}/props")
     except httpx.HTTPError:
         return empty
