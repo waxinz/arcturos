@@ -63,6 +63,16 @@ def _normalize_base(url: str) -> str:
     return url[:-3] if url.endswith("/v1") else url
 
 
+import re
+
+def _extract_verdict(raw: str) -> str | None:
+    """Find 1/2/tie verdict, tolerating reasoning-model chatter."""
+    tokens = re.findall(r"\b(1|2|tie)\b", raw.lower())
+    if not tokens:
+        return None
+    return tokens[-1]  # final verdict is the last one mentioned
+
+
 def judge_pair(judge_url: str, judge_model: str, prompt: str,
                resp1: str, resp2: str, template_version: str) -> dict:
     """Send blind pair to judge; returns parsed verdict dict."""
@@ -70,20 +80,19 @@ def judge_pair(judge_url: str, judge_model: str, prompt: str,
     resp = post_json(_normalize_base(judge_url) + "/v1/chat/completions", {
         "model": judge_model,
         "messages": [{"role": "user", "content": payload_text}],
-        "max_tokens": 4,
+        "max_tokens": 512,  # reasoning models burn tokens before answering
         "temperature": 0.0,
         "stream": False,
     })
-    raw = resp["choices"][0]["message"]["content"].strip().lower()
-    if raw.startswith("1"):
-        winner = "1"
-    elif raw.startswith("2"):
-        winner = "2"
-    elif "tie" in raw:
-        winner = "tie"
-    else:
-        return {"valid": False, "raw": raw}
-    return {"valid": True, "raw": raw, "winner": winner,
+    msg = resp["choices"][0]["message"]
+    raw = (msg.get("content") or "").strip()
+    if not raw:
+        # reasoning models: final answer may land in reasoning_content tail
+        raw = (msg.get("reasoning_content") or "").strip()
+    winner = _extract_verdict(raw)
+    if winner is None:
+        return {"valid": False, "raw": raw[:200]}
+    return {"valid": True, "raw": raw[-120:], "winner": winner,
             "template_version": template_version}
 
 
