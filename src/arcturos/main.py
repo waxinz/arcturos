@@ -18,6 +18,10 @@ Routes (all data paths are append-only — no UPDATE/DELETE exists):
   GET  /api/eval-results                -> list all eval results
   POST /api/judgments                   -> add judgment
   GET  /api/judgments                   -> list judgments
+  GET  /api/compare/benchmarks          -> metric series per run (J2)
+  GET  /api/compare/run-diff/{a}/{b}    -> per-context deltas between runs (J2)
+  GET  /compare                         -> compare view HTML
+  GET  /diff                            -> run-diff view HTML
 """
 
 from __future__ import annotations
@@ -27,7 +31,9 @@ from pathlib import Path
 
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 
+from . import compare
 from .db import DEFAULT_DB_PATH, connect, init_db
 from .schemas import (
     BenchmarkCreate,
@@ -49,6 +55,9 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
 
     app = FastAPI(title="Arcturos", version="0.1.0")
     app.state.db_path = db_path
+
+    # Static assets (charts, JS) + the J2 views, served alongside the API.
+    app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
     def get_db(request: Request):
         conn = connect(request.app.state.db_path)
@@ -72,6 +81,18 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
     @app.get("/", include_in_schema=False)
     def index() -> FileResponse:
         return FileResponse(STATIC_DIR / "index.html")
+
+    @app.get("/runs", include_in_schema=False)
+    def runs_page() -> FileResponse:
+        return FileResponse(STATIC_DIR / "index.html")
+
+    @app.get("/compare", include_in_schema=False)
+    def compare_page() -> FileResponse:
+        return FileResponse(STATIC_DIR / "compare.html")
+
+    @app.get("/diff", include_in_schema=False)
+    def diff_page() -> FileResponse:
+        return FileResponse(STATIC_DIR / "diff.html")
 
     @app.get("/health")
     def health() -> dict:
@@ -189,6 +210,66 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
     @app.get("/api/judgments")
     def list_judgments(db=Depends(get_db)):
         return fetch_all(db, "SELECT * FROM judgments ORDER BY id")
+
+    # ------------------------------------------------------------ compare ----
+    def parse_run_ids(raw: str) -> list[int]:
+        """Comma-separated run ids -> ints, deduped, input order preserved."""
+        ids: list[int] = []
+        seen: set[int] = set()
+        for token in raw.split(","):
+            token = token.strip()
+            if not token.isdigit():
+                raise HTTPException(
+                    status_code=422, detail=f"invalid run id: {token!r}"
+                )
+            value = int(token)
+            if value not in seen:
+                seen.add(value)
+                ids.append(value)
+        if not ids:
+            raise HTTPException(status_code=422, detail="at least one run id required")
+        return ids
+
+    def parse_metrics(raw: str | None) -> list[str]:
+        """Comma-separated metrics validated against the allowlist.
+
+        Missing/empty param defaults to every allowlisted metric. Unknown
+        names are a 422 (allowlist contract, never silently dropped).
+        """
+        if raw is None or not raw.strip():
+            return list(compare.ALLOWED_METRICS)
+        metrics: list[str] = []
+        seen: set[str] = set()
+        for token in raw.split(","):
+            token = token.strip()
+            if token not in compare.ALLOWED_METRICS:
+                raise HTTPException(
+                    status_code=422, detail=f"unknown metric: {token!r}"
+                )
+            if token not in seen:
+                seen.add(token)
+                metrics.append(token)
+        if not metrics:
+            raise HTTPException(status_code=422, detail="at least one metric required")
+        return metrics
+
+    @app.get("/api/compare/benchmarks")
+    def compare_benchmarks(runs: str, metrics: str | None = None, db=Depends(get_db)):
+        """Series of every requested metric per run, aligned by context length."""
+        run_ids = parse_run_ids(runs)
+        metric_list = parse_metrics(metrics)
+        for rid in run_ids:
+            if fetch_one(db, "SELECT 1 AS ok FROM runs WHERE id = ?", (rid,)) is None:
+                raise HTTPException(status_code=404, detail=f"run id {rid} not found")
+        return compare.build_benchmarks_payload(db, run_ids, metric_list)
+
+    @app.get("/api/compare/run-diff/{run_a}/{run_b}")
+    def run_diff(run_a: int, run_b: int, db=Depends(get_db)):
+        """Per-context delta table between two runs + engine metadata diff."""
+        for rid in (run_a, run_b):
+            if fetch_one(db, "SELECT 1 AS ok FROM runs WHERE id = ?", (rid,)) is None:
+                raise HTTPException(status_code=404, detail=f"run id {rid} not found")
+        return compare.build_run_diff_payload(db, run_a, run_b)
 
     return app
 
