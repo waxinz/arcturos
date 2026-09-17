@@ -90,10 +90,17 @@ def replay_live(api: str, suite_id: int, items: list[dict], target: str) -> int:
             print(f"  target unreachable for {item['id']}: {e}", file=sys.stderr)
             return 0
         latency_ms = (time.monotonic() - t0) * 1000
+        msg = resp["choices"][0]["message"]
+        content = msg.get("content") or ""
+        reasoning = msg.get("reasoning_content") or ""
+        if not content.strip() and reasoning.strip():
+            # reasoning model: keep the reasoning trail so the output is
+            # auditable instead of storing an empty string
+            content = f"[reasoning] {reasoning}"
         post(api, f"/api/eval-suites/{suite_id}/results", {
             "model_fingerprint": resp.get("model", "unknown"),
             "item_id": item["id"],
-            "output": resp["choices"][0]["message"]["content"],
+            "output": content,
             "prompt_tokens": resp.get("usage", {}).get("prompt_tokens", 0),
             "completion_tokens": resp.get("usage", {}).get("completion_tokens", 0),
             "latency_ms": round(latency_ms, 1),
