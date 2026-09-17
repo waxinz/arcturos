@@ -65,6 +65,15 @@ def _normalize_base(url: str) -> str:
 
 import re
 
+def normalize_fingerprint(fp: str) -> str:
+    """Collapse server-suffix variants: 'Model (host)' / 'Model' -> 'Model'.
+
+    Model identity is the model; host is metadata. Without this, re-seeding
+    under a slightly different label creates phantom third contestants.
+    """
+    return re.sub(r"\s*\([^)]*\)\s*$", "", fp.strip()).strip()
+
+
 def _extract_verdict(raw: str) -> str | None:
     """Find 1/2/tie verdict, tolerating reasoning-model chatter."""
     tokens = re.findall(r"\b(1|2|tie)\b", raw.lower())
@@ -115,8 +124,9 @@ def main() -> None:
     by_item: dict[str, list] = {}
     latest_by_model: dict[str, dict] = {}
     for r in sorted(results, key=lambda x: x["id"]):
-        # append-only store: the LAST result per (item, model) supersedes
-        latest_by_model[(r["item_id"], r["model_fingerprint"])] = r
+        # append-only store: the LAST result per (item, model) supersedes;
+        # model identity is the normalized fingerprint (server suffix stripped)
+        latest_by_model[(r["item_id"], normalize_fingerprint(r["model_fingerprint"]))] = r
     for (_item_id, _model), r in latest_by_model.items():
         by_item.setdefault(r["item_id"], []).append(r)
 
