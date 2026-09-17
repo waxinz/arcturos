@@ -102,14 +102,16 @@ arcturos/
 - [x] Eval/judgment/reports views: /evals /judgments /reports + /api/reports/suite/{id} (42218eb + tests 5c08e31)
 - [x] TTFT streaming variant: bench_stream.py (llama.cpp) + bench_openai.py (litellm/vLLM) with reasoning-model TTFT semantics
 - [x] Power draw: power.py validated (134W on ruapehu during bench) — dedicated hosts only per ADR 002
-- [ ] M9 hardening remainder: seed power into store path, per-host power metadata, multi-host compare
-- [ ] M9 hardening: TTFT streaming variant, power draw wiring, multi-turn report rows
-- [ ] First real benchmark captured against a live server (validation)
+- [x] Power provenance wired into store path: benchmarks.power_host + power_gpu_index columns, db migration for pre-existing DBs, API enforces watts-require-host (422)
+- [x] J7 CRUD + dispatch: ops.py (dispatch_bench/dispatch_eval), /api/ops/bench + /api/ops/eval, /create view (6 form cards: bench dispatch, suite create, suite item editor, eval replay, manual bench point, judgment record); PRD J7 + ux-design §J7 + test-plan J7 sections written; 86 tests green
+- [ ] M9 hardening remainder: multi-host compare metadata (server_url in compare payload), health preflight before dispatch (J6), seed power into seed_demo path
+- [ ] First real benchmark captured via /create dispatch (live smoke, quiet window)
 
 ### Log (newest first)
 
 - 2026-09-17 — UX design doc written: `docs/ux-design.md` — journey
   walkthroughs J1–J6, CLI surface spec, dashboard view specs (M2).
+- 2026-09-17 — J7 CRUD + dispatch landed (8cfd214 + f979b12): ops.py dispatch layer, /api/ops/bench + /api/ops/eval endpoints, /create view (6 form cards), power provenance (benchmarks.power_host + power_gpu_index with db migration; API rejects watts without host per ADR 002), bench.py nounlets→nounits fix (second instance of the same typo bug). PRD J7 + ux-design §6/§8 + qa/test-plan J7 written to match. 86 tests green. Dispatch validation contract: bad shapes → 422, server failure → 502, unknown suite checked BEFORE calling the target, eval batches transactional (rollback on failure).
 - 2026-09-17 — M9 surfaces complete: all 6 dashboard views live, 71 tests green on taupo. ADR 002: power sampling only on dedicated inference hosts (litellm is a proxy; qwen serving hosts elsewhere); never bench shared servers with unacknowledged queueing (ruapehu TTFT artifacts 32s-254s were self-inflicted; true cold TTFT 1.5-9s). Reasoning-model bench semantics: TTFT = first chunk of ANY payload; decode = content chunks only. qwen rotation validated: TTFT ~1.9-2.2s, prefill est ~373-450 tok/s, decode ~82-101 tok/s content.
 - 2026-09-17 — J3 multi-turn complete: sr-101/sr-102 replayed vs both models, per-turn records stored (item_id #t-suffix), per-turn blind judging working. Final smoke-reasoning v1 report (n=18 judgments, 2 judges): overall a/b/tie 3/11/4 — DeepSeek 16.7% / GLM 61.1% / tie 22.2%; per-judge: qwen 0/6/2, laguna 3/5/2. All 6 journeys J1-J6 now have working implementations with real data.
 - 2026-09-17 — J2/J4/J5 landed and validated with real data: smoke-reasoning suite replayed live vs DeepSeek-V4-Flash (ruapehu) + GLM-5.3-Flash (pakuranga-inf); blind judging via qwen rotation + laguna2.1-s judges on litellm (localhost:4000/v1, key sk-1234); report: overall 1/8/3 (a/b/tie, n=12), GLM 66.7% wins, per-judge + per-category breakdowns working. Judge is NOT a contestant. Lessons: reasoning models (DeepSeek-V4-Flash, qwen3.8) return empty content — read reasoning_content, max_tokens>=512; model fingerprints vary by server suffix — normalize identity in ab_judge; litellm /v1 suffix must be stripped.
