@@ -305,7 +305,9 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
                 api_key=api_key)
         except ops.DispatchError as exc:
             raise HTTPException(status_code=422, detail=str(exc))
-        except (ValueError, KeyError) as exc:
+        except Exception as exc:  # target unreachable/HTTP error/etc.
+            if isinstance(exc, HTTPException):
+                raise
             raise HTTPException(status_code=502, detail=f"eval replay failed: {exc}")
 
     # ------------------------------------------------------------ compare ----
