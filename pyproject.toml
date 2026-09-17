@@ -18,4 +18,4 @@ package-dir = {"" = "src"}
 packages = ["arcturos"]
 
 [tool.setuptools.package-data]
-arcturos = ["static/*.html"]
+arcturos = ["static/*.html", "static/vendor/*"]

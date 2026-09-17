@@ -16,12 +16,19 @@
     th { font-weight: 600; color: #444; }
     td.mono { font-family: ui-monospace, monospace; font-size: .82rem; }
     .status { color: #666; font-size: .85rem; margin-top: .75rem; }
+    nav a { margin-right: 1rem; color: #1a1a1a; text-decoration: none; font-weight: 600; }
+    nav a.active { text-decoration: underline; }
   </style>
 </head>
 <body>
   <header>
     <h1>Arcturos</h1>
     <div class="sub">Local-first LLM benchmarking &amp; evaluation dashboard</div>
+    <nav>
+      <a href="/" class="active">Runs</a>
+      <a href="/compare">Compare</a>
+      <a href="/diff">Diff</a>
+    </nav>
   </header>
 
   <h2>Runs</h2>

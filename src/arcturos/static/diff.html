@@ -1,0 +1,184 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Arcturos — Run Diff</title>
+  <style>
+    body { font-family: system-ui, -apple-system, sans-serif; margin: 2rem auto;
+           max-width: 1080px; color: #1a1a1a; background: #fafafa; }
+    header { border-bottom: 2px solid #222; padding-bottom: .5rem; margin-bottom: 1.5rem; }
+    h1 { font-size: 1.6rem; margin: 0; }
+    .sub { color: #666; margin-top: .25rem; }
+    nav a { margin-right: 1rem; color: #1a1a1a; text-decoration: none; font-weight: 600; }
+    nav a.active { text-decoration: underline; }
+    .controls { margin: 1rem 0; display: flex; gap: 1.5rem; align-items: end; flex-wrap: wrap; }
+    .controls label { font-size: .9rem; font-weight: 600; color: #444; }
+    .controls select { margin-left: .4rem; padding: .3rem; font-size: .9rem; min-width: 260px; }
+    button { padding: .45rem .9rem; font-size: .9rem; cursor: pointer; }
+    table { border-collapse: collapse; width: 100%; background: #fff; margin-bottom: 1.5rem; }
+    th, td { text-align: left; padding: .45rem .6rem; border-bottom: 1px solid #e5e5e5;
+             font-size: .88rem; }
+    th { font-weight: 600; color: #444; }
+    th.ctx { width: 90px; }
+    td.mono { font-family: ui-monospace, monospace; font-size: .8rem; }
+    td.num { text-align: right; font-family: ui-monospace, monospace; font-size: .8rem; }
+    td.good { background: #d9f2e0; color: #14532d; font-weight: 600; }
+    td.bad  { background: #fbe0e0; color: #7f1d1d; font-weight: 600; }
+    td.gray { color: #777; }
+    .meta { background: #fff; border: 1px solid #e5e5e5; border-radius: 6px;
+            padding: .8rem; margin-bottom: 1.2rem; }
+    .meta h3 { margin: 0 0 .5rem; font-size: 1rem; }
+    .legend { color: #666; font-size: .82rem; margin-bottom: .8rem; }
+    .legend span { display: inline-block; padding: .1rem .45rem; margin-right: .5rem;
+                   border-radius: 4px; }
+    .status { color: #666; font-size: .85rem; margin-top: .75rem; }
+    .empty { color: #666; padding: 2rem; text-align: center; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Arcturos</h1>
+    <div class="sub">Local-first LLM benchmarking &amp; evaluation dashboard</div>
+    <nav>
+      <a href="/">Runs</a>
+      <a href="/compare">Compare</a>
+      <a href="/diff" class="active">Diff</a>
+    </nav>
+  </header>
+
+  <h2>Run Diff</h2>
+
+  <div class="controls">
+    <label>Run A <select id="run-a"></select></label>
+    <label>Run B <select id="run-b"></select></label>
+    <button id="diff-btn" disabled>Diff</button>
+  </div>
+
+  <div id="result"></div>
+  <p id="status" class="status"></p>
+
+  <script>
+    let runs = [];
+
+    async function loadRuns() {
+      const res = await fetch('/api/runs');
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      runs = await res.json();
+      for (const selId of ['run-a', 'run-b']) {
+        const sel = document.getElementById(selId);
+        sel.innerHTML = '';
+        if (!runs.length) {
+          sel.innerHTML = '<option>No runs yet</option>';
+          continue;
+        }
+        for (const r of runs) {
+          const opt = document.createElement('option');
+          opt.value = r.id;
+          opt.textContent = '#' + r.id + ' — ' + r.model_fingerprint + ' (' + r.engine + ')';
+          sel.appendChild(opt);
+        }
+      }
+      if (runs.length >= 2) {
+        document.getElementById('run-a').selectedIndex = 0;
+        document.getElementById('run-b').selectedIndex = 1;
+        document.getElementById('diff-btn').disabled = false;
+      }
+    }
+
+    function fmt(v) {
+      if (v === null || v === undefined) return '—';
+      if (typeof v === 'number') {
+        if (Number.isInteger(v)) return String(v);
+        return v.toFixed(2);
+      }
+      return String(v);
+    }
+
+    function deltaClass(direction, pct) {
+      if (pct === null || pct === undefined || direction === 'neutral') return 'gray';
+      if (Math.abs(pct) < 2) return 'gray';           // UX: gray within ±2%
+      if (direction === 'higher') return pct > 0 ? 'good' : 'bad';
+      return pct < 0 ? 'good' : 'bad';                 // lower is better
+    }
+
+    function metaTable(meta) {
+      const rows = [
+        ['n_ctx (context size)', 'n_ctx'],
+        ['Model path', 'model_path'],
+        ['Engine', 'engine'],
+        ['Server URL', 'server_url']
+      ];
+      let html = '<table><thead><tr><th>Engine metadata</th><th>Run A</th>' +
+                 '<th>Run B</th><th>Same</th></tr></thead><tbody>';
+      for (const [label, key] of rows) {
+        const d = meta[key];
+        html += '<tr><td>' + label + '</td><td class="mono">' + fmt(d.a) + '</td>' +
+                '<td class="mono">' + fmt(d.b) + '</td>' +
+                '<td>' + (d.same ? 'yes' : 'no') + '</td></tr>';
+      }
+      return html + '</tbody></table>';
+    }
+
+    function deltaTable(data) {
+      const dirs = data.directions || {};
+      const metricNames = Object.keys(dirs);
+      let html = '<table><thead><tr><th class="ctx">Context</th><th>Metric</th>' +
+                 '<th class="num">Run A</th><th class="num">Run B</th>' +
+                 '<th class="num">Δ</th><th class="num">Δ%</th></tr></thead><tbody>';
+      for (const row of data.deltas) {
+        for (const m of metricNames) {
+          const d = row.metrics[m];
+          const cls = deltaClass(dirs[m], d.pct);
+          const deltaTxt = d.delta === null ? '—' : fmt(d.delta);
+          const pctTxt = d.pct === null ? '—' : fmt(d.pct) + '%';
+          html += '<tr><td class="ctx">' + row.context_tokens + '</td>' +
+                  '<td>' + m + '</td>' +
+                  '<td class="num">' + fmt(d.a) + '</td>' +
+                  '<td class="num">' + fmt(d.b) + '</td>' +
+                  '<td class="num ' + cls + '">' + deltaTxt + '</td>' +
+                  '<td class="num ' + cls + '">' + pctTxt + '</td></tr>';
+        }
+      }
+      return html + '</tbody></table>';
+    }
+
+    async function diff() {
+      const status = document.getElementById('status');
+      const box = document.getElementById('result');
+      const a = document.getElementById('run-a').value;
+      const b = document.getElementById('run-b').value;
+      if (!a || !b || a === b) {
+        status.textContent = 'Pick two different runs.';
+        return;
+      }
+      box.innerHTML = '';
+      status.textContent = 'Loading…';
+      try {
+        const res = await fetch('/api/compare/run-diff/' + a + '/' + b);
+        if (!res.ok) throw new Error('HTTP ' + res.status + ': ' + await res.text());
+        const data = await res.json();
+        box.innerHTML =
+          '<div class="legend">Delta coloring: ' +
+          '<span class="good">green = better</span>' +
+          '<span class="bad">red = worse</span>' +
+          '<span class="gray">gray = within ±2% / neutral</span>' +
+          '(higher-is-better: decode/prefill tps, MTP acceptance; ' +
+          'lower-is-better: TTFT, wall time)</div>' +
+          '<div class="meta"><h3>Engine metadata</h3>' + metaTable(data.engine_metadata) + '</div>' +
+          '<h3>Metrics — ' + data.run_a.model_fingerprint_short + ' vs ' +
+          data.run_b.model_fingerprint_short + '</h3>' +
+          deltaTable(data);
+        status.textContent = 'Run #' + a + ' vs run #' + b + ' — deltas are B − A, pct relative to A.';
+      } catch (err) {
+        status.textContent = 'Failed to diff: ' + err;
+      }
+    }
+
+    document.getElementById('diff-btn').addEventListener('click', diff);
+    loadRuns().catch(err => {
+      document.getElementById('status').textContent = 'Failed to load runs: ' + err;
+    });
+  </script>
+</body>
+</html>

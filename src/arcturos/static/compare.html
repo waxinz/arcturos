@@ -1,0 +1,206 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Arcturos — Compare</title>
+  <style>
+    body { font-family: system-ui, -apple-system, sans-serif; margin: 2rem auto;
+           max-width: 1080px; color: #1a1a1a; background: #fafafa; }
+    header { border-bottom: 2px solid #222; padding-bottom: .5rem; margin-bottom: 1.5rem; }
+    h1 { font-size: 1.6rem; margin: 0; }
+    .sub { color: #666; margin-top: .25rem; }
+    nav a { margin-right: 1rem; color: #1a1a1a; text-decoration: none; font-weight: 600; }
+    nav a.active { text-decoration: underline; }
+    table { border-collapse: collapse; width: 100%; background: #fff; }
+    th, td { text-align: left; padding: .4rem .6rem; border-bottom: 1px solid #e5e5e5;
+             font-size: .88rem; }
+    th { font-weight: 600; color: #444; }
+    td.mono { font-family: ui-monospace, monospace; font-size: .8rem; }
+    .controls { margin: 1rem 0; display: flex; gap: 2rem; flex-wrap: wrap; align-items: start; }
+    .controls h3 { font-size: .95rem; margin: 0 0 .4rem; color: #444; }
+    .metric-pick label { display: block; font-size: .85rem; margin: .15rem 0; }
+    button { padding: .45rem .9rem; font-size: .9rem; cursor: pointer; }
+    .chart-card { background: #fff; border: 1px solid #e5e5e5; border-radius: 6px;
+                  padding: .8rem; margin-bottom: 1.2rem; }
+    .chart-card h3 { margin: 0 0 .5rem; font-size: 1rem; color: #222; }
+    .chart-wrap { position: relative; height: 340px; }
+    .status { color: #666; font-size: .85rem; margin-top: .75rem; }
+    .empty { color: #666; padding: 2rem; text-align: center; }
+    code { background: #eee; padding: 0 .35rem; border-radius: 4px; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Arcturos</h1>
+    <div class="sub">Local-first LLM benchmarking &amp; evaluation dashboard</div>
+    <nav>
+      <a href="/">Runs</a>
+      <a href="/compare" class="active">Compare</a>
+      <a href="/diff">Diff</a>
+    </nav>
+  </header>
+
+  <h2>Compare</h2>
+
+  <div class="controls">
+    <div>
+      <h3>Runs (select ≥ 2)</h3>
+      <div id="run-list"><span class="status">Loading runs…</span></div>
+    </div>
+    <div>
+      <h3>Metrics</h3>
+      <div class="metric-pick" id="metric-picks"></div>
+    </div>
+    <div style="align-self: flex-end;">
+      <button id="compare-btn" disabled>Compare</button>
+    </div>
+  </div>
+
+  <div id="charts"></div>
+  <p id="status" class="status"></p>
+
+  <script src="/static/vendor/chart.umd.min.js"></script>
+  <script>
+    const METRICS = [
+      'decode_tps', 'prefill_tps', 'ttft_ms', 'wall_s',
+      'output_tokens', 'mtp_acceptance', 'power_watts'
+    ];
+    const METRIC_LABELS = {
+      decode_tps: 'decode tok/s', prefill_tps: 'prefill tok/s',
+      ttft_ms: 'TTFT (ms)', wall_s: 'wall time (s)',
+      output_tokens: 'output tokens', mtp_acceptance: 'MTP acceptance',
+      power_watts: 'power (W)'
+    };
+    const PALETTE = ['#0b6bcb', '#e07b39', '#2fa36b', '#9b59b6', '#c0392b', '#16a085'];
+    const charts = {};
+
+    async function loadRuns() {
+      const res = await fetch('/api/runs');
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      const runs = await res.json();
+      const box = document.getElementById('run-list');
+      if (!runs.length) {
+        box.innerHTML = '<p class="empty">No runs yet — run <code>arcturos bench &lt;endpoint&gt; --model M</code> first.</p>';
+        return;
+      }
+      const table = document.createElement('table');
+      table.innerHTML = '<thead><tr><th></th><th>ID</th><th>Model (fingerprint)</th>' +
+                        '<th>Engine</th><th>Context size</th><th>Created (UTC)</th></tr></thead>';
+      const tbody = document.createElement('tbody');
+      for (const r of runs) {
+        const tr = document.createElement('tr');
+        const cb = document.createElement('input');
+        cb.type = 'checkbox'; cb.dataset.runId = r.id;
+        const td = document.createElement('td'); td.appendChild(cb); tr.appendChild(td);
+        for (const [k, cls] of [['id','mono'], ['model_fingerprint','mono'],
+                                ['engine',''], ['context_size',''], ['created_at','']]) {
+          const cell = document.createElement('td');
+          cell.textContent = r[k];
+          if (cls) cell.className = cls;
+          tr.appendChild(cell);
+        }
+        cb.addEventListener('change', updateCompareBtn);
+        tbody.appendChild(tr);
+      }
+      table.appendChild(tbody);
+      box.innerHTML = '';
+      box.appendChild(table);
+    }
+
+    function updateCompareBtn() {
+      const n = document.querySelectorAll('#run-list input[type=checkbox]:checked').length;
+      document.getElementById('compare-btn').disabled = n < 2;
+    }
+
+    function buildMetricPicks() {
+      const box = document.getElementById('metric-picks');
+      for (const m of METRICS) {
+        const label = document.createElement('label');
+        const cb = document.createElement('input');
+        cb.type = 'checkbox'; cb.value = m; cb.checked = true;
+        label.appendChild(cb);
+        label.appendChild(document.createTextNode(' ' + METRIC_LABELS[m]));
+        box.appendChild(label);
+      }
+    }
+
+    function shortName(fp) {
+      // Mirrors the API: basename of a path fingerprint, shard suffix stripped.
+      if (fp.includes('/')) {
+        let name = fp.split('/').pop();
+        if (name.endsWith('.gguf')) name = name.slice(0, -5);
+        name = name.replace(/-\d+-of-\d+$/, '');
+        return name;
+      }
+      return fp;
+    }
+
+    function destroyCharts() {
+      for (const key in charts) { charts[key].destroy(); delete charts[key]; }
+    }
+
+    async function compare() {
+      const status = document.getElementById('status');
+      const box = document.getElementById('charts');
+      const runIds = Array.from(document.querySelectorAll('#run-list input[type=checkbox]:checked'))
+        .map(cb => cb.dataset.runId).sort((a, b) => a - b);
+      const metrics = Array.from(document.querySelectorAll('#metric-picks input:checked'))
+        .map(cb => cb.value);
+      if (runIds.length < 2) { status.textContent = 'Select at least two runs.'; return; }
+      if (!metrics.length) { status.textContent = 'Select at least one metric.'; return; }
+      destroyCharts();
+      box.innerHTML = '';
+      status.textContent = 'Loading…';
+      try {
+        const res = await fetch('/api/compare/benchmarks?runs=' + runIds.join(',') +
+                                 '&metrics=' + metrics.join(','));
+        if (!res.ok) throw new Error('HTTP ' + res.status + ': ' + await res.text());
+        const data = await res.json();
+        box.innerHTML = '';
+        const runsById = {};
+        for (const r of data.runs) runsById[r.id] = r;
+        for (const metric of data.metrics) {
+          const card = document.createElement('div');
+          card.className = 'chart-card';
+          card.innerHTML = '<h3>' + METRIC_LABELS[metric] + ' (' + metric + ')</h3>' +
+                           '<div class="chart-wrap"><canvas></canvas></div>';
+          box.appendChild(card);
+          const canvas = card.querySelector('canvas');
+          const datasets = data.runs.map((r, i) => ({
+            label: r.model_fingerprint_short,
+            data: (data.series[metric][r.id] || []).map(p =>
+              ({ x: p.context_tokens, y: p.value })),
+            borderColor: PALETTE[i % PALETTE.length],
+            backgroundColor: PALETTE[i % PALETTE.length],
+            pointRadius: 4, tension: 0
+          }));
+          charts[metric] = new Chart(canvas.getContext('2d'), {
+            type: 'line',
+            data: { datasets: datasets },
+            options: {
+              responsive: true, maintainAspectRatio: false,
+              spanGaps: false,
+              scales: {
+                x: { type: 'logarithmic', title: { display: true, text: 'context tokens' } },
+                y: { beginAtZero: false, title: { display: true, text: METRIC_LABELS[metric] } }
+              },
+              plugins: { legend: { display: true, labels: { boxWidth: 12 } } }
+            }
+          });
+        }
+        status.textContent = runIds.length + ' run(s) × ' + metrics.length +
+                             ' metric(s): ' + data.runs.map(r => r.model_fingerprint_short).join(' vs ');
+      } catch (err) {
+        status.textContent = 'Failed to compare: ' + err;
+      }
+    }
+
+    document.getElementById('compare-btn').addEventListener('click', compare);
+    buildMetricPicks();
+    loadRuns().catch(err => {
+      document.getElementById('run-list').textContent = 'Failed to load runs: ' + err;
+    });
+  </script>
+</body>
+</html>
