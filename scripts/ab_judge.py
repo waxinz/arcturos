@@ -113,7 +113,11 @@ def main() -> None:
 
     results = get_json(f"{args.api}/api/eval-suites/{args.suite_id}/results")
     by_item: dict[str, list] = {}
-    for r in results:
+    latest_by_model: dict[str, dict] = {}
+    for r in sorted(results, key=lambda x: x["id"]):
+        # append-only store: the LAST result per (item, model) supersedes
+        latest_by_model[(r["item_id"], r["model_fingerprint"])] = r
+    for (_item_id, _model), r in latest_by_model.items():
         by_item.setdefault(r["item_id"], []).append(r)
 
     contested = set()
