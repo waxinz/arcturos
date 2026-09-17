@@ -51,7 +51,7 @@ def test_replay_fills_placeholders_and_suffixes_ids():
     # call_args_list inspection shows the FINAL state. Snapshot per call.
     snapshots: list[list] = []
 
-    def spy(target, messages, api_key=None):
+    def spy(target, messages, api_key=None, **_kw):
         snapshots.append(list(messages))
         responses = [_fake_resp("A1"), _fake_resp("A2")]
         return responses[len(snapshots) - 1]
