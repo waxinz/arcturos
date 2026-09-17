@@ -79,6 +79,9 @@ def dispatch_eval(
 
     Single-turn items replay as one POST; multi-turn items replay via
     multiturn.replay_multiturn (one stored row per assistant turn).
+    ``model_fingerprint`` is passed to the target as the chat model name —
+    proxy-fronted endpoints (litellm/vLLM) need the real name; native
+    llama.cpp servers ignore it.
     """
     items = suite.get("items")
     if not isinstance(items, list) or not items:
@@ -94,7 +97,8 @@ def dispatch_eval(
     try:
         for item in items:
             if item.get("type") == "multi-turn":
-                records = mt.replay_multiturn(target, item, api_key=api_key)
+                records = mt.replay_multiturn(target, item, api_key=api_key,
+                                              model=model_fingerprint)
                 for rec in records:
                     row = _store_eval_result(
                         conn, suite_id, model_fingerprint, rec["item_id"],
@@ -110,7 +114,7 @@ def dispatch_eval(
                     raise DispatchError(f"item {item_id!r} missing prompt")
                 resp = mt.post_openai_chat(
                     target, [{"role": "user", "content": prompt}],
-                    api_key=api_key)
+                    api_key=api_key, model=model_fingerprint)
                 content, ptoks, ctoks = mt.extract_output(resp)
                 stored.append(_store_eval_result(
                     conn, suite_id, model_fingerprint, item_id,
