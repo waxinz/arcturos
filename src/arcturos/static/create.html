@@ -59,6 +59,9 @@
       <label>Context targets (tokens, comma-separated)
         <input id="bench-targets" value="2048, 8192">
       </label>
+      <label>API key (optional, for auth-protected servers)
+        <input id="bench-key" type="password" placeholder="sk-…">
+      </label>
       <label>n_predict (tokens per point)
         <input id="bench-npredict" value="256">
       </label>
@@ -177,8 +180,10 @@
       kindBtn.disabled = true; kindBtn.textContent = '⏳ Checking…';
       setMsg(msgEl, 'Preflight…');
       try {
+        const keyEl = kind === 'bench' ? $('bench-key') : $('eval-key');
         const u = '/api/ops/preflight?target=' + encodeURIComponent(targetEl.value.trim()) +
-                  '&kind=' + kind;
+                  '&kind=' + kind +
+                  (keyEl && keyEl.value.trim() ? '&api_key=' + encodeURIComponent(keyEl.value.trim()) : '');
         const res = await fetch(u);
         const data = await res.json();
         if (!res.ok) { setMsg(msgEl, 'Preflight failed: ' + (data.detail || res.status)); return; }
@@ -200,6 +205,7 @@
         server_url: $('bench-url').value.trim(),
         targets: targets,
         n_predict: parseInt($('bench-npredict').value, 10) || 256,
+        api_key: $('bench-key').value.trim() || null,
       }, $('bench-btn'), $('bench-msg'), 'Kick off bench');
       if (data) setMsg($('bench-msg'),
         'Run #' + data.run_id + ' stored: ' +
