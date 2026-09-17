@@ -99,7 +99,10 @@ arcturos/
 - [x] J5 report aggregation: src/arcturos/reports.py (5ee2768)
 - [x] J3 multi-turn replay: src/arcturos/multiturn.py + live validation (807f24d)
 - [x] J4 multi-turn judging: per-turn blind judgments (turn-suffixed item ids)
-- [ ] Eval/judgment views in dashboard UI (data served, views pending)
+- [x] Eval/judgment/reports views: /evals /judgments /reports + /api/reports/suite/{id} (42218eb + tests 5c08e31)
+- [x] TTFT streaming variant: bench_stream.py (llama.cpp) + bench_openai.py (litellm/vLLM) with reasoning-model TTFT semantics
+- [x] Power draw: power.py validated (134W on ruapehu during bench) — dedicated hosts only per ADR 002
+- [ ] M9 hardening remainder: seed power into store path, per-host power metadata, multi-host compare
 - [ ] M9 hardening: TTFT streaming variant, power draw wiring, multi-turn report rows
 - [ ] First real benchmark captured against a live server (validation)
 
@@ -107,6 +110,7 @@ arcturos/
 
 - 2026-09-17 — UX design doc written: `docs/ux-design.md` — journey
   walkthroughs J1–J6, CLI surface spec, dashboard view specs (M2).
+- 2026-09-17 — M9 surfaces complete: all 6 dashboard views live, 71 tests green on taupo. ADR 002: power sampling only on dedicated inference hosts (litellm is a proxy; qwen serving hosts elsewhere); never bench shared servers with unacknowledged queueing (ruapehu TTFT artifacts 32s-254s were self-inflicted; true cold TTFT 1.5-9s). Reasoning-model bench semantics: TTFT = first chunk of ANY payload; decode = content chunks only. qwen rotation validated: TTFT ~1.9-2.2s, prefill est ~373-450 tok/s, decode ~82-101 tok/s content.
 - 2026-09-17 — J3 multi-turn complete: sr-101/sr-102 replayed vs both models, per-turn records stored (item_id #t-suffix), per-turn blind judging working. Final smoke-reasoning v1 report (n=18 judgments, 2 judges): overall a/b/tie 3/11/4 — DeepSeek 16.7% / GLM 61.1% / tie 22.2%; per-judge: qwen 0/6/2, laguna 3/5/2. All 6 journeys J1-J6 now have working implementations with real data.
 - 2026-09-17 — J2/J4/J5 landed and validated with real data: smoke-reasoning suite replayed live vs DeepSeek-V4-Flash (ruapehu) + GLM-5.3-Flash (pakuranga-inf); blind judging via qwen rotation + laguna2.1-s judges on litellm (localhost:4000/v1, key sk-1234); report: overall 1/8/3 (a/b/tie, n=12), GLM 66.7% wins, per-judge + per-category breakdowns working. Judge is NOT a contestant. Lessons: reasoning models (DeepSeek-V4-Flash, qwen3.8) return empty content — read reasoning_content, max_tokens>=512; model fingerprints vary by server suffix — normalize identity in ab_judge; litellm /v1 suffix must be stripped.
 - 2026-09-17 — J1 bench core landed (f7c2fee) + validated live; QA suite landed (4e0cb3b). 33 tests green on taupo. Bench targets: ruapehu .122:8000 (DeepSeek-V4-Flash) + pakuranga-inf .222:8000 (GLM-5.3-Flash) confirmed live; aotea .14:8080 down.
