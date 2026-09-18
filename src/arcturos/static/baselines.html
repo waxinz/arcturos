@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Arcturos — Baselines</title>
+  <style>
+    body { font-family: system-ui, -apple-system, sans-serif; margin: 2rem auto;
+           max-width: 960px; color: #1a1a1a; background: #fafafa; }
+    header { border-bottom: 2px solid #222; padding-bottom: .5rem; margin-bottom: 1.5rem; }
+    h1 { font-size: 1.6rem; margin: 0; }
+    .sub { color: #666; margin-top: .25rem; }
+    table { border-collapse: collapse; width: 100%; background: #fff; }
+    th, td { text-align: left; padding: .5rem .75rem; border-bottom: 1px solid #e5e5e5;
+             font-size: .9rem; }
+    th { font-weight: 600; color: #444; }
+    td.mono { font-family: ui-monospace, monospace; font-size: .82rem; word-break: break-all; }
+    .status { color: #666; font-size: .85rem; margin-top: .75rem; }
+    nav a { margin-right: 1rem; color: #1a1a1a; text-decoration: none; font-weight: 600; }
+    nav a.active { text-decoration: underline; }
+    button { padding: .3rem .8rem; }
+    .msg { font-size: .85rem; margin-top: .25rem; color: #666; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Arcturos</h1>
+    <div class="sub">Local-first LLM benchmarking &amp; evaluation dashboard</div>
+    <nav>
+      <a href="/">Runs</a>
+      <a href="/compare">Compare</a>
+      <a href="/diff">Diff</a>
+      <a href="/evals">Evals</a>
+      <a href="/judgments">Judgments</a>
+      <a href="/reports">Reports</a>
+      <a href="/create">Create &amp; Run</a>
+      <a href="/models">Models</a>
+      <a href="/baselines" class="active">Baselines</a>
+    </nav>
+  </header>
+
+  <h2>Baselines</h2>
+  <p>A baseline is a pinned run used as the reference for one (model, metric-family)
+  pair — compare views render it as the dashed reference line with delta columns.
+  Pin a run from its detail page ("Pin as baseline"). Stored data rows are never
+  modified: unpinning only removes the reference pointer.</p>
+  <p class="status" id="status">Loading…</p>
+  <table>
+    <thead>
+      <tr>
+        <th>Model fingerprint</th><th>Metric family</th>
+        <th>Pinned run</th><th>Run created (UTC)</th><th></th>
+      </tr>
+    </thead>
+    <tbody id="rows"></tbody>
+  </table>
+  <div id="msg" class="msg"></div>
+
+  <script>
+    async function loadBaselines() {
+      const status = document.getElementById('status');
+      const tbody = document.getElementById('rows');
+      try {
+        const res = await fetch('/api/baselines');
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        const baselines = await res.json();
+        tbody.textContent = '';
+        if (!baselines.length) {
+          status.textContent = 'No baselines pinned yet — open a run and use "Pin as baseline".';
+          return;
+        }
+        status.textContent = baselines.length + ' baseline(s) pinned.';
+        for (const b of baselines) {
+          const tr = document.createElement('tr');
+          const cells = [
+            b.model_fingerprint, b.metric_family,
+            b.run_id, b.run_created_at || '—'
+          ];
+          for (let i = 0; i < cells.length; i++) {
+            const td = document.createElement('td');
+            td.textContent = cells[i];
+            if (i <= 1) td.className = 'mono';
+            tr.appendChild(td);
+          }
+          const td = document.createElement('td');
+          const btn = document.createElement('button');
+          btn.textContent = 'Unpin';
+          btn.setAttribute('aria-label',
+            'Unpin baseline for ' + b.model_fingerprint + ' ' + b.metric_family);
+          btn.addEventListener('click', async () => {
+            try {
+              const r = await fetch('/api/baselines/' + b.id, { method: 'DELETE' });
+              if (!r.ok) {
+                const detail = (await r.json()).detail;
+                document.getElementById('msg').textContent =
+                  'Unpin failed: ' + (typeof detail === 'string' ? detail : JSON.stringify(detail));
+                return;
+              }
+              loadBaselines();
+            } catch (err) {
+              document.getElementById('msg').textContent = 'Unpin failed: ' + err;
+            }
+          });
+          td.appendChild(btn);
+          tr.appendChild(td);
+          tbody.appendChild(tr);
+        }
+      } catch (err) {
+        status.textContent = 'Failed to load baselines: ' + err;
+      }
+    }
+    loadBaselines();
+  </script>
+</body>
+</html>

@@ -44,6 +44,8 @@
       <a href="/judgments">Judgments</a>
       <a href="/reports">Reports</a>
       <a href="/create">Create &amp; Run</a>
+      <a href="/models">Models</a>
+      <a href="/baselines">Baselines</a>
     </nav>
   </header>
 
@@ -82,7 +84,22 @@
     const PALETTE = ['#0b6bcb', '#e07b39', '#2fa36b', '#9b59b6', '#c0392b', '#16a085'];
     const charts = {};
 
+    let ALIASES = {};
+    async function loadAliases() {
+      // Registry aliases (§4.6): the label the owner gave the fingerprint,
+      // shown 'alias (short-fp)' in legends so two similar models stay
+      // distinguishable. Failure is non-fatal — the registry page may be
+      // newer than this view.
+      try {
+        const res = await fetch('/api/models');
+        if (!res.ok) return;
+        ALIASES = Object.fromEntries(
+          (await res.json()).map(m => [m.model_fingerprint, m.alias]));
+      } catch { /* leave empty */ }
+    }
+
     async function loadRuns() {
+      await loadAliases();
       const res = await fetch('/api/runs');
       if (!res.ok) throw new Error('HTTP ' + res.status);
       const runs = await res.json();
@@ -182,7 +199,7 @@
           box.appendChild(card);
           const canvas = card.querySelector('canvas');
           const datasets = data.runs.map((r, i) => ({
-            label: r.model_fingerprint_short,
+            label: legendName(r),
             data: (data.series[metric][r.id] || []).map(p =>
               ({ x: p.context_tokens, y: p.value })),
             borderColor: PALETTE[i % PALETTE.length],
@@ -216,7 +233,9 @@
     function legendName(r) {
       // Fingerprints over labels (principle 3) but readable: 'alias
       // (short-fp)' so two 'same' models stay distinguishable (UX review).
-      return r.model_fingerprint_short;
+      const alias = ALIASES[r.model_fingerprint];
+      return alias ? alias + ' (' + r.model_fingerprint_short + ')'
+                   : r.model_fingerprint_short;
     }
 
     function updateCompareBtn() {

@@ -43,10 +43,12 @@ from fastapi.staticfiles import StaticFiles
 from . import compare, ops, reports
 from .db import DEFAULT_DB_PATH, connect, init_db
 from .schemas import (
+    BaselineCreate,
     BenchmarkCreate,
     EvalResultCreate,
     EvalSuiteCreate,
     JudgmentCreate,
+    ModelAliasUpdate,
     RunCreate,
 )
 
@@ -85,6 +87,25 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
         if fetch_one(db, f"SELECT 1 AS ok FROM {table} WHERE id = ?", (pk,)) is None:
             raise HTTPException(status_code=404, detail=f"{table} id {pk} not found")
 
+    def register_model(db: sqlite3.Connection, fingerprint: str,
+                       engine: str | None = None) -> None:
+        """Auto-register a model fingerprint on first sighting (§4.6).
+
+        Insert-only: the registry grows as runs/eval results arrive; the
+        alias is the only later edit (PATCH /api/models/{fp}).
+        """
+        now = _utcnow()
+        db.execute(
+            "INSERT INTO models (model_fingerprint, alias, engine, "
+            "first_seen, last_seen) VALUES (?, NULL, ?, ?, ?) "
+            "ON CONFLICT(model_fingerprint) DO UPDATE SET last_seen = ?",
+            (fingerprint, engine, now, now, now),
+        )
+
+    def _utcnow() -> str:
+        from datetime import datetime, timezone
+        return datetime.now(timezone.utc).isoformat(timespec="milliseconds")
+
     @app.get("/", include_in_schema=False)
     def index() -> FileResponse:
         return FileResponse(STATIC_DIR / "index.html")
@@ -117,6 +138,14 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
     def reports_page() -> FileResponse:
         return FileResponse(STATIC_DIR / "reports.html")
 
+    @app.get("/models", include_in_schema=False)
+    def models_view() -> FileResponse:
+        return FileResponse(STATIC_DIR / "models.html")
+
+    @app.get("/baselines", include_in_schema=False)
+    def baselines_view() -> FileResponse:
+        return FileResponse(STATIC_DIR / "baselines.html")
+
     @app.get("/create", include_in_schema=False)
     def create_page() -> FileResponse:
         return FileResponse(STATIC_DIR / "create.html")
@@ -134,6 +163,7 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
             (body.server_url, body.model_fingerprint, body.engine,
              body.context_size, body.created_at),
         )
+        register_model(db, body.model_fingerprint, body.engine)
         db.commit()  # durable before the response is sent (teardown runs after send)
         return fetch_one(db, "SELECT * FROM runs WHERE id = ?", (cur.lastrowid,))
 
@@ -251,6 +281,123 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
         except ValueError as exc:
             raise HTTPException(status_code=404, detail=str(exc))
         return {"report": report, "csv": reports.export_report_csv(report)}
+
+    # ----------------------------------------------------------- registry --
+    @app.get("/api/models")
+    def list_models(db=Depends(get_db)):
+        """Registry cards: fingerprint, alias, engine, first/last seen +
+        live run count. Fingerprints appear in the order first seen."""
+        return fetch_all(
+            db,
+            "SELECT m.model_fingerprint, m.alias, m.engine, "
+            "m.first_seen, m.last_seen, "
+            "(SELECT COUNT(*) FROM runs r WHERE r.model_fingerprint "
+            " = m.model_fingerprint) AS run_count "
+            "FROM models m ORDER BY m.first_seen, m.model_fingerprint",
+        )
+
+    @app.patch("/api/models/{fingerprint:path}")
+    def update_model_alias(fingerprint: str, body: ModelAliasUpdate,
+                           db=Depends(get_db)):
+        """Rename the label only. The fingerprint is immutable (§4.6) —
+        the DB trigger rejects any other column change."""
+        row = fetch_one(db, "SELECT 1 AS ok FROM models WHERE model_fingerprint = ?",
+                        (fingerprint,))
+        if row is None:
+            raise HTTPException(status_code=404,
+                                detail=f"model fingerprint {fingerprint!r} not registered")
+        db.execute("UPDATE models SET alias = ? WHERE model_fingerprint = ?",
+                   (body.alias, fingerprint))
+        db.commit()
+        return fetch_one(
+            db,
+            "SELECT m.model_fingerprint, m.alias, m.engine, m.first_seen, "
+            "m.last_seen, (SELECT COUNT(*) FROM runs r WHERE "
+            "r.model_fingerprint = m.model_fingerprint) AS run_count "
+            "FROM models m WHERE m.model_fingerprint = ?",
+            (fingerprint,),
+        )
+
+    # ----------------------------------------------------------- baselines --
+    @app.get("/api/baselines")
+    def list_baselines(db=Depends(get_db)):
+        """Pinned reference runs per (model, metric-family) + the pinned
+        run's created_at so the view can show when the reference was taken."""
+        return fetch_all(
+            db,
+            "SELECT b.id, b.model_fingerprint, b.metric_family, b.run_id, "
+            "r.created_at AS run_created_at FROM baselines b "
+            "JOIN runs r ON r.id = b.run_id ORDER BY b.id",
+        )
+
+    @app.post("/api/baselines", status_code=201)
+    def pin_baseline(body: BaselineCreate, db=Depends(get_db)):
+        """Pin a run as the reference for (model, metric-family).
+
+        Re-pinning the same pair replaces the pointer (the old one is not
+        data, it is a reference). The pinned run must exist and must belong
+        to the same fingerprint — a baseline of the wrong model would
+        silently corrupt every delta column.
+        """
+        run = fetch_one(db, "SELECT model_fingerprint FROM runs WHERE id = ?",
+                        (body.run_id,))
+        if run is None:
+            raise HTTPException(status_code=404,
+                                detail=f"run id {body.run_id} not found")
+        if run["model_fingerprint"] != body.model_fingerprint:
+            raise HTTPException(
+                status_code=422,
+                detail=(f"run {body.run_id} has fingerprint "
+                        f"{run['model_fingerprint']!r}, not "
+                        f"{body.model_fingerprint!r} — a baseline must pin "
+                        "a run of the same model"),
+            )
+        try:
+            db.execute(
+                "INSERT INTO baselines (model_fingerprint, metric_family, "
+                "run_id, created_at) VALUES (?, ?, ?, ?)",
+                (body.model_fingerprint, body.metric_family, body.run_id,
+                 body.created_at),
+            )
+            db.commit()
+        except sqlite3.IntegrityError as exc:
+            db.rollback()
+            if "baseline-replace" in str(exc):
+                db.execute(
+                    "DELETE FROM baselines WHERE model_fingerprint = ? "
+                    "AND metric_family = ?",
+                    (body.model_fingerprint, body.metric_family),
+                )
+                db.execute(
+                    "INSERT INTO baselines (model_fingerprint, "
+                    "metric_family, run_id, created_at) VALUES (?, ?, ?, ?)",
+                    (body.model_fingerprint, body.metric_family,
+                     body.run_id, body.created_at),
+                )
+                db.commit()
+            else:
+                raise HTTPException(status_code=422,
+                                    detail=f"baseline pin rejected: {exc}")
+        return fetch_one(
+            db,
+            "SELECT b.id, b.model_fingerprint, b.metric_family, b.run_id, "
+            "r.created_at AS run_created_at FROM baselines b "
+            "JOIN runs r ON r.id = b.run_id WHERE b.model_fingerprint = ? "
+            "AND b.metric_family = ?",
+            (body.model_fingerprint, body.metric_family),
+        )
+
+    @app.delete("/api/baselines/{baseline_id}")
+    def unpin_baseline(baseline_id: int, db=Depends(get_db)):
+        """Remove the reference pointer only — stored run rows are never
+        touched (unpinning is not a data mutation)."""
+        row = fetch_one(db, "SELECT id FROM baselines WHERE id = ?", (baseline_id,))
+        if row is None:
+            raise HTTPException(status_code=404,
+                                detail=f"baseline id {baseline_id} not found")
+        db.execute("DELETE FROM baselines WHERE id = ?", (baseline_id,))
+        db.commit()
+        return {"unpinned": baseline_id}
 
     # ------------------------------------------------------------- ops ----
     @app.post("/api/ops/bench")

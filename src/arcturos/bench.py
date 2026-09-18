@@ -410,6 +410,16 @@ def store_benchmark_run(
         if cur.lastrowid is None:
             raise RuntimeError("insert into runs did not return a rowid")
         run_id = int(cur.lastrowid)
+        # Registry auto-registration on first sighting (§4.6): insert-only,
+        # alias stays NULL until the owner names it on /models.
+        now_seen = _utcnow()
+        conn.execute(
+            "INSERT INTO models (model_fingerprint, alias, engine, "
+            "first_seen, last_seen) VALUES (?, NULL, ?, ?, ?) "
+            "ON CONFLICT(model_fingerprint) DO UPDATE SET last_seen = ?",
+            (fingerprint, "llama.cpp", now_seen, now_seen, now_seen),
+        )
+
         now = _utcnow()
         for point in points:
             conn.execute(
