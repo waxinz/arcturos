@@ -191,7 +191,28 @@ def init_db(conn: sqlite3.Connection) -> None:
     conn.executescript(SCHEMA)
     _migrate(conn)
     conn.executescript(TRIGGERS)
+    _backfill_registry(conn)
     conn.commit()
+
+
+def _backfill_registry(conn: sqlite3.Connection) -> None:
+    """Register fingerprints that predate the models table (insert-only).
+
+    Runs recorded before /models existed never got a sighting, so the
+    registry would show an empty page despite stored data. The backfill is
+    pure INSERT OR IGNORE — it never mutates an existing registry row.
+    """
+    try:
+        conn.execute(
+            "INSERT OR IGNORE INTO models (model_fingerprint, alias, engine, "
+            "first_seen, last_seen) "
+            "SELECT DISTINCT model_fingerprint, NULL, engine, "
+            "MIN(created_at), MIN(created_at) FROM runs GROUP BY "
+            "model_fingerprint"
+        )
+    except sqlite3.OperationalError:
+        # a pre-schema database arriving mid-migration — next init retries
+        pass
 
 
 # Columns added after v0.1: (table, column, DDL type). ALTER TABLE adds them to
