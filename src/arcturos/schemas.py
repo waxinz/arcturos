@@ -57,6 +57,19 @@ class BenchmarkCreate(BaseModel):
         return self
 
 
+class ModelAliasUpdate(BaseModel):
+    """Only the alias is editable — the fingerprint stays immutable (§4.6)."""
+    alias: Optional[str] = Field(None, max_length=120)
+
+
+class BaselineCreate(BaseModel):
+    model_fingerprint: str = Field(..., min_length=1)
+    # allowlist keeps metric families honest across views
+    metric_family: Literal["speed", "quality"]
+    run_id: int = Field(..., ge=1)
+    created_at: str = Field(default_factory=_utcnow)
+
+
 class EvalSuiteCreate(BaseModel):
     name: str = Field(..., min_length=1)
     version: str = Field(..., min_length=1)
