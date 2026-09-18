@@ -37,7 +37,7 @@ import sqlite3
 from pathlib import Path
 
 from fastapi import Depends, FastAPI, HTTPException, Request
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 from . import compare, ops, reports
@@ -554,14 +554,167 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
         return metrics
 
     @app.get("/api/compare/benchmarks")
-    def compare_benchmarks(runs: str, metrics: str | None = None, db=Depends(get_db)):
-        """Series of every requested metric per run, aligned by context length."""
+    def compare_benchmarks(runs: str, metrics: str | None = None,
+                           baseline: int | None = None,
+                           format: str | None = None, db=Depends(get_db)):
+        """Series of every requested metric per run, aligned by context length.
+
+        ``baseline=<run_id>`` overlays a pinned reference: the payload gains
+        ``baseline`` metadata + ``series.baseline`` per metric (§4.6), so
+        charts draw the dashed reference line and delta tables have a base.
+        ``format=csv`` returns the same payload as one CSV document
+        (schema-versioned header + fingerprint columns, §4.6 export) with
+        Content-Disposition attachment so the browser downloads it.
+        """
         run_ids = parse_run_ids(runs)
         metric_list = parse_metrics(metrics)
         for rid in run_ids:
             if fetch_one(db, "SELECT 1 AS ok FROM runs WHERE id = ?", (rid,)) is None:
                 raise HTTPException(status_code=404, detail=f"run id {rid} not found")
-        return compare.build_benchmarks_payload(db, run_ids, metric_list)
+        if baseline is not None:
+            if fetch_one(db, "SELECT 1 AS ok FROM runs WHERE id = ?", (baseline,)) is None:
+                raise HTTPException(status_code=404,
+                                    detail=f"baseline run id {baseline} not found")
+        payload = compare.build_benchmarks_payload(db, run_ids, metric_list,
+                                                   baseline_run_id=baseline)
+        if format == "csv":
+            csv_text = compare.export_benchmarks_csv(payload)
+            from fastapi.responses import Response
+            return Response(
+                csv_text,
+                media_type="text/csv",
+                headers={"Content-Disposition":
+                         "attachment; filename=arcturos-compare.csv"},
+            )
+        if format is not None:
+            raise HTTPException(status_code=422,
+                                detail=f"unsupported format {format!r} (try csv)")
+        return payload
+
+    @app.get("/api/compare/baseline-deltas")
+    def compare_baseline_deltas(runs: str, run: int,
+                                metrics: str | None = None,
+                                baseline: int | None = None,
+                                db=Depends(get_db)):
+        """Per-run delta tables against a baseline reference (§4.6).
+
+        Returns ``{run_id: {metric: [rows]}}`` — rows only where BOTH the
+        run and the baseline have the metric at the same context_tokens
+        (a delta against nothing is not a number; honest nulls beat
+        fabricated zeros).
+        """
+        run_ids = parse_run_ids(runs)
+        if run not in run_ids:
+            raise HTTPException(status_code=422,
+                                detail=f"run {run} must be one of the compared runs")
+        metric_list = parse_metrics(metrics)
+        base = baseline if baseline is not None else run
+        payload = compare.build_benchmarks_payload(
+            db, run_ids, metric_list, baseline_run_id=base)
+        result = {str(rid): compare.baseline_deltas(payload, rid)
+                  for rid in run_ids}
+        return result
+
+    # ------------------------------------------------------------- export --
+    def _csv_response(rows: list[dict], columns: list[str],
+                      filename: str) -> "Response":
+        """Schema-versioned CSV (§4.6): every row carries schema_version +
+        the self-describing columns the view already shows. Honest nulls:
+        missing values are empty cells."""
+        import csv as _csv
+        import io as _io
+        buf = _io.StringIO()
+        writer = _csv.writer(buf, lineterminator="\n")
+        writer.writerow(["schema_version"] + columns)
+        for row in rows:
+            writer.writerow(["arcturos-v1"] + [row.get(col) for col in columns])
+        return Response(
+            buf.getvalue(), media_type="text/csv",
+            headers={"Content-Disposition":
+                     f"attachment; filename={filename}"})
+
+    @app.get("/api/export/runs")
+    def export_runs(db=Depends(get_db)):
+        """CSV of every stored run row (§4.6 per-view export button)."""
+        rows = fetch_all(
+            db,
+            "SELECT id AS run_id, server_url, model_fingerprint, engine, "
+            "context_size, created_at FROM runs ORDER BY id",
+        )
+        return _csv_response(
+            rows,
+            ["run_id", "server_url", "model_fingerprint", "engine",
+             "context_size", "created_at"],
+            "arcturos-runs.csv",
+        )
+
+    @app.get("/api/export/runs/{run_id}/benchmarks")
+    def export_run_benchmarks(run_id: int, db=Depends(get_db)):
+        """CSV of one run's benchmark points (§4.6)."""
+        if fetch_one(db, "SELECT 1 AS ok FROM runs WHERE id = ?", (run_id,)) is None:
+            raise HTTPException(status_code=404, detail=f"run id {run_id} not found")
+        rows = fetch_all(
+            db,
+            "SELECT b.*, r.model_fingerprint, r.engine, r.server_url "
+            "FROM benchmarks b JOIN runs r ON r.id = b.run_id "
+            "WHERE b.run_id = ? ORDER BY b.context_tokens, b.rowid",
+            (run_id,),
+        )
+        return _csv_response(
+            rows,
+            ["run_id", "model_fingerprint", "engine", "server_url",
+             "context_tokens", "prefill_tps", "decode_tps", "ttft_ms",
+             "wall_s", "output_tokens", "mtp_draft_n", "mtp_accepted",
+             "power_watts", "power_host", "power_gpu_index", "created_at"],
+            f"arcturos-run-{run_id}-benchmarks.csv",
+        )
+
+    @app.get("/api/export/eval-results")
+    def export_eval_results(suite_id: int | None = None, db=Depends(get_db)):
+        """CSV of eval results (optionally one suite's), with judgments
+        joined where they exist (§4.6)."""
+        if suite_id is not None:
+            require_parent(db, "eval_suites", suite_id)
+            rows = fetch_all(
+                db,
+                "SELECT er.*, s.name AS suite_name, s.version AS suite_version "
+                "FROM eval_results er JOIN eval_suites s ON s.id = er.suite_id "
+                "WHERE er.suite_id = ? ORDER BY er.id",
+                (suite_id,),
+            )
+        else:
+            rows = fetch_all(
+                db,
+                "SELECT er.*, s.name AS suite_name, s.version AS suite_version "
+                "FROM eval_results er JOIN eval_suites s ON s.id = er.suite_id "
+                "ORDER BY er.id",
+            )
+        return _csv_response(
+            rows,
+            ["result_id", "suite_id", "suite_name", "suite_version",
+             "model_fingerprint", "item_id", "output", "prompt_tokens",
+             "completion_tokens", "latency_ms", "created_at"],
+            "arcturos-eval-results.csv",
+        )
+
+    @app.get("/api/export/judgments")
+    def export_judgments(db=Depends(get_db)):
+        """CSV of judgments with both models' fingerprints resolved (§4.6)."""
+        rows = fetch_all(
+            db,
+            "SELECT j.*, ra.model_fingerprint AS fp_a, "
+            "rb.model_fingerprint AS fp_b FROM judgments j "
+            "JOIN eval_results ra ON ra.id = j.eval_result_a "
+            "JOIN eval_results rb ON rb.id = j.eval_result_b "
+            "ORDER BY j.id",
+        )
+        return _csv_response(
+            rows,
+            ["judgment_id", "eval_result_a", "eval_result_b", "fp_a", "fp_b",
+             "judge_model", "judge_template_version", "winner", "confidence",
+             "rationale", "created_at"],
+            "arcturos-judgments.csv",
+        )
 
     @app.get("/api/compare/run-diff/{run_a}/{run_b}")
     def run_diff(run_a: int, run_b: int, db=Depends(get_db)):

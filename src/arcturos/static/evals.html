@@ -50,7 +50,7 @@
     </nav>
   </header>
 
-  <h2>Evals</h2>
+  <h2>Evals <button id="export-evals" title="Download all eval results as CSV">⤓ CSV</button></h2>
 
   <div class="controls">
     <label>Suite
@@ -177,21 +177,37 @@
           const outTd = tr.querySelector('td.out');
           // Drill-down: click toggles the full output inline (honest full
           // text, no truncation) per ux-design journey drill-down spec.
-          outTd.title = 'Click to expand full output';
+          // Keyboard parity (deferred UX review note): the cell is a
+          // button-like target — Space/Enter toggles, it is focusable via
+          // Tab, and Enter on a collapsed row expands without scrolling
+          // the page (preventDefault on Space avoids the scroll jump).
+          outTd.tabIndex = 0;
+          outTd.setAttribute('role', 'button');
+          outTd.setAttribute('aria-expanded', 'false');
+          outTd.title = 'Click or press Enter/Space to expand full output';
           outTd.style.cursor = 'pointer';
-          let expanded = false;
-          outTd.addEventListener('click', () => {
+          const toggle = () => {
             expanded = !expanded;
             if (expanded) {
               outTd.textContent = full;
               outTd.style.whiteSpace = 'pre-wrap';
               outTd.style.maxWidth = 'none';
-              outTd.title = 'Click to collapse';
+              outTd.title = 'Click or press Enter/Space to collapse';
+              outTd.setAttribute('aria-expanded', 'true');
             } else {
               outTd.textContent = preview(full, 120);
               outTd.style.whiteSpace = '';
               outTd.style.maxWidth = '';
-              outTd.title = 'Click to expand full output';
+              outTd.title = 'Click or press Enter/Space to expand full output';
+              outTd.setAttribute('aria-expanded', 'false');
+            }
+          };
+          let expanded = false;
+          outTd.addEventListener('click', toggle);
+          outTd.addEventListener('keydown', (ev) => {
+            if (ev.key === 'Enter' || ev.key === ' ') {
+              ev.preventDefault();
+              toggle();
             }
           });
           const linkTd = document.createElement('td');
@@ -225,6 +241,10 @@
     });
     document.getElementById('model-filter').addEventListener('change', render);
     document.getElementById('item-filter').addEventListener('input', render);
+
+    document.getElementById('export-evals').addEventListener('click', () => {
+      window.location = '/api/export/eval-results';
+    });
 
     loadSuites().catch(err => {
       document.getElementById('status').textContent = 'Failed to load suites: ' + err;

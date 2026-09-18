@@ -37,7 +37,7 @@
     </nav>
   </header>
 
-  <h2>Runs</h2>
+  <h2>Runs <button id="export-runs" title="Download all runs as CSV">⤓ CSV</button></h2>
   <table>
     <thead>
       <tr>
@@ -83,6 +83,9 @@
         status.textContent = 'Failed to load runs: ' + err;
       }
     }
+    document.getElementById('export-runs').addEventListener('click', () => {
+      window.location = '/api/export/runs';
+    });
     loadRuns();
   </script>
 </body>
