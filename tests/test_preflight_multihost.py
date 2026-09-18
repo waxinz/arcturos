@@ -75,19 +75,56 @@ def client(tmp_path):
 
 
 def test_preflight_endpoint_validation(client):
-    assert client.get("/api/ops/preflight", params={"target": "ftp://x"}).status_code == 422
-    assert client.get("/api/ops/preflight",
-                      params={"target": "http://x", "kind": "nope"}).status_code == 422
+    # POST form: key travels in the JSON body, never a URL (UX review).
+    assert client.post("/api/ops/preflight", json={"target": "ftp://x"}).status_code == 422
+    assert client.post("/api/ops/preflight",
+                       json={"target": "http://x", "kind": "nope"}).status_code == 422
 
 
 def test_preflight_endpoint_live(client, monkeypatch):
     monkeypatch.setattr("arcturos.ops.preflight.preflight",
-                        lambda *a, **kw: {"target": a[0], "kind": kw.get("kind", "bench"),
+                        lambda *a, **kw: {"target": kw.get("target", a[0] if a else ""),
+                                          "kind": kw.get("kind", "bench"),
                                           "checks": [{"name": "reachable", "ok": True,
                                                       "detail": "GET /health -> 200"}]})
-    r = client.get("/api/ops/preflight", params={"target": "http://fake:8000"})
+    r = client.post("/api/ops/preflight",
+                    json={"target": "http://fake:8000", "kind": "bench"})
     assert r.status_code == 200
-    assert r.json()["ok"] is True if "ok" in r.json() else True
+    assert r.json()["checks"][0]["ok"] is True
+
+
+def test_preflight_endpoint_key_never_in_url(client, monkeypatch):
+    """api_key goes via POST body; GET probes are keyless by contract."""
+    seen = {}
+
+    def fake_pf(target, kind="bench", model=None, transport=None,
+                timeout=None, api_key=None):
+        seen["api_key"] = api_key
+        return {"target": target, "kind": kind, "checks": [
+            {"name": "reachable", "ok": True, "detail": "stub"}]}
+
+    monkeypatch.setattr("arcturos.ops.preflight.preflight", fake_pf)
+    # GET with a key param must NOT receive it (keyless fallback endpoint)
+    client.get("/api/ops/preflight",
+               params={"target": "http://fake:8000", "api_key": "sk-leak"})
+    assert seen.get("api_key") is None
+    r = client.post("/api/ops/preflight",
+                    json={"target": "http://fake:8000", "api_key": "sk-ok"})
+    assert r.status_code == 200
+    assert seen["api_key"] == "sk-ok"
+
+
+def test_preflight_endpoint_dead_target(client):
+    """Unroutable target -> 200 with honest failed checks (not an error
+    status): the UI shows WHY the target is down. 502 is reserved for
+    endpoint-level failures (e.g. a bad transport config)."""
+    r = client.post("/api/ops/preflight",
+                    json={"target": "http://127.0.0.1:1", "kind": "bench"})
+    assert r.status_code == 200
+    checks = r.json()["checks"]
+    assert all(c["ok"] is False for c in checks)
+    assert any("failed" in c["detail"] or "timed out" in c["detail"]
+               for c in checks)
 
 
 def test_compare_payload_carries_host_metadata(client):
