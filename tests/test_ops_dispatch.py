@@ -79,6 +79,47 @@ def test_dispatch_bench_authed_without_key_fails(db_path):
                            transport=transport)
 
 
+def test_dispatch_bench_runtime_failure_maps_502(db_path):
+    """Target dies mid-sweep -> DispatchFailure (502), not DispatchError.
+
+    UX review finding 1: the owner must be told 'check the server', not
+    blamed with a bad-input 422.
+    """
+    transport = _bench_app()
+    # First dispatch works; a dead server on retry raises RuntimeError
+    # inside run_benchmark -> DispatchFailure with directive text.
+    ops.dispatch_bench(db_path, "http://fake:8000", [128], 8,
+                       transport=transport)
+
+    def dying_handler(request):
+        # Pass preflight (health/tokenize), then fail the sweep itself.
+        if request.url.path == "/health":
+            return httpx.Response(200, json={"status": "ok"})
+        if request.url.path == "/tokenize":
+            return httpx.Response(200, json={"tokens": list(range(100))})
+        if request.url.path == "/props":
+            return httpx.Response(200, json={"n_ctx": 2048})
+        return httpx.Response(500, json={"error": "server crashed mid-completion"})
+
+    dead = httpx.MockTransport(dying_handler)
+    with pytest.raises(ops.DispatchFailure, match="check the server"):
+        ops.dispatch_bench(db_path, "http://fake:8000", [128], 8,
+                           transport=dead, timeout=3600.0)
+
+
+def test_dispatch_bench_preflight_failure_is_actionable(db_path):
+    """Preflight failure names checks, target, and the next step."""
+    transport = _bench_app(authed=True)
+    try:
+        ops.dispatch_bench(db_path, "http://fake:8000", [128], 8,
+                           transport=transport)
+    except ops.DispatchError as exc:
+        msg = str(exc)
+        assert "preflight failed (reachable" in msg
+        assert "http://fake:8000" in msg
+        assert "Check target" in msg
+
+
 @pytest.fixture()
 def db_path(tmp_path):
     from arcturos import db as dbmod
@@ -99,17 +140,25 @@ def _mk_suite(db_path, suite_id=1):
     conn.close()
 
 
-def _pass_preflight(monkeypatch=None):
-    """Patch ops.preflight.preflight to a stub that always passes.
+@pytest.fixture()
+def pass_preflight():
+    """Patch ops.preflight.preflight to a stub that always passes, and
+    RESTORE it afterwards.
 
     The eval-path tests exercise dispatch logic, not preflight — the target
-    URL is fake and would hit real DNS otherwise."""
+    URL is fake and would hit real DNS otherwise. The old _pass_preflight()
+    permanently replaced the module attribute, leaking the stub into every
+    later test in the session (found by the UX-review round: dead-target
+    tests received ok:true stub checks from an earlier test's patch)."""
     from arcturos.ops import preflight as pf_mod
     stub = pf_mod.PreflightResult(
         target="stub", kind="eval",
         checks=[{"name": "reachable", "ok": True, "detail": "stub"},
                 {"name": "chat", "ok": True, "detail": "stub"}])
+    sentinel = pf_mod.preflight
     pf_mod.preflight = lambda *a, **kw: stub
+    yield
+    pf_mod.preflight = sentinel
 
 
 def test_dispatch_bench_happy(db_path):
@@ -132,9 +181,8 @@ def test_dispatch_bench_validation(db_path):
         ops.dispatch_bench(db_path, "http://fake:8000", [0], 8)
 
 
-def test_dispatch_eval_single_turn(db_path):
+def test_dispatch_eval_single_turn(db_path, pass_preflight):
     _mk_suite(db_path)
-    _pass_preflight()
     suite = {"items": [
         {"id": "q1", "prompt": "What is 2+2?"},
         {"id": "q2", "prompt": "Capital of France?"},
@@ -152,9 +200,8 @@ def test_dispatch_eval_single_turn(db_path):
     assert result["stored"][0]["prompt_tokens"] == 5
 
 
-def test_dispatch_eval_multiturn(db_path):
+def test_dispatch_eval_multiturn(db_path, pass_preflight):
     _mk_suite(db_path)
-    _pass_preflight()
     suite = {"items": [{
         "type": "multi-turn", "id": "mt-1",
         "turns": [
@@ -178,9 +225,8 @@ def test_dispatch_eval_multiturn(db_path):
     assert result["stored"][0]["latency_ms"] is not None  # recorded (mock may be instant)
 
 
-def test_dispatch_eval_empty_suite(db_path):
+def test_dispatch_eval_empty_suite(db_path, pass_preflight):
     _mk_suite(db_path)
-    _pass_preflight()
     with pytest.raises(ops.DispatchError, match="no items"):
         ops.dispatch_eval(db_path, 1, "http://fake:4000/v1", "m", {"items": []})
 
@@ -191,18 +237,16 @@ def test_dispatch_eval_unknown_suite(db_path):
                           {"items": [{"id": "q1", "prompt": "x"}]})
 
 
-def test_dispatch_eval_missing_prompt(db_path):
+def test_dispatch_eval_missing_prompt(db_path, pass_preflight):
     _mk_suite(db_path)
-    _pass_preflight()
     with pytest.raises(ops.DispatchError, match="missing prompt"):
         ops.dispatch_eval(db_path, 1, "http://fake:4000/v1", "m",
                           {"items": [{"id": "q1"}]})
 
 
-def test_dispatch_eval_rolls_back_on_failure(db_path):
+def test_dispatch_eval_rolls_back_on_failure(db_path, pass_preflight):
     """Second item raises -> nothing from the batch is stored."""
     _mk_suite(db_path)
-    _pass_preflight()
     suite = {"items": [
         {"id": "q1", "prompt": "ok"},
         {"id": "q2", "prompt": "boom"},
