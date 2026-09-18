@@ -63,10 +63,19 @@
     <div style="align-self: flex-end;">
       <button id="compare-btn" disabled>Compare</button>
       <span class="hint" id="compare-hint">select ≥ 2 runs to enable</span>
+      <div style="margin-top: .5rem;">
+        <label for="baseline-select" style="font-size:.85rem; font-weight:600;">Baseline</label>
+        <select id="baseline-select" style="display:block; margin-top:.25rem; max-width: 16rem;">
+          <option value="">— none —</option>
+        </select>
+        <span class="hint">pinned reference: dashed line + deltas</span>
+      </div>
+      <button id="export-btn" style="margin-top:.5rem;" disabled>⤓ Export CSV</button>
     </div>
   </div>
 
   <div id="charts"></div>
+  <div id="delta-tables"></div>
   <p id="status" class="status"></p>
 
   <script src="/static/vendor/chart.umd.min.js"></script>
@@ -98,11 +107,14 @@
       } catch { /* leave empty */ }
     }
 
+    let RUNS_INDEX = [];  // full run rows for the baseline-select builder
+
     async function loadRuns() {
       await loadAliases();
       const res = await fetch('/api/runs');
       if (!res.ok) throw new Error('HTTP ' + res.status);
       const runs = await res.json();
+      RUNS_INDEX = runs;
       const box = document.getElementById('run-list');
       if (!runs.length) {
         box.innerHTML = '<p class="empty">No runs yet — run <code>arcturos bench &lt;endpoint&gt; --model M</code> first.</p>';
@@ -125,7 +137,10 @@
           if (cls) cell.className = cls;
           tr.appendChild(cell);
         }
-        cb.addEventListener('change', updateCompareBtn);
+        cb.addEventListener('change', () => {
+          updateCompareBtn();
+          rebuildBaselineSelect();
+        });
         tbody.appendChild(tr);
       }
       table.appendChild(tbody);
@@ -184,11 +199,15 @@
       box.innerHTML = '';
       status.textContent = 'Loading…';
       try {
-        const res = await fetch('/api/compare/benchmarks?runs=' + runIds.join(',') +
-                                 '&metrics=' + metrics.join(','));
+        const baselineSel = document.getElementById('baseline-select').value;
+        let url = '/api/compare/benchmarks?runs=' + runIds.join(',') +
+                  '&metrics=' + metrics.join(',');
+        if (baselineSel) url += '&baseline=' + encodeURIComponent(baselineSel);
+        const res = await fetch(url);
         if (!res.ok) throw new Error('HTTP ' + res.status + ': ' + await res.text());
         const data = await res.json();
         box.innerHTML = '';
+        document.getElementById('delta-tables').textContent = '';
         const runsById = {};
         for (const r of data.runs) runsById[r.id] = r;
         for (const metric of data.metrics) {
@@ -206,6 +225,23 @@
             backgroundColor: PALETTE[i % PALETTE.length],
             pointRadius: 4, tension: 0
           }));
+          // Dashed baseline overlay (§4.6): the pinned reference is a
+          // separate dataset, visually distinct (dash + grey), and excluded
+          // from the run legend colour wheel.
+          if (data.series.baseline && data.series.baseline[metric]) {
+            datasets.push({
+              label: '📌 baseline: ' + data.baseline.model_fingerprint_short +
+                     ' (run ' + data.baseline.run_id + ')',
+              data: data.series.baseline[metric].map(p =>
+                ({ x: p.context_tokens, y: p.value })),
+              borderColor: '#555',
+              backgroundColor: '#555',
+              borderDash: [6, 4],
+              pointRadius: 0,
+              borderWidth: 2,
+              tension: 0
+            });
+          }
           charts[metric] = new Chart(canvas.getContext('2d'), {
             type: 'line',
             data: { datasets: datasets },
@@ -222,6 +258,13 @@
         }
         status.textContent = runIds.length + ' run(s) × ' + metrics.length +
                              ' metric(s): ' + data.runs.map(r => legendName(r)).join(' vs ');
+        if (data.baseline) {
+          await renderDeltaTables(data, runIds);
+          status.textContent += ' — vs 📌 baseline ' +
+            data.baseline.model_fingerprint_short + ' (run ' +
+            data.baseline.run_id + ')';
+        }
+        document.getElementById('export-btn').disabled = false;
       } catch (err) {
         status.textContent = 'Failed to compare: ' + err;
       } finally {
@@ -238,16 +281,164 @@
                    : r.model_fingerprint_short;
     }
 
+    function fmtNum(v) {
+      return (v === null || v === undefined) ? '—' : String(v);
+    }
+
+    async function renderDeltaTables(data, runIds) {
+      // Per-run delta tables against the baseline (§4.6): one table per
+      // run, one row per (metric, context point) where BOTH sides exist.
+      // Signed percent + direction-aware good/bad colouring — the payload
+      // is self-describing, so the view only formats numbers.
+      const wrap = document.getElementById('delta-tables');
+      wrap.innerHTML = '';
+      const header = document.createElement('h3');
+      header.textContent = 'Deltas vs 📌 baseline ' +
+        data.baseline.model_fingerprint_short +
+        ' (run ' + data.baseline.run_id + ')';
+      wrap.appendChild(header);
+      for (const run of data.runs) {
+        let url = '/api/compare/baseline-deltas?runs=' + encodeURIComponent(runIds.join(',')) +
+                  '&run=' + run.id +
+                  '&metrics=' + data.metrics.join(',') +
+                  '&baseline=' + data.baseline.run_id;
+        const res = await fetch(url);
+        if (!res.ok) {
+          wrap.appendChild(document.createTextNode(
+            'Deltas for run ' + run.id + ' unavailable (HTTP ' + res.status + ')'));
+          continue;
+        }
+        const deltas = (await res.json())[String(run.id)] || {};
+        const table = document.createElement('table');
+        const thead = document.createElement('thead');
+        const hrow = document.createElement('tr');
+        for (const th of ['Run', 'Metric', 'ctx tokens', 'baseline', 'value',
+                          'delta', 'delta %']) {
+          const cell = document.createElement('th');
+          cell.textContent = th;
+          hrow.appendChild(cell);
+        }
+        thead.appendChild(hrow);
+        table.appendChild(thead);
+        const tbody = document.createElement('tbody');
+        let any = false;
+        for (const metric of data.metrics) {
+          for (const row of (deltas[metric] || [])) {
+            any = true;
+            const tr = document.createElement('tr');
+            const cells = [
+              legendName(data.runs.find(r => r.id === run.id)),
+              METRIC_LABELS[metric],
+              row.context_tokens,
+              fmtNum(row.baseline_value),
+              fmtNum(row.value),
+              fmtNum(row.delta),
+              row.delta_pct === null ? '—' :
+                ((row.delta_pct * 100).toFixed(1) + '%')
+            ];
+            for (let i = 0; i < cells.length; i++) {
+              const td = document.createElement('td');
+              td.textContent = cells[i];
+              if (i === 0 || i === 2) td.className = 'mono';
+              // direction-aware colour: METRIC_DIRECTIONS lives in the
+              // payload-less view; reuse the diff view's semantics via a
+              // local map (higher-is-better metrics)
+              if (i === 6 && row.delta_pct !== null) {
+                const higherBetter = ['decode_tps', 'prefill_tps',
+                  'output_tokens', 'mtp_acceptance', 'power_watts'];
+                const good = higherBetter.includes(metric)
+                  ? row.delta_pct > 0 : row.delta_pct < 0;
+                td.style.color = good ? '#0a7f36' : '#b00020';
+              }
+              tr.appendChild(td);
+            }
+            tbody.appendChild(tr);
+          }
+        }
+        if (!any) {
+          const tr = document.createElement('tr');
+          const td = document.createElement('td');
+          td.colSpan = 7;
+          td.textContent = 'No overlapping context points with the baseline ' +
+            '(both sides must have the metric at the same ctx length).';
+          tr.appendChild(td);
+          tbody.appendChild(tr);
+        }
+        table.appendChild(tbody);
+        wrap.appendChild(table);
+      }
+    }
+
     function updateCompareBtn() {
       const n = document.querySelectorAll('#run-list input[type=checkbox]:checked').length;
       document.getElementById('compare-btn').disabled = n < 2;
       document.getElementById('compare-hint').textContent =
         n < 2 ? 'select ≥ 2 runs to enable' : 'ready';
+      // Export follows the compare button: same ≥2-runs gate, no payload
+      // exists before a compare ran, so the button is dead until then.
+      document.getElementById('export-btn').disabled =
+        n < 2 || !Object.keys(charts).length;
+    }
+
+    let PINNED = [];  // [{id, model_fingerprint, metric_family, run_id}]
+    async function loadBaselines() {
+      try {
+        const res = await fetch('/api/baselines');
+        if (!res.ok) return;
+        PINNED = await res.json();
+      } catch { /* non-fatal */ }
+    }
+
+    function rebuildBaselineSelect() {
+      // Options: any pinned baseline whose fingerprint matches a selected
+      // run, or any selected run itself (ad-hoc reference). The select
+      // lists run ids — a baseline pin is per fingerprint, the run is the
+      // concrete data.
+      const sel = document.getElementById('baseline-select');
+      const checked = [...document.querySelectorAll('#run-list input[type=checkbox]:checked')]
+        .map(cb => parseInt(cb.dataset.runId, 10));
+      const selRuns = RUNS_INDEX.filter(r => checked.includes(r.id));
+      const pinnedForSelection = PINNED.filter(b =>
+        selRuns.some(r => r.model_fingerprint === b.model_fingerprint));
+      const prev = sel.value;
+      sel.textContent = '';
+      const none = document.createElement('option');
+      none.value = ''; none.textContent = '— none —';
+      sel.appendChild(none);
+      for (const b of pinnedForSelection) {
+        const o = document.createElement('option');
+        o.value = String(b.run_id);
+        const run = selRuns.find(r => r.id === b.run_id);
+        const short = run ? run.model_fingerprint_short : b.model_fingerprint;
+        o.textContent = '📌 pinned ' + b.metric_family + ' — ' + short + ' (run ' + b.run_id + ')';
+        sel.appendChild(o);
+      }
+      for (const r of selRuns) {
+        const o = document.createElement('option');
+        o.value = String(r.id);
+        o.textContent = 'ad-hoc: ' + shortName(r.model_fingerprint) + ' (run ' + r.id + ')';
+        sel.appendChild(o);
+      }
+      if ([...sel.options].some(o => o.value === prev)) sel.value = prev;
     }
 
     document.getElementById('compare-btn').addEventListener('click', compare);
+    document.getElementById('export-btn').addEventListener('click', () => {
+      // Re-fetch with format=csv: the browser honours the attachment
+      // header, so the file lands in Downloads without JS plumbing.
+      const runIds = [...document.querySelectorAll('#run-list input[type=checkbox]:checked')]
+        .map(cb => cb.dataset.runId);
+      const metrics = [...document.querySelectorAll('#metric-picks input:checked')]
+        .map(cb => cb.value);
+      const baselineSel = document.getElementById('baseline-select').value;
+      let url = '/api/compare/benchmarks?runs=' + runIds.join(',') +
+                '&metrics=' + metrics.join(',') + '&format=csv';
+      if (baselineSel) url += '&baseline=' + encodeURIComponent(baselineSel);
+      window.location = url;
+    });
     buildMetricPicks();
-    loadRuns().catch(err => {
+    loadBaselines().then(rebuildBaselineSelect);
+    loadRuns().then(rebuildBaselineSelect).catch(err => {
       document.getElementById('run-list').textContent = 'Failed to load runs: ' + err;
     });
   </script>

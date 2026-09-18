@@ -132,6 +132,10 @@
         b1.textContent = 'Copy run JSON';
         b1.onclick = () => navigator.clipboard.writeText(JSON.stringify(run, null, 2));
         acts.appendChild(b1);
+        const a3 = document.createElement('a');
+        a3.href = '/api/export/runs/' + run.id + '/benchmarks';
+        a3.textContent = '⤓ Benchmarks CSV';
+        acts.appendChild(a3);
 
         // Pin as baseline (§4.6): metric family is chosen by the owner —
         // "speed" covers tok/s + TTFT/wall, "quality" covers eval/judgment
