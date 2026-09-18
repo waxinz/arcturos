@@ -110,6 +110,20 @@ arcturos/
 
 ### Log (newest first)
 
+- 2026-09-17 — Model registry + baseline tracking (§4.6 J6, commits
+  192dea7 + 7774f0d): /models view (cards per fingerprint: alias-only
+  edit trigger-enforced, engine, first/last seen, run count) and
+  /baselines view (pin/re-pin/unpin per model × metric-family, wrong-
+  model pin rejected 422). Auto-registration on first sighting in bench
+  dispatch, eval replay, and manual run create; insert-only registry
+  backfill in init_db so pre-existing taupo runs appear without touching
+  stored rows. Run-detail gained "Pin as baseline" (confirm dialog);
+  compare legends show registry aliases as 'alias (short-fp)'. API
+  contract test amended: PATCH /api/models/{fp} + DELETE
+  /api/baselines/{id} are the two allowed non-data surfaces (PUT still
+  forbidden). 116 tests green; live-verified on taupo (pin, re-pin,
+  alias edit, unpin, backfill of 4 historical fingerprints).
+
 - 2026-09-17 — UX review round (both reviewer agents finally completed
   after gateway 429/timeout retries; 11 findings deduped) + fixes
   (6233984): DispatchFailure/DispatchError split (runtime target failures
@@ -121,11 +135,13 @@ arcturos/
   bench form warns on dropped non-numeric targets; honest nulls in
   run-detail ('—' + AA-contrast + tooltip, no falsy-zero '?'); run-detail
   header actions (compare/diff/copy-JSON) + engine-env <details> block;
-  compare view: busy-disable, 'select >=2 runs' hint, decode_tps default
-  only, accessible select-column header. BONUS: fixed pre-existing test
-  bug — _pass_preflight() permanently replaced the preflight module
-  attribute, leaking ok:stub checks into later tests; now a restoring
-  fixture. 103 tests green, live-verified on taupo.
+  compare view: busy-disable, 'select ≥2 runs' hint, decode_tps default
+  only, accessible select-column header; eval drill-down keyboard note
+  deferred. BONUS: fixed pre-existing test bug — _pass_preflight()
+  permanently replaced the preflight module attribute, leaking ok:stub
+  checks into later tests; now a restoring fixture. 103 tests green,
+  live-verified on taupo.
+
 - 2026-09-17 — UX backlog landed (1b2dcaa): confirm dialogs on
   judgment-record + manual-bench-point append posts (ux principle 5);
   eval output click-to-expand drill-down in /evals. 99 tests green,
