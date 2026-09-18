@@ -45,6 +45,8 @@
       <a href="/judgments">Judgments</a>
       <a href="/reports">Reports</a>
       <a href="/create">Create &amp; Run</a>
+      <a href="/models">Models</a>
+      <a href="/baselines">Baselines</a>
     </nav>
   </header>
 
@@ -130,6 +132,39 @@
         b1.textContent = 'Copy run JSON';
         b1.onclick = () => navigator.clipboard.writeText(JSON.stringify(run, null, 2));
         acts.appendChild(b1);
+
+        // Pin as baseline (§4.6): metric family is chosen by the owner —
+        // "speed" covers tok/s + TTFT/wall, "quality" covers eval/judgment
+        // metrics. Confirm first (destructive-adjacent: it replaces any
+        // previously pinned reference for the same pair).
+        const b2 = document.createElement('button');
+        b2.textContent = 'Pin as baseline';
+        b2.onclick = async () => {
+          const family = window.prompt(
+            'Pin as baseline — metric family: "speed" or "quality"?', 'speed');
+          if (family !== 'speed' && family !== 'quality') return;
+          if (!window.confirm('Pin run #' + run.id + ' as the ' + family +
+              ' baseline for ' + run.model_fingerprint + '? ' +
+              'Any previous reference for this pair is replaced.')) return;
+          b2.disabled = true;
+          try {
+            const r = await fetch('/api/baselines', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ model_fingerprint: run.model_fingerprint,
+                                     metric_family: family, run_id: run.id })
+            });
+            if (!r.ok) {
+              const detail = (await r.json()).detail;
+              window.alert('Pin failed: ' + (typeof detail === 'string' ? detail : JSON.stringify(detail)));
+              return;
+            }
+            b2.textContent = 'Pinned ✓';
+          } finally {
+            b2.disabled = false;
+          }
+        };
+        acts.appendChild(b2);
 
         // Engine environment block when present in the stored run payload.
         const env = run.engine_metadata || run.engine_meta || null;

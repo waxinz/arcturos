@@ -192,6 +192,15 @@ def dispatch_eval(
 def _store_eval_result(conn, suite_id: int, model_fingerprint: str,
                        item_id: str, output: str, prompt_tokens: int,
                        completion_tokens: int, latency_ms: float) -> dict:
+    # Registry auto-registration on first sighting (§4.6): eval replays
+    # register their model even without a bench ever touching it.
+    now_seen = bench._utcnow()
+    conn.execute(
+        "INSERT INTO models (model_fingerprint, alias, engine, "
+        "first_seen, last_seen) VALUES (?, NULL, NULL, ?, ?) "
+        "ON CONFLICT(model_fingerprint) DO UPDATE SET last_seen = ?",
+        (model_fingerprint, now_seen, now_seen, now_seen),
+    )
     cur = conn.execute(
         "INSERT INTO eval_results (suite_id, model_fingerprint, item_id, output,"
         " prompt_tokens, completion_tokens, latency_ms, created_at)"

@@ -250,8 +250,16 @@ def test_judgment_self_comparison_rejected(client):
 
 
 def test_api_has_no_update_or_delete_paths(client):
+    # PUT never existed and must never appear. PATCH and DELETE are allowed
+    # on exactly two non-data surfaces (§4.6): the model alias (a label) and
+    # baseline unpin (a reference pointer). Neither touches stored rows.
     methods = {m for r in client.app.routes for m in getattr(r, "methods", set())}
-    assert not ({"PUT", "PATCH", "DELETE"} & methods)
+    assert "PUT" not in methods
+    editable = {
+        r.path for r in client.app.routes
+        if getattr(r, "methods", set()) & {"PATCH", "DELETE"}}
+    assert editable == {"/api/models/{fingerprint:path}",
+                        "/api/baselines/{baseline_id}"}
 
 
 def test_db_rejects_update_and_delete(client):

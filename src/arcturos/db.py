@@ -58,6 +58,23 @@ CREATE TABLE IF NOT EXISTS eval_results (
     created_at        TEXT    NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS models (
+    model_fingerprint TEXT    PRIMARY KEY,
+    alias             TEXT,
+    engine            TEXT,
+    first_seen        TEXT    NOT NULL,
+    last_seen         TEXT    NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS baselines (
+    id                INTEGER PRIMARY KEY AUTOINCREMENT,
+    model_fingerprint TEXT    NOT NULL REFERENCES models(model_fingerprint),
+    metric_family     TEXT    NOT NULL,
+    run_id            INTEGER NOT NULL REFERENCES runs(id),
+    created_at        TEXT    NOT NULL,
+    UNIQUE (model_fingerprint, metric_family)
+);
+
 CREATE TABLE IF NOT EXISTS judgments (
     id                     INTEGER PRIMARY KEY AUTOINCREMENT,
     eval_result_a          INTEGER NOT NULL REFERENCES eval_results(id),
@@ -118,6 +135,38 @@ END;
 CREATE TRIGGER IF NOT EXISTS trg_judgments_no_delete
 BEFORE DELETE ON judgments BEGIN
     SELECT RAISE(ABORT, 'append-only: DELETE forbidden on judgments');
+END;
+
+-- models: the fingerprint, engine, and seen timestamps are immutable once
+-- registered; only the alias may change (it is a label, not data — §4.6).
+CREATE TRIGGER IF NOT EXISTS trg_models_no_delete
+BEFORE DELETE ON models BEGIN
+    SELECT RAISE(ABORT, 'append-only: DELETE forbidden on models');
+END;
+CREATE TRIGGER IF NOT EXISTS trg_models_alias_only
+BEFORE UPDATE ON models BEGIN
+    SELECT CASE WHEN
+        NEW.model_fingerprint IS NOT OLD.model_fingerprint OR
+        NEW.engine IS NOT OLD.engine OR
+        NEW.first_seen IS NOT OLD.first_seen
+    THEN RAISE(ABORT, 'append-only: only the alias or last_seen may be updated on models')
+    END;
+END;
+
+-- baselines are reference pointers (§4.6), not stored data: re-pinning a
+-- (model, metric-family) pair replaces the pointer, and unpinning removes
+-- it. The underlying run rows stay untouched.
+CREATE TRIGGER IF NOT EXISTS trg_baselines_replace_pin
+BEFORE INSERT ON baselines WHEN
+    (SELECT COUNT(*) FROM baselines
+     WHERE model_fingerprint = NEW.model_fingerprint
+       AND metric_family = NEW.metric_family) > 0
+BEGIN
+    SELECT RAISE(ABORT, 'baseline-replace');
+END;
+CREATE TRIGGER IF NOT EXISTS trg_baselines_no_update
+BEFORE UPDATE ON baselines BEGIN
+    SELECT RAISE(ABORT, 'append-only: re-pin instead of updating a baseline');
 END;
 """
 
