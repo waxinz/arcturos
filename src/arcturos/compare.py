@@ -1,5 +1,10 @@
 """J2 comparison logic — benchmark series + run diffs over the Arcturos store.
 
+Baseline overlay support (§4.6): ``build_benchmarks_payload`` optionally
+carries a pinned reference run's series + metadata, and
+``baseline_deltas`` computes honest per-point deltas (missing either side
+→ no row, never a fabricated zero).
+
 Pure functions over a ``sqlite3.Connection`` (no FastAPI imports): the API
 endpoints in :mod:`arcturos.main` are thin wrappers, and tests can exercise
 this module directly through the TestClient.
@@ -23,7 +28,7 @@ from __future__ import annotations
 
 import re
 import sqlite3
-from typing import Optional
+from typing import Any, Optional
 
 # Canonical metric order for the allowlist. ``mtp_acceptance`` is derived;
 # every other name is a column on ``benchmarks``.
@@ -136,13 +141,19 @@ def fetch_benchmarks(db: sqlite3.Connection, run_id: int) -> list[sqlite3.Row]:
 
 
 def build_benchmarks_payload(
-    db: sqlite3.Connection, run_ids: list[int], metrics: list[str]
+    db: sqlite3.Connection, run_ids: list[int], metrics: list[str],
+    baseline_run_id: int | None = None,
 ) -> dict:
     """Series payload for GET /api/compare/benchmarks.
 
     ``run_ids`` and ``metrics`` are assumed validated by the caller (existing
     runs, allowlisted metrics). Callers also guarantee run order; series are
     keyed by ``str(run_id)`` per the JSON contract.
+
+    ``baseline_run_id`` (optional): when set, the payload carries the pinned
+    reference's points under ``series['baseline']`` + a ``baseline`` metadata
+    block, so views can render the dashed reference line and delta columns
+    (§4.6). The baseline run does NOT need to be in ``run_ids``.
     """
     runs = [dict(fetch_run(db, rid)) for rid in run_ids]
     series: dict[str, dict[str, list[dict]]] = {}
@@ -154,7 +165,8 @@ def build_benchmarks_payload(
                 for row in fetch_benchmarks(db, rid)
             ]
             series[metric][str(rid)] = points
-    return {
+
+    payload: dict[str, Any] = {
         "runs": [
             {
                 "id": run["id"],
@@ -171,6 +183,68 @@ def build_benchmarks_payload(
         "metrics": metrics,
         "series": series,
     }
+
+    if baseline_run_id is not None:
+        baseline_run = fetch_run(db, baseline_run_id)
+        if baseline_run is None:
+            raise ValueError(f"baseline run id {baseline_run_id} not found")
+        baseline_points: dict[str, list[dict]] = {}
+        for metric in metrics:
+            baseline_points[metric] = [
+                {"context_tokens": row["context_tokens"], "value": metric_value(row, metric)}
+                for row in fetch_benchmarks(db, baseline_run_id)
+            ]
+        payload["baseline"] = {
+            "run_id": baseline_run_id,
+            "model_fingerprint": baseline_run["model_fingerprint"],
+            "model_fingerprint_short": short_fingerprint(baseline_run["model_fingerprint"]),
+            "engine": baseline_run["engine"],
+            "host_label": host_label(baseline_run["server_url"]),
+        }
+        # keyed by metric so each chart can overlay its own dashed line
+        payload["series"]["baseline"] = baseline_points
+    return payload
+
+
+def baseline_deltas(payload: dict[str, Any], run_id: int) -> dict[str, list[dict]]:
+    """Per-point deltas of one run against the payload's baseline (§4.6).
+
+    For each metric: the baseline point at the same context_tokens, the
+    run's value, and the absolute + percent delta. Points where either side
+    is missing (None) are excluded — a delta against nothing is not a
+    number, and honest nulls beat fabricated zeros. Higher-is-better for
+    tok/s and tokens; lower-is-better for TTFT and wall — the percent is
+    signed so the view can colour good/bad without knowing semantics.
+    """
+    if "baseline" not in payload:
+        raise ValueError("payload has no baseline to compare against")
+    baseline_points = payload["series"]["baseline"]
+    # series is keyed [metric][run_id]; the run must be IN the payload's
+    # run list for its series to exist (the endpoint guarantees that).
+    if str(run_id) not in {str(r["id"]) for r in payload["runs"]}:
+        raise ValueError(f"run id {run_id} is not part of this payload")
+    deltas: dict[str, list[dict]] = {}
+    for metric, base_pts in baseline_points.items():
+        if metric not in payload["series"]:
+            continue
+        run_points = payload["series"][metric].get(str(run_id), [])
+        base_by_ctx = {p["context_tokens"]: p["value"] for p in base_pts}
+        rows = []
+        for point in run_points:
+            base = base_by_ctx.get(point["context_tokens"])
+            if base is None or point["value"] is None:
+                continue
+            delta = point["value"] - base
+            rows.append({
+                "context_tokens": point["context_tokens"],
+                "baseline_value": base,
+                "value": point["value"],
+                "delta": delta,
+                "delta_pct": (delta / base) if base else None,
+            })
+        if rows:
+            deltas[metric] = rows
+    return deltas
 
 
 def build_run_diff_payload(
@@ -234,3 +308,42 @@ def build_run_diff_payload(
         "directions": dict(METRIC_DIRECTIONS),
         "deltas": deltas,
     }
+
+
+def export_benchmarks_csv(payload: dict[str, Any]) -> str:
+    """CSV export of a compare payload (§4.6 data export).
+
+    One long-format row per (run, metric, context point): the header carries
+    ``schema_version`` and the payload carries fingerprint + host fields on
+    every row so external analysis can self-describe. Honest nulls: a
+    missing metric value is an empty cell, never a fabricated 0.
+    """
+    import csv
+    import io
+
+    SCHEMA_VERSION = "arcturos-compare-v1"
+    buf = io.StringIO()
+    writer = csv.writer(buf, lineterminator="\n")
+    writer.writerow(["schema_version", "run_id", "model_fingerprint",
+                     "model_fingerprint_short", "engine", "server_url",
+                     "host_label", "metric", "context_tokens", "value"])
+    baseline_fp = None
+    if "baseline" in payload:
+        baseline_fp = payload["baseline"]["model_fingerprint"]
+        writer.writerow([SCHEMA_VERSION, payload["baseline"]["run_id"],
+                         baseline_fp, payload["baseline"]["model_fingerprint_short"],
+                         payload["baseline"]["engine"], "",  # server_url n/a for reference row
+                         payload["baseline"]["host_label"], "baseline",
+                         "", ""])
+    for run in payload["runs"]:
+        for metric in payload["metrics"]:
+            for point in payload["series"][metric].get(str(run["id"]), []):
+                value = point["value"]
+                writer.writerow([SCHEMA_VERSION, run["id"],
+                                 run["model_fingerprint"],
+                                 run["model_fingerprint_short"],
+                                 run["engine"], run["server_url"],
+                                 run["host_label"], metric,
+                                 point["context_tokens"],
+                                 "" if value is None else value])
+    return buf.getvalue()
