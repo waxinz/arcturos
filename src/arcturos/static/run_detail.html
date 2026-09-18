@@ -6,7 +6,7 @@
   <title>Arcturos — Run detail</title>
   <style>
     body { font-family: system-ui, -apple-system, sans-serif; margin: 2rem auto;
-           max-width: 960px; color: #1a1a1a; background: #fafafa; }
+           max-width: 1080px; color: #1a1a1a; background: #fafafa; }
     header { border-bottom: 2px solid #222; padding-bottom: .5rem; margin-bottom: 1.5rem; }
     h1 { font-size: 1.6rem; margin: 0; }
     .sub { color: #666; margin-top: .25rem; }
@@ -23,7 +23,14 @@
                margin: 0 0 .2rem .8rem; word-break: break-all; }
     .status { color: #666; font-size: .85rem; margin-top: .75rem; }
     .empty { color: #666; padding: 2rem; text-align: center; }
-    .null { color: #999; }
+    .null { color: #767676; } /* 4.5:1 on white — WCAG AA (UX review) */
+    .actions { margin-top: 1rem; }
+    .actions a, .actions button { margin-right: .75rem; padding: .4rem .8rem;
+                                  font-size: .88rem; cursor: pointer; }
+    .env-block { margin-top: 1rem; }
+    .env-block pre { background: #fff; border: 1px solid #e5e5e5; padding: .6rem;
+                     font-size: .8rem; overflow-x: auto; }
+    .table-wrap { overflow-x: auto; }
   </style>
 </head>
 <body>
@@ -44,22 +51,48 @@
   <h2 id="run-title">Run …</h2>
   <div id="run-meta" class="meta"></div>
 
+  <div class="actions" id="run-actions"></div>
+
+  <details class="env-block" id="env-block" hidden>
+    <summary>Engine environment (JSON) <button id="copy-env">copy</button></summary>
+    <pre id="env-json"></pre>
+  </details>
+
   <h3>Benchmark points</h3>
-  <table>
-    <thead>
-      <tr>
-        <th>ctx tokens</th><th>prefill tok/s</th><th>decode tok/s</th>
-        <th>TTFT ms</th><th>wall s</th><th>out tok</th>
-        <th>MTP accept</th><th>power</th><th>created</th>
-      </tr>
-    </thead>
-    <tbody id="points-body"></tbody>
-  </table>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>ctx tokens</th><th>prefill tok/s</th><th>decode tok/s</th>
+          <th>TTFT ms</th><th>wall s</th><th>out tok</th>
+          <th>MTP accept</th><th>power</th><th>created</th>
+        </tr>
+      </thead>
+      <tbody id="points-body"></tbody>
+    </table>
+  </div>
   <p id="status" class="status">Loading…</p>
 
   <script>
     const runId = location.pathname.split('/').pop();
-    const fmt = (v) => (v === null || v === undefined) ? 'null' : String(v);
+    // Honest nulls: '—' with a reason tooltip, never 0/dash implying zero,
+    // never a bare 'null' string (principle 4 + UX review finding 2).
+    function cellText(v, reason) {
+      return (v === null || v === undefined) ? '—' : String(v);
+    }
+    function cellReason(v) {
+      return (v === null || v === undefined)
+        ? 'not reported by the engine for this point' : null;
+    }
+    function setCell(td, v, extra) {
+      td.textContent = cellText(v);
+      const r = cellReason(v);
+      if (r) {
+        td.title = r;
+        td.style.color = '#767676';
+      }
+      if (extra) td.textContent = cellText(v) + extra;
+    }
 
     async function load() {
       const status = document.getElementById('status');
@@ -69,34 +102,65 @@
         const run = await res.json();
         document.getElementById('run-title').textContent =
           'Run #' + run.id + ' — ' + (run.model_fingerprint || 'unknown model');
-        document.getElementById('run-meta').innerHTML = `
-          <dt>Server</dt><dd>${run.server_url || ''}</dd>
-          <dt>Engine</dt><dd>${run.engine || ''}</dd>
-          <dt>Context size</dt><dd>${run.context_size ?? 'null'}</dd>
-          <dt>Created</dt><dd>${run.created_at || ''}</dd>`;
+        // textContent-built meta card: no innerHTML injection from API strings
+        const meta = document.getElementById('run-meta');
+        meta.innerHTML = '';  // static empty shell, no data
+        for (const [k, v] of [['Server', run.server_url], ['Engine', run.engine],
+                              ['Context size', run.context_size],
+                              ['Created', run.created_at]]) {
+          const dt = document.createElement('dt'); dt.textContent = k;
+          const dd = document.createElement('dd');
+          dd.textContent = (v === null || v === undefined) ? '—' : String(v);
+          meta.appendChild(dt); meta.appendChild(dd);
+        }
+
+        // Spec'd header actions (ux-design §4.6/§6): compare-from-here,
+        // pin-as-baseline stub, export — no dead-end page.
+        const acts = document.getElementById('run-actions');
+        acts.innerHTML = '';
+        const a1 = document.createElement('a');
+        a1.href = '/compare?runs=' + run.id;
+        a1.textContent = 'Compare from this run';
+        acts.appendChild(a1);
+        const a2 = document.createElement('a');
+        a2.href = '/diff?run_a=' + run.id;
+        a2.textContent = 'Diff against…';
+        acts.appendChild(a2);
+        const b1 = document.createElement('button');
+        b1.textContent = 'Copy run JSON';
+        b1.onclick = () => navigator.clipboard.writeText(JSON.stringify(run, null, 2));
+        acts.appendChild(b1);
+
+        // Engine environment block when present in the stored run payload.
+        const env = run.engine_metadata || run.engine_meta || null;
+        if (env) {
+          document.getElementById('env-block').hidden = false;
+          document.getElementById('env-json').textContent = JSON.stringify(env, null, 2);
+          document.getElementById('copy-env').onclick = () =>
+            navigator.clipboard.writeText(JSON.stringify(env, null, 2));
+        }
 
         const pres = await fetch('/api/runs/' + runId + '/benchmarks');
         const points = pres.ok ? await pres.json() : [];
         const tbody = document.getElementById('points-body');
         tbody.innerHTML = '';
         if (!points.length) {
-          status.textContent = 'No benchmark points stored for this run yet.';
+          status.textContent =
+            'No benchmark points stored for this run yet — dispatch one from Create & Run.';
           return;
         }
         for (const p of points) {
           const tr = document.createElement('tr');
           const mtp = (p.mtp_accepted === null || p.mtp_draft_n === null)
-            ? '<span class="null">null</span>'
-            : p.mtp_accepted + '/' + p.mtp_draft_n;
-          const power = p.power_watts === null
-            ? '<span class="null">null</span>'
+            ? null : p.mtp_accepted + '/' + p.mtp_draft_n;
+          const power = (p.power_watts === null) ? null
             : p.power_watts + ' W' + (p.power_host ? ' @ ' + p.power_host : '');
           const cells = [p.context_tokens, p.prefill_tps, p.decode_tps,
             p.ttft_ms, p.wall_s, p.output_tokens, mtp, power, p.created_at];
           for (const c of cells) {
             const td = document.createElement('td');
-            td.innerHTML = c;
-            td.className = 'mono';
+            setCell(td, c);
+            td.className = c === null ? 'mono null' : 'mono';
             tr.appendChild(td);
           }
           tbody.appendChild(tr);

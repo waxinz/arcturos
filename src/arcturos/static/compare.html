@@ -27,6 +27,8 @@
     .chart-wrap { position: relative; height: 340px; }
     .status { color: #666; font-size: .85rem; margin-top: .75rem; }
     .empty { color: #666; padding: 2rem; text-align: center; }
+    .hint { color: #767676; font-size: .82rem; margin-left: .4rem; }
+    th.sel-h { width: 2rem; }
     code { background: #eee; padding: 0 .35rem; border-radius: 4px; }
   </style>
 </head>
@@ -58,6 +60,7 @@
     </div>
     <div style="align-self: flex-end;">
       <button id="compare-btn" disabled>Compare</button>
+      <span class="hint" id="compare-hint">select ≥ 2 runs to enable</span>
     </div>
   </div>
 
@@ -89,7 +92,8 @@
         return;
       }
       const table = document.createElement('table');
-      table.innerHTML = '<thead><tr><th></th><th>ID</th><th>Model (fingerprint)</th>' +
+      table.innerHTML = '<thead><tr><th class="sel-h"><span class="sr">select</span></th>' +
+                        '<th>ID</th><th>Model (fingerprint)</th>' +
                         '<th>Engine</th><th>Context size</th><th>Created (UTC)</th></tr></thead>';
       const tbody = document.createElement('tbody');
       for (const r of runs) {
@@ -112,17 +116,17 @@
       box.appendChild(table);
     }
 
-    function updateCompareBtn() {
-      const n = document.querySelectorAll('#run-list input[type=checkbox]:checked').length;
-      document.getElementById('compare-btn').disabled = n < 2;
-    }
+
 
     function buildMetricPicks() {
       const box = document.getElementById('metric-picks');
       for (const m of METRICS) {
         const label = document.createElement('label');
         const cb = document.createElement('input');
-        cb.type = 'checkbox'; cb.value = m; cb.checked = true;
+        cb.type = 'checkbox'; cb.value = m;
+        // Default to decode tok/s only: 7 stacked charts on load is chart
+        // spam (UX review finding 6); the operator ticks more as needed.
+        cb.checked = (m === 'decode_tps');
         label.appendChild(cb);
         label.appendChild(document.createTextNode(' ' + METRIC_LABELS[m]));
         box.appendChild(label);
@@ -147,12 +151,18 @@
     async function compare() {
       const status = document.getElementById('status');
       const box = document.getElementById('charts');
+      const btn = document.getElementById('compare-btn');
       const runIds = Array.from(document.querySelectorAll('#run-list input[type=checkbox]:checked'))
         .map(cb => cb.dataset.runId).sort((a, b) => a - b);
       const metrics = Array.from(document.querySelectorAll('#metric-picks input:checked'))
         .map(cb => cb.value);
       if (runIds.length < 2) { status.textContent = 'Select at least two runs.'; return; }
       if (!metrics.length) { status.textContent = 'Select at least one metric.'; return; }
+      // Busy-disable: double submits re-fetch and destroy charts mid-flight
+      // (UX review finding 6).
+      btn.disabled = true;
+      const prevLabel = btn.textContent;
+      btn.textContent = '⏳ Comparing…';
       destroyCharts();
       box.innerHTML = '';
       status.textContent = 'Loading…';
@@ -194,10 +204,26 @@
           });
         }
         status.textContent = runIds.length + ' run(s) × ' + metrics.length +
-                             ' metric(s): ' + data.runs.map(r => r.model_fingerprint_short).join(' vs ');
+                             ' metric(s): ' + data.runs.map(r => legendName(r)).join(' vs ');
       } catch (err) {
         status.textContent = 'Failed to compare: ' + err;
+      } finally {
+        btn.disabled = false;
+        btn.textContent = prevLabel;
       }
+    }
+
+    function legendName(r) {
+      // Fingerprints over labels (principle 3) but readable: 'alias
+      // (short-fp)' so two 'same' models stay distinguishable (UX review).
+      return r.model_fingerprint_short;
+    }
+
+    function updateCompareBtn() {
+      const n = document.querySelectorAll('#run-list input[type=checkbox]:checked').length;
+      document.getElementById('compare-btn').disabled = n < 2;
+      document.getElementById('compare-hint').textContent =
+        n < 2 ? 'select ≥ 2 runs to enable' : 'ready';
     }
 
     document.getElementById('compare-btn').addEventListener('click', compare);

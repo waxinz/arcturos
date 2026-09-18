@@ -279,6 +279,8 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
                 targets=targets, n_predict=n_predict, api_key=api_key)
         except ops.DispatchError as exc:
             raise HTTPException(status_code=422, detail=str(exc))
+        except ops.DispatchFailure as exc:
+            raise HTTPException(status_code=502, detail=str(exc))
         except (RuntimeError, ValueError) as exc:
             raise HTTPException(status_code=502, detail=f"bench failed: {exc}")
 
@@ -312,24 +314,51 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
                 api_key=api_key)
         except ops.DispatchError as exc:
             raise HTTPException(status_code=422, detail=str(exc))
+        except ops.DispatchFailure as exc:
+            raise HTTPException(status_code=502, detail=str(exc))
         except Exception as exc:  # target unreachable/HTTP error/etc.
             if isinstance(exc, HTTPException):
                 raise
             raise HTTPException(status_code=502, detail=f"eval replay failed: {exc}")
 
-    @app.get("/api/ops/preflight")
-    def ops_preflight(target: str, kind: str = "bench", model: str | None = None,
-                      api_key: str | None = None):
-        """J6 interactive health preflight: {target, kind=bench|eval, model?,
-        api_key?} -> checks. Shorter per-check timeout than the dispatch
-        path (8s vs 20s) so a dead target answers in <= ~16s."""
-        if not target.startswith("http"):
+    @app.post("/api/ops/preflight")
+    def ops_preflight(body: dict):
+        """J6 interactive health preflight: POST JSON
+        {target, kind=bench|eval, model?, api_key?} -> checks.
+
+        POST with the key in the body (never in a URL: GET query strings
+        leak into access logs, browser history, and proxies — a credential
+        field the UI renders password-masked must not leak this way).
+        Shorter per-check timeout than the dispatch path (8s vs 20s) so a
+        dead target answers in <= ~16s.
+        """
+        target = body.get("target")
+        kind = body.get("kind", "bench")
+        model = body.get("model")
+        api_key = body.get("api_key")
+        if not isinstance(target, str) or not target.startswith("http"):
             raise HTTPException(status_code=422, detail="target must be an http(s) URL")
         if kind not in ("bench", "eval"):
             raise HTTPException(status_code=422, detail="kind must be 'bench' or 'eval'")
         try:
             return ops.preflight.preflight(target, kind=kind, model=model,
                                            api_key=api_key, timeout=8.0)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc))
+        except Exception as exc:
+            raise HTTPException(status_code=502, detail=f"preflight failed: {exc}")
+
+    # Kept for keyless GET probes (no credentials travel in URLs when the
+    # key is required; keyless probes are fine and keep bookmarks working).
+    @app.get("/api/ops/preflight")
+    def ops_preflight_get(target: str, kind: str = "bench", model: str | None = None):
+        if not target.startswith("http"):
+            raise HTTPException(status_code=422, detail="target must be an http(s) URL")
+        if kind not in ("bench", "eval"):
+            raise HTTPException(status_code=422, detail="kind must be 'bench' or 'eval'")
+        try:
+            return ops.preflight.preflight(target, kind=kind, model=model,
+                                           api_key=None, timeout=8.0)
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc))
         except Exception as exc:

@@ -22,7 +22,16 @@ from arcturos import preflight
 
 
 class DispatchError(ValueError):
-    status_code = 400
+    """Bad input / preflight failure — the caller's form needs fixing (422)."""
+
+
+class DispatchFailure(RuntimeError):
+    """Runtime failure against the target server — 502 per the API contract.
+
+    main.py maps DispatchError -> 422 ("fix the form") and DispatchFailure
+    -> 502 ("check the server"), so the UI error message points at the right
+    next step instead of blaming the input for a dead target.
+    """
 
 
 def dispatch_bench(
@@ -50,8 +59,7 @@ def dispatch_bench(
                              api_key=api_key)
     if not pf.ok():
         raise DispatchError(
-            "preflight failed: " + "; ".join(
-                c["detail"] for c in pf["checks"] if not c["ok"]))
+            _preflight_detail(server_url, pf))
     try:
         points = bench.run_benchmark(
             server_url, "default", targets, n_predict,
@@ -59,7 +67,8 @@ def dispatch_bench(
             api_key=api_key,
         )
     except (RuntimeError, ValueError) as exc:
-        raise DispatchError(str(exc)) from exc
+        raise DispatchFailure(f"bench failed against {server_url}: {exc} "
+                              "— check the server is still up") from exc
     engine_meta = bench.capture_engine_metadata(server_url, transport=transport,
                                                 api_key=api_key)
     run_id = bench.store_benchmark_run(db_path, server_url, engine_meta, points)
@@ -81,6 +90,17 @@ def dispatch_bench(
             for p in points
         ],
     }
+
+
+def _preflight_detail(target: str, pf) -> str:
+    """Actionable preflight failure message: names failing checks, states
+    the target, and points at the next step (per UX review finding 3)."""
+    failed = [c["name"] for c in pf["checks"] if not c["ok"]]
+    details = [c["detail"] for c in pf["checks"] if not c["ok"]]
+    return ("preflight failed (" + ", ".join(failed) + ") at " + target + ": " +
+            "; ".join(details) +
+            " — verify the server is running or correct the URL; "
+            "use ✔ Check target for per-check detail")
 
 
 def dispatch_eval(
@@ -124,8 +144,7 @@ def dispatch_eval(
                              api_key=api_key)
     if not pf.ok():
         raise DispatchError(
-            "preflight failed: " + "; ".join(
-                c["detail"] for c in pf["checks"] if not c["ok"]))
+            _preflight_detail(target, pf))
     conn = dbmod.connect(db_path)
     dbmod.init_db(conn)
     stored: list[dict] = []
@@ -157,6 +176,11 @@ def dispatch_eval(
                     conn, suite_id, model_fingerprint, item_id,
                     content, ptoks, ctoks, latency_ms))
         conn.commit()
+    except (RuntimeError, ValueError) as exc:
+        conn.rollback()
+        raise DispatchFailure(
+            f"eval replay failed against {target}: {exc} — check the target "
+            "is still up / returns valid chat responses") from exc
     except Exception:
         conn.rollback()
         raise
