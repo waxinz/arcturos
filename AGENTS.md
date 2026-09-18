@@ -110,6 +110,22 @@ arcturos/
 
 ### Log (newest first)
 
+- 2026-09-17 — UX review round (both reviewer agents finally completed
+  after gateway 429/timeout retries; 11 findings deduped) + fixes
+  (6233984): DispatchFailure/DispatchError split (runtime target failures
+  now 502 with 'check the server' guidance, input/preflight stay 422);
+  preflight moved to POST — api_key travels in the body, never a URL (key
+  leak into access logs/history flagged by both reviewers); actionable
+  preflight failure detail (names checks + target + next step); UI renders
+  Pydantic 422 detail arrays as 'field: msg' instead of '[object Object]';
+  bench form warns on dropped non-numeric targets; honest nulls in
+  run-detail ('—' + AA-contrast + tooltip, no falsy-zero '?'); run-detail
+  header actions (compare/diff/copy-JSON) + engine-env <details> block;
+  compare view: busy-disable, 'select >=2 runs' hint, decode_tps default
+  only, accessible select-column header. BONUS: fixed pre-existing test
+  bug — _pass_preflight() permanently replaced the preflight module
+  attribute, leaking ok:stub checks into later tests; now a restoring
+  fixture. 103 tests green, live-verified on taupo.
 - 2026-09-17 — UX backlog landed (1b2dcaa): confirm dialogs on
   judgment-record + manual-bench-point append posts (ux principle 5);
   eval output click-to-expand drill-down in /evals. 99 tests green,
