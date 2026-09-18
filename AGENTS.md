@@ -110,6 +110,20 @@ arcturos/
 
 ### Log (newest first)
 
+- 2026-09-17 — §4.6 backlog finished (bcd1cb8): compare baseline overlay
+  (dashed 📌 reference dataset + per-run delta tables with direction-aware
+  good/bad colouring; deltas only where BOTH sides have the metric at the
+  same ctx length — honest gaps, never fabricated zeros; pinned and ad-hoc
+  baselines both selectable); CSV export everywhere — compare payload
+  (schema_version arcturos-compare-v1, fingerprint + host columns on every
+  row, optional baseline reference row), /runs, per-run benchmarks, eval
+  results, judgments (arcturos-v1 rows; missing metric = empty cell);
+  export buttons on /runs /evals /judgments /compare and run detail;
+  eval drill-down keyboard parity (Tab focus, Enter/Space toggle,
+  aria-expanded). 129 tests green; live-verified on taupo (real delta
+  rows + both CSVs download with attachment headers). §4.6 is now fully
+  implemented; UX review findings all closed.
+
 - 2026-09-17 — Model registry + baseline tracking (§4.6 J6, commits
   192dea7 + 7774f0d): /models view (cards per fingerprint: alias-only
   edit trigger-enforced, engine, first/last seen, run count) and
