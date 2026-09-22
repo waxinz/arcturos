@@ -451,3 +451,14 @@ def test_frontend_served(client):
     assert r.status_code == 200
     assert "text/html" in r.headers["content-type"]
     assert "Arcturos" in r.text
+
+
+def test_run_detail_page_has_combined_throughput_columns(client):
+    """Run detail renders Σ combined-throughput columns (2026-09-22) —
+    hidden behind streams > 1 for single-stream points (honest nulls)."""
+    html = client.get("/runs/1").text
+    assert "Σ prefill t/s" in html
+    assert "Σ decode t/s" in html
+    assert "prefill_tps_combined" in html
+    assert "decode_tps_combined" in html
+    assert "multi-stream points only" in html

@@ -116,7 +116,10 @@ into compare/baseline commands. CLI suggests: `arcturos report compare <run-id>`
 
 - **Selector bar (top):** model multi-select (registry-backed, fingerprint
   shown under label), metric multi-select (decode_tps, prefill_tps, ttft,
-  wall_time, acceptance, power_w, mtp_accepted), context-point range slider
+  wall_time, acceptance, power_w, mtp_accepted; 2026-09-22 addition:
+  decode_tps_combined / prefill_tps_combined — the Σ across parallel
+  streams — selectable as their own checkboxes and plottable like any
+  other metric), context-point range slider
   (log-scale awareness for 4k→250k).
 - **Chart area (center):** Chart.js line chart, x = context length,
   y = selected metric, one series per model. Metric switch = tabs above chart
@@ -293,7 +296,11 @@ version, last refresh). No auth. All views URL-addressable.
   see the progress indicator below. 2026-09-22 amendment: the card
   gained a parallel-streams field (default 1, max 16) — each context
   length runs that many identical concurrent workstreams; the live
-  detail table shows the stream count per point.)
+  detail table shows the stream count per point. 2026-09-22 second
+  amendment: run detail's benchmark table gains Σ prefill/decode t/s
+  columns (combined throughput across all parallel streams); they show
+  values only for multi-stream points and honest `—` with a reason
+  tooltip otherwise.)
 
 **Bench progress indicator (added 2026-09-21):** kicking off a bench on
 `/create` submits an async job and immediately shows a progress panel:

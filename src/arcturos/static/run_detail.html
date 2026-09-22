@@ -69,6 +69,7 @@
       <thead>
         <tr>
           <th>ctx tokens</th><th>prefill tok/s</th><th>decode tok/s</th>
+          <th>Σ prefill t/s</th><th>Σ decode t/s</th>
           <th>TTFT ms</th><th>wall s</th><th>out tok</th><th>streams</th>
           <th>MTP accept</th><th>power</th><th>created</th>
         </tr>
@@ -89,9 +90,9 @@
       return (v === null || v === undefined)
         ? 'not reported by the engine for this point' : null;
     }
-    function setCell(td, v, extra) {
+    function setCell(td, v, extra, reasonOverride) {
       td.textContent = cellText(v);
-      const r = cellReason(v);
+      const r = reasonOverride || cellReason(v);
       if (r) {
         td.title = r;
         td.style.color = '#767676';
@@ -218,12 +219,24 @@
             ? null : p.mtp_accepted + '/' + p.mtp_draft_n;
           const power = (p.power_watts === null) ? null
             : p.power_watts + ' W' + (p.power_host ? ' @ ' + p.power_host : '');
+          // Combined throughput (Σ across parallel streams = true server
+          // capacity under concurrency) is only meaningful for multi-stream
+          // points — hidden behind 'streams > 1' so single-stream rows stay
+          // uncluttered. Honest nulls otherwise ('—' + reason tooltip).
+          const multi = p.streams !== null && p.streams > 1;
+          const sumPre = multi ? p.prefill_tps_combined : null;
+          const sumDec = multi ? p.decode_tps_combined : null;
+          const sumReason = multi ? null
+            : 'combined throughput applies to multi-stream points only';
           const cells = [p.context_tokens, p.prefill_tps, p.decode_tps,
+            sumPre, sumDec,
             p.ttft_ms, p.wall_s, p.output_tokens, p.streams, mtp, power,
             p.created_at];
-          for (const c of cells) {
+          for (let i = 0; i < cells.length; i++) {
+            const c = cells[i];
             const td = document.createElement('td');
-            setCell(td, c);
+            setCell(td, c, null,
+              (i === 3 || i === 4) ? sumReason : null);
             td.className = c === null ? 'mono null' : 'mono';
             tr.appendChild(td);
           }

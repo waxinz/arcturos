@@ -112,6 +112,10 @@ Rules:
 | S8 | combined sum skips null-rate streams (no fabricated zeros) | `tests/test_bench.py::test_aggregate_combined_skips_null_streams` | done |
 | S9 | streams=1: combined equals the single stream's rate | `tests/test_bench.py::test_aggregate_single_stream_combined_equals_rate` | done |
 | S10 | dispatch payload carries combined fields (stored + returned) | `tests/test_ops_dispatch.py::test_dispatch_bench_streams_two_stores_stream_count` | done |
+| S11 | combined metrics selectable on /compare and plot stored values | `tests/test_compare.py::test_compare_combined_throughput_series` | done |
+| S12 | combined series honest-null for single-stream points | `tests/test_compare.py::test_compare_combined_honest_null_when_not_multi_stream` | done |
+| S13 | run-diff exposes combined metrics as higher-is-better | `tests/test_compare.py::test_run_diff_combined_metrics_direction_and_deltas` | done |
+| S14 | /compare + run-detail pages render combined columns/checkboxes | `tests/test_compare.py::test_compare_page_lists_combined_metric_checkboxes`, `tests/test_api.py::test_run_detail_page_has_combined_throughput_columns` | done |
 
 ## 3. Fixture suites (`qa/suites/`)
 
