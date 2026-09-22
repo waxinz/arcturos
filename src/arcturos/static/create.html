@@ -304,7 +304,13 @@
       return m ? (m + 'm ' + String(r).padStart(2, '0') + 's') : (r + 's');
     }
     function bpRow(p, i) {
-          const cell = (v, suffix) => (v == null ? '—' : v + (suffix || ''));
+          const cell = (v, suffix) => {
+        // 2dp display precision: 30.105000000000004 -> '30.11 t/s'.
+        // Integers and strings pass through; presentation-only.
+        if (v == null) return '—';
+        if (typeof v === 'number' && !Number.isInteger(v)) return v.toFixed(2) + (suffix || '');
+        return v + (suffix || '');
+      };
           // Multi-stream jobs: one extra Σ pair after decode — combined
           // throughput across all streams (true server capacity). Single-stream
           // jobs keep the compact table (nothing to sum).

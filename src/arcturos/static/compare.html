@@ -258,7 +258,15 @@
                 x: { type: 'logarithmic', title: { display: true, text: 'context tokens' } },
                 y: { beginAtZero: false, title: { display: true, text: METRIC_LABELS[metric] } }
               },
-              plugins: { legend: { display: true, labels: { boxWidth: 12 } } }
+              plugins: {
+                legend: { display: true, labels: { boxWidth: 12 } },
+                tooltip: {
+                  // 2dp display precision in hover tooltips too — the
+                  // chart must not re-introduce float noise the tables hide.
+                  callbacks: { label: (ctx) => ctx.dataset.label + ': ' +
+                    (ctx.parsed.y == null ? '—' : Number(ctx.parsed.y).toFixed(2)) }
+                }
+              }
             }
           });
         }
@@ -288,7 +296,11 @@
     }
 
     function fmtNum(v) {
-      return (v === null || v === undefined) ? '—' : String(v);
+      // 2dp display precision (UX rule): floats round to 2 decimals,
+      // integers and strings pass through. Presentation-only.
+      if (v === null || v === undefined) return '—';
+      if (typeof v === 'number' && !Number.isInteger(v)) return v.toFixed(2);
+      return String(v);
     }
 
     async function renderDeltaTables(data, runIds) {

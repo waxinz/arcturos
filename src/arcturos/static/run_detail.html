@@ -84,7 +84,12 @@
     // Honest nulls: '—' with a reason tooltip, never 0/dash implying zero,
     // never a bare 'null' string (principle 4 + UX review finding 2).
     function cellText(v, reason) {
-      return (v === null || v === undefined) ? '—' : String(v);
+      // 2dp display precision (UX rule): 30.105000000000004 -> '30.11'.
+      // Integers (ctx, streams, out tok) and strings pass through; storage
+      // and exports keep full fidelity — this is presentation-only.
+      if (v === null || v === undefined) return '—';
+      if (typeof v === 'number' && !Number.isInteger(v)) return v.toFixed(2);
+      return String(v);
     }
     function cellReason(v) {
       return (v === null || v === undefined)

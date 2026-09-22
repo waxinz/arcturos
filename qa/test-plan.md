@@ -118,6 +118,7 @@ Rules:
 | S14 | /compare + run-detail pages render combined columns/checkboxes | `tests/test_compare.py::test_compare_page_lists_combined_metric_checkboxes`, `tests/test_api.py::test_run_detail_page_has_combined_throughput_columns` | done |
 | S15 | live job table stays compact (7 columns) for single-stream jobs | `tests/test_ops_api.py::test_create_view_live_table_single_stream_stays_compact` | done |
 | S16 | live job table adapts: Σ prefill/decode pair for multi-stream jobs | `tests/test_ops_api.py::test_create_view_live_table_adapts_for_multi_stream_jobs` | done |
+| S17 | UI floats render at 2dp across all views (presentation-only) | `tests/test_compare.py::test_ui_floats_render_at_2dp` | done |
 
 ## 3. Fixture suites (`qa/suites/`)
 
