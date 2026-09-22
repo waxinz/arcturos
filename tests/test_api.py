@@ -26,6 +26,7 @@ EXPECTED_COLUMNS = {
         "id", "eval_result_a", "eval_result_b", "judge_model", "judge_template_version",
         "winner", "confidence", "rationale", "created_at",
     },
+    "suite_definitions": {"id", "suite_id", "payload", "created_at"},
 }
 
 RUN = {
@@ -168,6 +169,45 @@ def test_eval_result_requires_existing_suite(client):
         },
     )
     assert r.status_code == 404
+
+
+# ---------------------------------------------- suite definition snapshots --
+
+
+def test_suite_definition_snapshot_roundtrip(client):
+    """PUT snapshots the definition; GET returns the latest snapshot."""
+    suite = client.post("/api/eval-suites", json={"name": "s", "version": "1"}).json()
+    sid = suite["id"]
+
+    missing = client.get(f"/api/eval-suites/{sid}/definition")
+    assert missing.status_code == 404
+
+    definition = {
+        "suite": "s", "version": "1",
+        "items": [
+            {"id": "sr-001", "category": "logic", "prompt": "p1"},
+            {"id": "sr-002", "category": "counting", "prompt": "p2"},
+        ],
+    }
+    put = client.put(f"/api/eval-suites/{sid}/definition", json=definition)
+    assert put.status_code == 204, put.text
+
+    got = client.get(f"/api/eval-suites/{sid}/definition")
+    assert got.status_code == 200
+    assert got.json()["items"][0]["category"] == "logic"
+
+    # Re-seeding appends a new snapshot; the newest one wins on read.
+    v2 = {**definition, "items": [{"id": "sr-001", "category": "revised", "prompt": "p1"}]}
+    assert client.put(f"/api/eval-suites/{sid}/definition", json=v2).status_code == 204
+    assert client.get(f"/api/eval-suites/{sid}/definition").json()["items"][0]["category"] == "revised"
+
+
+def test_suite_definition_requires_existing_suite_and_items(client):
+    assert client.put("/api/eval-suites/999/definition",
+                      json={"items": [{"id": "x"}]}).status_code == 404
+    suite = client.post("/api/eval-suites", json={"name": "s", "version": "1"}).json()
+    assert client.put(f"/api/eval-suites/{suite['id']}/definition",
+                      json={"no_items": True}).status_code == 422
 
 
 # --------------------------------------------------------- judgments -------

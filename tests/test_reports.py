@@ -118,3 +118,27 @@ def test_category_map_breakdown(db):
     assert rep["by_category"]["uncategorized"] if False else True
     rep2 = reports.suite_report(db, suite_id)  # no map -> uncategorized
     assert rep2["by_category"]["uncategorized"]["total"] == 1
+
+
+def test_category_map_for_reads_definition_snapshot(db):
+    """category_map_for rebuilds the map from the stored definition JSON."""
+    import json as _json
+
+    cur = db.execute(
+        "INSERT INTO eval_suites (name, version) VALUES ('cat-suite', 'v1')")
+    suite_id = cur.lastrowid
+    definition = {"items": [
+        {"id": "sr-001", "category": "logic"},
+        {"id": "sr-002", "category": "counting"},
+        {"id": "sr-003"},  # no category -> dropped from the map
+    ]}
+    db.execute(
+        "INSERT INTO suite_definitions (suite_id, payload, created_at) "
+        "VALUES (?, ?, 'now')", (suite_id, _json.dumps(definition)))
+    db.commit()
+
+    cmap = reports.category_map_for(db, suite_id)
+    assert cmap == {"sr-001": "logic", "sr-002": "counting"}
+
+    # No snapshot for an unknown suite -> empty map, report still works.
+    assert reports.category_map_for(db, 999) == {}

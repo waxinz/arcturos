@@ -66,6 +66,9 @@ def seed_eval_data(api: str, suites: list[dict], live_target: str | None) -> dic
         })
         suite_id = created["id"]
         seeded[suite["suite"]] = suite_id
+        # Park the full suite definition (with per-item categories) so the
+        # report layer can rebuild its category breakdown at read time.
+        post(api, f"/api/eval-suites/{suite_id}/definition", suite)
 
         if live_target:
             results = replay_live(api, suite_id, suite["items"], live_target)
