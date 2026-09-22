@@ -28,7 +28,7 @@ Routes (all data paths are append-only — no UPDATE/DELETE exists):
   GET  /evals                           -> eval suite results view HTML
   GET  /judgments                       -> judgment list view HTML
   GET  /reports                         -> suite report view HTML
-  POST /api/ops/bench                   -> kick off a bench sweep against a server (stores run+points)
+  POST /api/ops/bench                   -> kick off a bench sweep against a server (stores run+points; transport native|openai, model?)
   POST /api/ops/eval                    -> replay a suite against a target (stores eval_results)
   GET  /api/ops/preflight               -> J6 health checks for a target (kind=bench|eval, model?)
 """
@@ -443,17 +443,28 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
     # ------------------------------------------------------------- ops ----
     @app.post("/api/ops/bench")
     def ops_bench(body: dict, db=Depends(get_db)):
-        """Kick off a bench sweep: {server_url, targets: [...], n_predict, api_key?}.
+        """Kick off a bench sweep: {server_url, targets: [...], n_predict,
+        api_key?, transport?, model?}.
 
         Synchronous: returns the stored run_id + per-point metrics. The UI
         shows a spinner for the duration; long sweeps use a small target
         list first (targets are context lengths, e.g. [4096, 16384]).
         ``api_key`` authenticates against key-protected servers.
+
+        ``transport`` selects the wire protocol: ``'native'`` (default,
+        llama.cpp /tokenize + /completion) or ``'openai'`` (any
+        /v1/chat/completions server — tabbyAPI, vLLM, litellm). The
+        ``openai`` transport runs preflight as reachable + chat (these
+        servers have no /tokenize) and streams each point for client-side
+        TTFT + decode; it requires ``model`` (the chat model name).
+        ``model`` is ignored for the native transport.
         """
         server_url = body.get("server_url")
         targets = body.get("targets")
         n_predict = body.get("n_predict", 256)
         api_key = body.get("api_key")
+        transport = body.get("transport", "native")
+        model = body.get("model")
         if not isinstance(server_url, str) or not server_url.startswith("http"):
             raise HTTPException(status_code=422, detail="server_url must be an http(s) URL")
         if not isinstance(targets, list) or not all(
@@ -461,10 +472,16 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
             raise HTTPException(status_code=422, detail="targets must be a list of ints >= 1")
         if not isinstance(n_predict, int) or n_predict < 1:
             raise HTTPException(status_code=422, detail="n_predict must be an int >= 1")
+        if not isinstance(transport, str) or transport not in ("native", "openai"):
+            raise HTTPException(status_code=422,
+                                detail="transport must be 'native' or 'openai'")
+        if model is not None and not isinstance(model, str):
+            raise HTTPException(status_code=422, detail="model must be a string")
         try:
             return ops.dispatch_bench(
                 db_path=db_path, server_url=server_url,
-                targets=targets, n_predict=n_predict, api_key=api_key)
+                targets=targets, n_predict=n_predict, api_key=api_key,
+                transport_name=transport, model=model)
         except ops.DispatchError as exc:
             raise HTTPException(status_code=422, detail=str(exc))
         except ops.DispatchFailure as exc:

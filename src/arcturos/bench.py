@@ -381,28 +381,32 @@ def capture_engine_metadata(base_url: str, timeout: float = 15.0, transport=None
 
 
 def store_benchmark_run(
-    db_path, base_url: str, engine_metadata: dict, points: list[BenchPoint]
+    db_path, base_url: str, engine_metadata: dict, points: list[BenchPoint],
+    engine: str | None = None,
 ) -> int:
     """Store a benchmark run + its points into the Arcturos SQLite schema.
 
-    Inserts one ``runs`` row (server_url, model_fingerprint = engine model path
-    or ``"unknown"``, engine = ``"llama.cpp"``, context_size = metadata n_ctx,
-    created_at = now ISO) and one ``benchmarks`` row per point. The schema's
-    ``runs.context_size`` column is NOT NULL, so an unknown n_ctx is stored as
-    ``0`` (documented sentinel for "unknown"). Returns the new run_id.
+    Inserts one ``runs`` row (server_url, model_fingerprint = engine model
+    path or ``"unknown"``, engine = ``engine`` — default ``"llama.cpp"``
+    for the native transport, the openai transport passes ``"openai"`` —
+    context_size = metadata n_ctx, created_at = now ISO) and one
+    ``benchmarks`` row per point. The schema's ``runs.context_size`` column
+    is NOT NULL, so an unknown n_ctx is stored as ``0`` (documented
+    sentinel for "unknown"). Returns the new run_id.
     """
     conn = db.connect(db_path)
     db.init_db(conn)
     try:
         fingerprint = engine_metadata.get("model_path") or "unknown"
         n_ctx = engine_metadata.get("n_ctx")
+        engine = engine if engine is not None else "llama.cpp"
         cur = conn.execute(
             "INSERT INTO runs (server_url, model_fingerprint, engine, context_size, created_at)"
             " VALUES (?, ?, ?, ?, ?)",
             (
                 base_url,
                 fingerprint,
-                "llama.cpp",
+                engine,
                 n_ctx if n_ctx is not None else 0,
                 _utcnow(),
             ),
@@ -417,7 +421,7 @@ def store_benchmark_run(
             "INSERT INTO models (model_fingerprint, alias, engine, "
             "first_seen, last_seen) VALUES (?, NULL, ?, ?, ?) "
             "ON CONFLICT(model_fingerprint) DO UPDATE SET last_seen = ?",
-            (fingerprint, "llama.cpp", now_seen, now_seen, now_seen),
+            (fingerprint, engine, now_seen, now_seen, now_seen),
         )
 
         now = _utcnow()
