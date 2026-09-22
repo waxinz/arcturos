@@ -106,9 +106,17 @@ arcturos/
 - [x] Power provenance wired into store path: benchmarks.power_host + power_gpu_index columns, db migration for pre-existing DBs, API enforces watts-require-host (422)
 - [x] J7 CRUD + dispatch: ops.py (dispatch_bench/dispatch_eval), /api/ops/bench + /api/ops/eval, /create view (6 form cards: bench dispatch, suite create, suite item editor, eval replay, manual bench point, judgment record); PRD J7 + ux-design §J7 + test-plan J7 sections written; 86 tests green
 - [x] M9 hardening remainder: multi-host compare metadata (server_url in compare payload), health preflight before dispatch (J6), seed power into seed_demo path
-- [ ] First real benchmark captured via /create dispatch (live smoke, quiet window)
+- [x] First real benchmark captured via /create dispatch (live smoke, quiet window)
 
 ### Log (newest first)
+
+- 2026-09-21 — OpenAI-compatible bench transport (26474d8): /api/ops/bench
+  gains transport=native|openai + model; openai runs eval-kind preflight
+  (no /tokenize on tabbyAPI/vLLM), cold UUID prompts sized client-side,
+  streamed points with client-side TTFT/decode, engine='openai' stored,
+  power fields stay None per ADR 002. First real benchmark captured via
+  dispatch: run 9 vs pakuranga tabbyAPI GLM-5.3-Flash (512 ctx, 64 tok,
+  prefill 386.3 tok/s, TTFT 1258.0 ms, wall 2.847 s). 140 tests green.
 
 - 2026-09-21 — Suite definition snapshots + per-category report breakdown
   (1d0b37e + 34fa9c4): the DB stores item_id only, so /reports showed
