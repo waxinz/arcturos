@@ -24,6 +24,8 @@ from arcturos import power
 from arcturos import multiturn as mt
 from arcturos import preflight
 
+import httpx
+
 # Bench transports: 'native' (llama.cpp /tokenize + /completion) and
 # 'openai' (any /v1/chat/completions server: tabbyAPI, vLLM, litellm).
 _BENCH_TRANSPORTS = ("native", "openai")
@@ -48,6 +50,28 @@ class DispatchFailure(RuntimeError):
     -> 502 ("check the server"), so the UI error message points at the right
     next step instead of blaming the input for a dead target.
     """
+
+
+def _point_payload(p) -> dict:
+    """One benchmark point as a JSON-ready dict (dispatch return payload)."""
+    return {
+        "context_tokens": p.target_tokens,
+        "prefill_tps": p.prefill_tps,
+        "decode_tps": p.decode_tps,
+        "ttft_ms": p.ttft_ms,
+        "wall_s": p.wall_s,
+        "output_tokens": p.output_tokens,
+        "mtp_draft_n": p.mtp_draft_n,
+        "mtp_accepted": p.mtp_accepted,
+        "prompt_tokens": p.prompt_tokens,
+        "stop_reason": p.stop_reason,
+        "power_watts": p.power_watts,
+        "power_host": p.power_host,
+        "power_gpu_index": p.power_gpu_index,
+        "streams": p.streams,
+        "decode_tps_combined": p.decode_tps_combined,
+        "prefill_tps_combined": p.prefill_tps_combined,
+    }
 
 
 def dispatch_bench(
@@ -123,53 +147,79 @@ def dispatch_bench(
     if not pf.ok():
         raise DispatchError(
             _preflight_detail(server_url, pf))
+    # Partial-run preservation (2026-09-22): points completed before a
+    # mid-sweep failure are still stored — a failed sweep discards nothing
+    # it already measured. on_point appends as points finish, so the
+    # on_point callback's list IS the partial record.
+    partial_points: list = []
+
+    def _collecting_on_point(point) -> None:
+        partial_points.append(point)
+        if on_point is not None:
+            on_point(point)
+
     if transport_name == "native":
         try:
             points = bench.run_benchmark(
                 server_url, "default", targets, n_predict,
-                timeout=timeout, transport=transport, on_point=on_point,
+                timeout=timeout, transport=transport,
+                on_point=_collecting_on_point,
                 api_key=api_key, streams=streams,
                 power_host=power_host, power_gpu_index=power_gpu_index)
-        except (RuntimeError, ValueError) as exc:
-            raise DispatchFailure(f"bench failed against {server_url}: {exc} "
-                                  "— check the server is still up") from exc
+        except (RuntimeError, ValueError, httpx.HTTPError) as exc:
+            # httpx.HTTPError: connection-level failure (server died
+            # mid-sweep) — previously escaped as an unhandled 500.
+            if not partial_points:
+                raise DispatchFailure(
+                    f"bench failed against {server_url}: {exc} "
+                    "— check the server is still up") from exc
+            engine_meta = bench.capture_engine_metadata(
+                server_url, transport=transport, api_key=api_key)
+            run_id = bench.store_benchmark_run(
+                db_path, server_url, engine_meta, partial_points,
+                engine=None, status="partial")
+            return {
+                "run_id": run_id,
+                "status": "partial",
+                "error": str(exc),
+                "engine_metadata": engine_meta,
+                "points": [_point_payload(p) for p in partial_points],
+            }
         engine_meta = bench.capture_engine_metadata(server_url,
                                                     transport=transport,
                                                     api_key=api_key)
     else:
-        points = _run_openai_bench_points(
-            server_url, model, targets, n_predict,
-            timeout=timeout, on_point=on_point, api_key=api_key,
-            streams=streams, power_host=power_host,
-            power_gpu_index=power_gpu_index)
+        try:
+            points = _run_openai_bench_points(
+                server_url, model, targets, n_predict,
+                timeout=timeout, on_point=_collecting_on_point,
+                api_key=api_key, streams=streams, power_host=power_host,
+                power_gpu_index=power_gpu_index)
+        except (RuntimeError, ValueError, httpx.HTTPError) as exc:
+            if not partial_points:
+                raise DispatchFailure(
+                    f"bench failed against {server_url}: {exc} "
+                    "— check the server is still up") from exc
+            engine_meta = _openai_engine_meta(model)
+            run_id = bench.store_benchmark_run(
+                db_path, server_url, engine_meta, partial_points,
+                engine="openai", status="partial")
+            return {
+                "run_id": run_id,
+                "status": "partial",
+                "error": str(exc),
+                "engine_metadata": engine_meta,
+                "points": [_point_payload(p) for p in partial_points],
+            }
         engine_meta = _openai_engine_meta(model)
     run_id = bench.store_benchmark_run(db_path, server_url, engine_meta, points,
                                        engine="openai"
                                        if transport_name == "openai" else None)
     return {
         "run_id": run_id,
+        "status": "complete",
         "engine_metadata": engine_meta,
-        "points": [
-            {
-                "context_tokens": p.target_tokens,
-                "prefill_tps": p.prefill_tps,
-                "decode_tps": p.decode_tps,
-                "ttft_ms": p.ttft_ms,
-                "wall_s": p.wall_s,
-                "output_tokens": p.output_tokens,
-                "mtp_draft_n": p.mtp_draft_n,
-                "mtp_accepted": p.mtp_accepted,
-                "prompt_tokens": p.prompt_tokens,
-                "stop_reason": p.stop_reason,
-                "power_watts": p.power_watts,
-                "power_host": p.power_host,
-                "power_gpu_index": p.power_gpu_index,
-                "streams": p.streams,
-                "decode_tps_combined": p.decode_tps_combined,
-                "prefill_tps_combined": p.prefill_tps_combined,
-            }
-            for p in points
-        ],
+        "points": [_point_payload(p) for p in points],
     }
 
 
@@ -448,12 +498,25 @@ def run_bench_job(
                 on_point=on_point, streams=streams,
                 power_host=power_host, power_gpu_index=power_gpu_index)
             with _JOBS_LOCK:
-                job["status"] = "done"
-                job["run_id"] = result["run_id"]
-                job["status_line"] = (f"run #{result['run_id']} stored "
-                                      f"({job['targets_total']} points)")
+                if result.get("status") == "partial":
+                    # Partial-run preservation (2026-09-22): the sweep failed
+                    # mid-way but the completed points were stored — surface
+                    # the partial run so the UI can link to the data that
+                    # DID land.
+                    job["status"] = "partial"
+                    job["error"] = result.get("error")
+                    job["run_id"] = result["run_id"]
+                    job["status_line"] = (
+                        f"failed after {job['points_done']} point(s) — "
+                        f"partial run #{result['run_id']} stored: "
+                        f"{result.get('error')}")
+                else:
+                    job["status"] = "done"
+                    job["run_id"] = result["run_id"]
+                    job["status_line"] = (f"run #{result['run_id']} stored "
+                                          f"({job['targets_total']} points)")
                 job["finished_at"] = time.monotonic()
-                job["eta_s"] = 0.0
+                job["eta_s"] = 0.0 if result.get("status") != "partial" else None
         except Exception as exc:  # noqa: BLE001 — the thread IS the report
             with _JOBS_LOCK:
                 job["status"] = "error"

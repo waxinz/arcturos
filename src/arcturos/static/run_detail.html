@@ -113,6 +113,15 @@
         const run = await res.json();
         document.getElementById('run-title').textContent =
           'Run #' + run.id + ' — ' + (run.model_fingerprint || 'unknown model');
+        // Partial-run marker (2026-09-22): honest provenance on the title
+        // line — this run's points are real but the sweep did not finish.
+        if (run.status === 'partial') {
+          const warn = document.createElement('span');
+          warn.textContent = '  ⚠ partial — sweep failed mid-way';
+          warn.title = 'Completed points are preserved; failed points are absent';
+          warn.style.color = '#b45309';
+          document.getElementById('run-title').appendChild(warn);
+        }
         // textContent-built meta card: no innerHTML injection from API strings
         const meta = document.getElementById('run-meta');
         meta.innerHTML = '';  // static empty shell, no data

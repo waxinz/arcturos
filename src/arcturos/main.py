@@ -239,10 +239,27 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
         return fetch_one(db, "SELECT * FROM runs WHERE id = ?", (cur.lastrowid,))
 
     @app.get("/api/runs")
-    def list_runs(db=Depends(get_db), include_hidden: bool = False):
+    def list_runs(db=Depends(get_db), include_hidden: bool = False,
+                  status: str | None = None):
+        # status filter (2026-09-22 partial-run support): 'partial' returns
+        # only partial runs; 'complete' only complete ones; omitted = all.
+        where = ["NOT EXISTS (" + _HIDDEN_RUN_SQL + ")"]
+        params: list = []
+        if status is not None:
+            if status not in ("complete", "partial"):
+                raise HTTPException(
+                    status_code=422,
+                    detail="status must be 'complete' or 'partial'")
+            where.append("status = ?")
+            params.append(status)
         if include_hidden:
-            return fetch_all(db, "SELECT * FROM runs ORDER BY id")
-        return fetch_all(db, f"SELECT * FROM runs WHERE NOT EXISTS ({_HIDDEN_RUN_SQL}) ORDER BY id")
+            base = "1=1"
+        else:
+            base = "NOT EXISTS (" + _HIDDEN_RUN_SQL + ")"
+        where = [w for w in where if not w.startswith("NOT EXISTS")]
+        where.insert(0, base)
+        sql = "SELECT * FROM runs WHERE " + " AND ".join(where) + " ORDER BY id"
+        return fetch_all(db, sql, tuple(params))
 
     @app.get("/api/runs/{run_id}")
     def get_run(run_id: int, db=Depends(get_db)):
