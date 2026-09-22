@@ -271,10 +271,20 @@ def _prune_jobs() -> None:
 
 
 def bench_job_status(job_id: str) -> dict[str, Any] | None:
-    """Snapshot of one job record (thread-safe shallow copy)."""
+    """Snapshot of one job record (thread-safe copy).
+
+    ``points`` is a list the worker thread appends to while a poll may be
+    serializing it, so the snapshot copies the list and each row dict under
+    the lock — a poll can never observe a torn row, and mutating the
+    returned snapshot cannot corrupt the live job record.
+    """
     with _JOBS_LOCK:
         rec = _JOBS.get(job_id)
-        return dict(rec) if rec is not None else None
+        if rec is None:
+            return None
+        snapshot = dict(rec)
+        snapshot["points"] = [dict(p) for p in rec["points"]]
+        return snapshot
 
 
 def _track_point(job: dict[str, Any], point) -> None:
@@ -491,20 +501,19 @@ def _store_eval_result(conn, suite_id: int, model_fingerprint: str,
                        completion_tokens: int, latency_ms: float) -> dict:
     # Registry auto-registration on first sighting (§4.6): eval replays
     # register their model even without a bench ever touching it.
-    now_seen = bench._utcnow()
+    now = bench._utcnow()  # one clock read: registry provenance == row timestamp
     conn.execute(
         "INSERT INTO models (model_fingerprint, alias, engine, "
         "first_seen, last_seen) VALUES (?, NULL, NULL, ?, ?) "
         "ON CONFLICT(model_fingerprint) DO UPDATE SET last_seen = ?",
-        (model_fingerprint, now_seen, now_seen, now_seen),
+        (model_fingerprint, now, now, now),
     )
     cur = conn.execute(
         "INSERT INTO eval_results (suite_id, model_fingerprint, item_id, output,"
         " prompt_tokens, completion_tokens, latency_ms, created_at)"
         " VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
         (suite_id, model_fingerprint, item_id, output,
-         prompt_tokens, completion_tokens, latency_ms,
-         bench._utcnow()))
+         prompt_tokens, completion_tokens, latency_ms, now))
     row = dict(conn.execute(
         "SELECT * FROM eval_results WHERE id = ?", (cur.lastrowid,)).fetchone())
     return row

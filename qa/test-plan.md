@@ -76,6 +76,17 @@ Rules:
 - [ ] concurrent POSTs don't race (commit-before-respond fix regression suite)
 - [ ] DB survives restart (WAL checkpoint recovery)
 
+## Review round — regressions (2026-09-22)
+
+| # | Test | File | Status |
+|---|------|------|--------|
+| R1 | Export CSVs carry non-empty `result_id` / `judgment_id` on every row (writers previously asked for aliased columns the SELECTs never provided) | `tests/test_export.py::test_export_eval_results_ids_populated`, `::test_export_judgments_ids_populated` | ✅ |
+| R2 | Bench-job status snapshot is isolated: mutating a fetched snapshot's `points` cannot corrupt the live job record (worker appends concurrently) | `tests/test_ops_dispatch.py::test_bench_job_status_snapshot_is_isolated` | ✅ |
+| R3 | Hidden run rejected (404, actionable detail) by `/api/compare/baseline-deltas` — parity with the series + run-diff gates | `tests/test_ops_api.py::test_hidden_run_rejected_by_baseline_deltas` | ✅ |
+| R4 | Hidden run rejected (404) as the `baseline=` reference on `/api/compare/benchmarks` | `tests/test_ops_api.py::test_hidden_run_rejected_as_baseline_reference` | ✅ |
+| R5 | Registry provenance: `first_seen`/`last_seen` derive from the triggering row's own timestamp (single clock read) — deterministic, no ms-boundary flake | `tests/test_registry.py::test_second_run_updates_last_seen_not_first` (now stable across consecutive full-suite runs) | ✅ |
+| R6 | `run_visibility` covered by the schema assertion map (`EXPECTED_COLUMNS`) | `tests/test_api.py::test_schema_creation` | ✅ |
+
 ## 3. Fixture suites (`qa/suites/`)
 
 Seeded demo data + reference eval suites, format documented in each file's

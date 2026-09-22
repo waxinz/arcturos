@@ -117,11 +117,11 @@ def run_openai_stream_point(base_url: str, model: str, messages: list,
             # models whose completion_tokens include reasoning tokens
             decode_tps_client = round(content_chunk_count / gen_span, 2)
     prefill_est = None
-    if ttft_ms and prompt_tokens:
+    if ttft_ms is not None and prompt_tokens is not None:
         prefill_est = round(prompt_tokens / (ttft_ms / 1000.0), 1)
     return OpenAIBenchPoint(
         target_tokens=0, model=model,
-        ttft_ms=round(ttft_ms, 1) if ttft_ms else None,
+        ttft_ms=round(ttft_ms, 1) if ttft_ms is not None else None,
         decode_tps_client=decode_tps_client,
         prefill_tps_estimate=prefill_est,
         wall_s=round(wall_s, 3),

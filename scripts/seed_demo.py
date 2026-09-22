@@ -84,7 +84,7 @@ def replay_live(api: str, suite_id: int, items: list[dict], target: str) -> int:
     n = 0
     for item in items:
         if item["type"] != "single-turn":
-            continue  # multi-turn replay lands with the J3 runner implementation
+            continue  # multi-turn replay lives in ops.dispatch_eval; the seeder stays single-turn
         t0 = time.monotonic()
         try:
             resp = post_openai(target, [{"role": "system", "content": item.get("system") or ""},

@@ -115,7 +115,7 @@ def test_category_map_breakdown(db):
     assert "logic" in rep["by_category"]
     assert rep["by_category"]["logic"]["a"] == 1
     assert rep["by_category"]["logic"]["total"] == 1
-    assert rep["by_category"]["uncategorized"] if False else True
+    assert "uncategorized" not in rep["by_category"]  # fully mapped suite
     rep2 = reports.suite_report(db, suite_id)  # no map -> uncategorized
     assert rep2["by_category"]["uncategorized"]["total"] == 1
 
