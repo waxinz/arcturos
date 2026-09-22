@@ -578,3 +578,46 @@ def test_dispatch_bench_power_host_validation(db_path):
     with pytest.raises(ops.DispatchError, match="power_host must be"):
         ops.dispatch_bench(db_path, "http://fake:8000", [128], 8,
                            power_host=123)
+
+
+def test_dispatch_bench_native_power_host_opt_in_samples_and_stores(db_path):
+    """Native transport + power_host: the SSH sampler runs per point and
+    mean W lands in the stored rows with provenance.
+
+    Regression: the first cut of opt-in power wired ONLY the openai path —
+    a native dispatch with power_host set silently sampled nothing
+    (2026-09-22, ruapehu-class targets)."""
+    class _FakeSampler:
+        def __init__(self, host, gpu_index=0):
+            calls["samplers"].append({"host": host, "gpu": gpu_index,
+                                      "started": False, "stopped": False})
+
+        def start(self):
+            calls["samplers"][-1]["started"] = True
+
+        def stop(self):
+            calls["samplers"][-1]["stopped"] = True
+            return 129.4
+
+    calls = {"samplers": []}
+    with patch("arcturos.bench.power.PowerSampler", _FakeSampler):
+        result = ops.dispatch_bench(
+            db_path, "http://fake:8000", [128, 256], 8,
+            transport=_bench_app(),          # native transport
+            power_host="alexei@10.10.10.122", power_gpu_index=2)
+
+    assert len(calls["samplers"]) == 2  # one sampler per point
+    assert all(s["host"] == "alexei@10.10.10.122" and s["gpu"] == 2
+               and s["started"] and s["stopped"]
+               for s in calls["samplers"])
+    for p in result["points"]:
+        assert p["power_watts"] == 129.4
+        assert p["power_host"] == "alexei@10.10.10.122"
+        assert p["power_gpu_index"] == 2
+
+    from arcturos.bench import export_run_json
+    exported = export_run_json(db_path, 1)
+    for b in exported["benchmarks"]:
+        assert b["power_watts"] == 129.4
+        assert b["power_host"] == "alexei@10.10.10.122"
+        assert b["power_gpu_index"] == 2

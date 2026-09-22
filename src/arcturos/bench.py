@@ -35,6 +35,8 @@ from typing import Callable, Optional
 
 import httpx
 
+from arcturos import power
+
 from arcturos import db
 
 # Number of unit_text copies tokenized in one sizing call. One call derives a
@@ -342,6 +344,8 @@ def run_benchmark(
     transport=None,
     api_key: str | None = None,
     streams: int = 1,
+    power_host: Optional[str] = None,
+    power_gpu_index: int = 0,
 ) -> list[BenchPoint]:
     """Plan sizes for every target, then run each point sequentially.
 
@@ -349,17 +353,40 @@ def run_benchmark(
     native ``{base_url}/completion`` endpoint. ``on_point`` is invoked with
     each :class:`BenchPoint` immediately after it completes, so a caller can
     stream results into the DB (or a UI) as they arrive.
+
+    ``power_host`` (optional, ADR 002 opt-in): when set, an SSH nvidia-smi
+    sampler runs on the named dedicated host alongside each point and the
+    mean draw annotates the stored point with provenance; None keeps
+    power fields empty.
     """
     tokenize_url = f"{base_url.rstrip('/')}/tokenize"
     plans = plan_prompt_sizes(targets, tokenize_url, unit_text, transport=transport,
                               api_key=api_key)
     points: list[BenchPoint] = []
     for plan in plans:
-        point = run_point_streams(
-            lambda: run_benchmark_point(
-                base_url, model, plan, n_predict, timeout=timeout,
-                transport=transport, api_key=api_key),
-            streams)
+        # Opt-in power sampling (ADR 002): one SSH sampler per point,
+        # started before the workstreams and stopped after — same shape
+        # as the openai transport path in ops.py.
+        power_info = None
+        sampler = None
+        if power_host:
+            sampler = power.PowerSampler(power_host, gpu_index=power_gpu_index)
+            sampler.start()
+        try:
+            point = run_point_streams(
+                lambda: run_benchmark_point(
+                    base_url, model, plan, n_predict, timeout=timeout,
+                    transport=transport, api_key=api_key),
+                streams)
+        finally:
+            if sampler is not None:
+                watts = sampler.stop()
+                power_info = {"watts": watts, "host": power_host,
+                              "gpu_index": power_gpu_index}
+        if power_info:
+            point.power_watts = power_info["watts"]
+            point.power_host = power_info["host"]
+            point.power_gpu_index = power_info["gpu_index"]
         points.append(point)
         if on_point is not None:
             on_point(point)
