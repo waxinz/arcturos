@@ -7,10 +7,58 @@
       "engine": "llama.cpp",
       "context_size": 262144,
       "benchmarks": [
-        {"context_tokens": 4096,  "prefill_tps": 476.2, "decode_tps": 56.8, "ttft_ms": 214, "wall_s": 7.4,  "output_tokens": 32, "mtp_draft_n": 96, "mtp_accepted": 83, "power_watts": 249.5},
-        {"context_tokens": 65536, "prefill_tps": 458.1, "decode_tps": 61.2, "ttft_ms": 1429, "wall_s": 8.1,  "output_tokens": 32, "mtp_draft_n": 96, "mtp_accepted": 83, "power_watts": 250.1},
-        {"context_tokens": 131072,"prefill_tps": 408.4, "decode_tps": 50.2, "ttft_ms": 3208, "wall_s": 9.6,  "output_tokens": 32, "mtp_draft_n": 96, "mtp_accepted": 81, "power_watts": 250.0},
-        {"context_tokens": 262144,"prefill_tps": 335.2, "decode_tps": 46.1, "ttft_ms": 7818, "wall_s": 12.3, "output_tokens": 32, "mtp_draft_n": 96, "mtp_accepted": 80, "power_watts": 249.8}
+        {
+          "context_tokens": 4096,
+          "prefill_tps": 476.2,
+          "decode_tps": 56.8,
+          "ttft_ms": 214,
+          "wall_s": 7.4,
+          "output_tokens": 32,
+          "mtp_draft_n": 96,
+          "mtp_accepted": 83,
+          "power_watts": 249.5,
+          "power_host": "10.10.10.122 (ruapehu)",
+          "power_gpu_index": null
+        },
+        {
+          "context_tokens": 65536,
+          "prefill_tps": 458.1,
+          "decode_tps": 61.2,
+          "ttft_ms": 1429,
+          "wall_s": 8.1,
+          "output_tokens": 32,
+          "mtp_draft_n": 96,
+          "mtp_accepted": 83,
+          "power_watts": 250.1,
+          "power_host": "10.10.10.122 (ruapehu)",
+          "power_gpu_index": null
+        },
+        {
+          "context_tokens": 131072,
+          "prefill_tps": 408.4,
+          "decode_tps": 50.2,
+          "ttft_ms": 3208,
+          "wall_s": 9.6,
+          "output_tokens": 32,
+          "mtp_draft_n": 96,
+          "mtp_accepted": 81,
+          "power_watts": 250.0,
+          "power_host": "10.10.10.122 (ruapehu)",
+          "power_gpu_index": null
+        },
+        {
+          "context_tokens": 262144,
+          "prefill_tps": 335.2,
+          "decode_tps": 46.1,
+          "ttft_ms": 7818,
+          "wall_s": 12.3,
+          "output_tokens": 32,
+          "mtp_draft_n": 96,
+          "mtp_accepted": 80,
+          "power_watts": 249.8,
+          "power_host": "10.10.10.122 (ruapehu)",
+          "power_gpu_index": null
+        }
       ]
     },
     {
@@ -19,10 +67,58 @@
       "engine": "llama.cpp",
       "context_size": 262144,
       "benchmarks": [
-        {"context_tokens": 4096,  "prefill_tps": 512.7, "decode_tps": 74.3, "ttft_ms": 189, "wall_s": 6.2,  "output_tokens": 32, "mtp_draft_n": 96, "mtp_accepted": 86, "power_watts": 248.2},
-        {"context_tokens": 65536, "prefill_tps": 493.5, "decode_tps": 68.9, "ttft_ms": 1327, "wall_s": 7.0,  "output_tokens": 32, "mtp_draft_n": 96, "mtp_accepted": 84, "power_watts": 249.9},
-        {"context_tokens": 131072,"prefill_tps": 441.0, "decode_tps": 57.7, "ttft_ms": 2971, "wall_s": 8.4,  "output_tokens": 32, "mtp_draft_n": 96, "mtp_accepted": 83, "power_watts": 250.3},
-        {"context_tokens": 262144,"prefill_tps": 362.8, "decode_tps": 52.4, "ttft_ms": 7224, "wall_s": 11.1, "output_tokens": 32, "mtp_draft_n": 96, "mtp_accepted": 82, "power_watts": 250.0}
+        {
+          "context_tokens": 4096,
+          "prefill_tps": 512.7,
+          "decode_tps": 74.3,
+          "ttft_ms": 189,
+          "wall_s": 6.2,
+          "output_tokens": 32,
+          "mtp_draft_n": 96,
+          "mtp_accepted": 86,
+          "power_watts": 248.2,
+          "power_host": "10.10.10.222 (pakuranga-inf)",
+          "power_gpu_index": null
+        },
+        {
+          "context_tokens": 65536,
+          "prefill_tps": 493.5,
+          "decode_tps": 68.9,
+          "ttft_ms": 1327,
+          "wall_s": 7.0,
+          "output_tokens": 32,
+          "mtp_draft_n": 96,
+          "mtp_accepted": 84,
+          "power_watts": 249.9,
+          "power_host": "10.10.10.222 (pakuranga-inf)",
+          "power_gpu_index": null
+        },
+        {
+          "context_tokens": 131072,
+          "prefill_tps": 441.0,
+          "decode_tps": 57.7,
+          "ttft_ms": 2971,
+          "wall_s": 8.4,
+          "output_tokens": 32,
+          "mtp_draft_n": 96,
+          "mtp_accepted": 83,
+          "power_watts": 250.3,
+          "power_host": "10.10.10.222 (pakuranga-inf)",
+          "power_gpu_index": null
+        },
+        {
+          "context_tokens": 262144,
+          "prefill_tps": 362.8,
+          "decode_tps": 52.4,
+          "ttft_ms": 7224,
+          "wall_s": 11.1,
+          "output_tokens": 32,
+          "mtp_draft_n": 96,
+          "mtp_accepted": 82,
+          "power_watts": 250.0,
+          "power_host": "10.10.10.222 (pakuranga-inf)",
+          "power_gpu_index": null
+        }
       ]
     }
   ],
@@ -30,7 +126,9 @@
     {
       "name": "smoke-reasoning",
       "version": "v1",
-      "items": ["demo item ids referenced below"]
+      "items": [
+        "demo item ids referenced below"
+      ]
     }
   ],
   "eval_results_note": "Eval results + judgments seeded by the same script after suites exist; item ids match eval-suites/smoke-reasoning-v1.json."
