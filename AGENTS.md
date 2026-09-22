@@ -110,6 +110,16 @@ arcturos/
 
 ### Log (newest first)
 
+- 2026-09-22 — 2dp display precision everywhere: all numeric rendering
+  paths round floats to 2 decimals (run 30 showed
+  30.105000000000004 — float-aggregation noise leaking into the DOM).
+  run_detail cellText, create.html live-table cell(), compare.html
+  fmtNum + Chart.js tooltip label callbacks now toFixed(2); diff.html
+  already rounded via fmt(). Integers (ctx, streams, token counts) and
+  strings pass through; presentation-only — storage, API, and CSV
+  exports keep full fidelity. ux-design §7 gains a numeric-precision
+  rule. +1 regression test — 172 passed.
+
 - 2026-09-22 — Combined throughput surfaces in the UI: run detail's
   benchmark table gains Σ prefill/decode t/s columns (values shown only
   for multi-stream points, honest `—` + reason tooltip otherwise —
