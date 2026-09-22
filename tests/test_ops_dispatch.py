@@ -5,6 +5,7 @@ bench path; the eval path fakes /v1/chat/completions via multiturn's
 urlreq (patched).
 """
 
+import json
 import sys
 from pathlib import Path
 from unittest.mock import patch
@@ -268,3 +269,162 @@ def test_dispatch_eval_rolls_back_on_failure(db_path, pass_preflight):
     conn = dbmod.connect(db_path)
     assert conn.execute("SELECT COUNT(*) FROM eval_results").fetchone()[0] == 0
     conn.close()
+
+
+# --------------------------------------------------- openai transport ------
+#
+# The openai transport targets /v1/chat/completions servers (tabbyAPI,
+# vLLM, litellm) that have NO /tokenize endpoint. Preflight runs
+# kind='eval' (reachable + chat) over the injectable httpx transport; each
+# bench point streams through bench_openai.run_openai_stream_point, whose
+# urlopen is patched (never a real server).
+
+
+def _sse_text(content_chunks=4, prompt=500, completion=30, stop="stop"):
+    """SSE body shaped like an OpenAI chat completion stream with usage."""
+    import json as _json
+    lines = []
+    for i in range(content_chunks):
+        lines.append("data: " + _json.dumps(
+            {"choices": [{"delta": {"content": f"tok{i}"},
+                          "finish_reason": None}]}))
+    lines.append("data: " + _json.dumps(
+        {"choices": [{"delta": {}, "finish_reason": stop}],
+         "usage": {"prompt_tokens": prompt,
+                   "completion_tokens": completion}}))
+    lines.append("data: [DONE]")
+    return "\n\n".join(lines) + "\n\n"
+
+
+class _SSEFakeResp:
+    def __init__(self, text):
+        self._lines = text.encode().splitlines(keepends=True)
+
+    def __iter__(self):
+        return iter(self._lines)
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+
+def _openai_preflight_app(chat_ok: bool = True):
+    """MockTransport for the openai transport's preflight (kind='eval'):
+    /health + /v1/chat/completions. No /tokenize — 404, as on tabbyAPI."""
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/health":
+            return httpx.Response(200, json={"status": "ok"})
+        if request.url.path == "/v1/chat/completions":
+            if chat_ok:
+                return httpx.Response(200, json={
+                    "choices": [{"message": {"content": "pong"},
+                                 "finish_reason": "stop"}],
+                    "usage": {"prompt_tokens": 2, "completion_tokens": 1}})
+            return httpx.Response(500, json={"error": "chat boom"})
+        if request.url.path == "/tokenize":
+            # OpenAI-compatible servers have no tokenizer endpoint.
+            return httpx.Response(404)
+        return httpx.Response(404)
+    return httpx.MockTransport(handler)
+
+
+def test_dispatch_bench_openai_happy_stores_points_no_power(db_path):
+    """openai dispatch: eval preflight (reachable+chat), one stream point
+    per target, stored run has points + no power fields (ADR 002).
+
+    urlopen is patched (test_bench_openai.py pattern) so the REAL
+    run_openai_stream_point parses the fake SSE; no network is touched."""
+    calls = {"model_names": [], "max_tokens": []}
+
+    def fake_urlopen(req, timeout=None):
+        body = json.loads(req.data.decode())
+        calls["model_names"].append(body["model"])
+        calls["max_tokens"].append(body["max_tokens"])
+        return _SSEFakeResp(_sse_text(content_chunks=4,
+                                      prompt=500, completion=30))
+
+    with patch("arcturos.bench_openai.urlreq.urlopen",
+               side_effect=fake_urlopen):
+        result = ops.dispatch_bench(
+            db_path, "http://fake:4000/v1", [128, 256], 30,
+            transport_name="openai", model="GLM-5.3-Flash",
+            transport=_openai_preflight_app())
+
+    assert result["run_id"] == 1
+    assert len(result["points"]) == 2
+    # the chat model name is what the target was benched with
+    assert calls["model_names"] == ["GLM-5.3-Flash", "GLM-5.3-Flash"]
+    # n_predict maps onto the stream max_tokens
+    assert calls["max_tokens"] == [30, 30]
+    # metrics preserved from the openai point: client-side decode, ttft,
+    # prefill estimate; prompt_tokens from usage, not the sizing estimate
+    p0 = result["points"][0]
+    assert p0["context_tokens"] == 128
+    assert p0["decode_tps"] is not None
+    assert p0["ttft_ms"] is not None
+    assert p0["prefill_tps"] is not None
+    assert p0["prompt_tokens"] == 500
+    assert p0["output_tokens"] == 30
+    assert p0["mtp_draft_n"] is None
+    assert p0["mtp_accepted"] is None
+    assert p0["stop_reason"] == "stop"
+
+    from arcturos.bench import export_run_json
+    exported = export_run_json(db_path, 1)
+    run = exported["run"]
+    assert run["engine"] == "openai"
+    assert run["model_fingerprint"] == "GLM-5.3-Flash"
+    assert run["context_size"] == 0  # unknown n_ctx sentinel
+    for b in exported["benchmarks"]:
+        assert b["power_watts"] is None
+        assert b["power_host"] is None
+        assert b["power_gpu_index"] is None
+        assert b["ttft_ms"] is not None
+
+
+def test_dispatch_bench_openai_preflight_failure_is_actionable(db_path):
+    """openai dispatch against a failing target: preflight (kind='eval')
+    surfaces the detail as DispatchError; no bench point is attempted."""
+    calls = {"stream": 0}
+
+    def fake_stream_point(*a, **kw):
+        calls["stream"] += 1
+        raise AssertionError("must not be called when preflight fails")
+
+    with patch("arcturos.ops.bench_openai.run_openai_stream_point",
+               side_effect=fake_stream_point):
+        with pytest.raises(ops.DispatchError) as excinfo:
+            ops.dispatch_bench(
+                db_path, "http://fake:4000/v1", [128], 30,
+                transport_name="openai", model="m",
+                transport=_openai_preflight_app(chat_ok=False))
+    msg = str(excinfo.value)
+    assert "preflight failed (chat)" in msg
+    assert "http://fake:4000/v1" in msg
+    assert "Check target" in msg
+    assert calls["stream"] == 0
+    # nothing stored
+    from arcturos import db as dbmod
+    conn = dbmod.connect(db_path)
+    assert conn.execute("SELECT COUNT(*) FROM runs").fetchone()[0] == 0
+    conn.close()
+
+
+def test_dispatch_bench_openai_missing_model_is_dispatch_error(db_path):
+    """openai transport without a model name -> DispatchError before any
+    network call (422 via the API)."""
+    with pytest.raises(ops.DispatchError, match="requires 'model'"):
+        ops.dispatch_bench(
+            db_path, "http://fake:4000/v1", [128], 30,
+            transport_name="openai", model=None,
+            transport=_openai_preflight_app())
+
+
+def test_dispatch_bench_invalid_transport_name(db_path):
+    """Unknown transport name -> DispatchError (422 via the API)."""
+    with pytest.raises(ops.DispatchError, match="unknown transport"):
+        ops.dispatch_bench(
+            db_path, "http://fake:4000/v1", [128], 30,
+            transport_name="vllm", model="m")
