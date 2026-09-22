@@ -108,6 +108,10 @@ Rules:
 | S4 | API 422 on streams out of bounds (sync endpoint) | `tests/test_ops_api.py::test_ops_bench_streams_out_of_bounds_is_422` | done |
 | S5 | benchmarks.streams column present (schema assertion incl. migration) | `tests/test_api.py` EXPECTED_COLUMNS | done |
 | S6 | compare allowlist exposes streams as a neutral metric | `tests/test_compare.py::test_compare_metrics_default_to_all_when_omitted` | done |
+| S7 | combined throughput = SUM across streams (capacity), mean still tracked | `tests/test_bench.py::test_aggregate_combined_is_sum_of_stream_rates` | done |
+| S8 | combined sum skips null-rate streams (no fabricated zeros) | `tests/test_bench.py::test_aggregate_combined_skips_null_streams` | done |
+| S9 | streams=1: combined equals the single stream's rate | `tests/test_bench.py::test_aggregate_single_stream_combined_equals_rate` | done |
+| S10 | dispatch payload carries combined fields (stored + returned) | `tests/test_ops_dispatch.py::test_dispatch_bench_streams_two_stores_stream_count` | done |
 
 ## 3. Fixture suites (`qa/suites/`)
 
