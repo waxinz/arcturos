@@ -60,6 +60,7 @@ def dispatch_bench(
     api_key: str | None = None,
     transport_name: str | None = None,
     model: str | None = None,
+    streams: int = 1,
 ) -> dict:
     """Run a cold-cache bench sweep; store run + points; return run payload.
 
@@ -104,6 +105,9 @@ def dispatch_bench(
         raise DispatchError("every target must be >= 1 token")
     if n_predict < 1:
         raise DispatchError("n_predict must be >= 1")
+    if not isinstance(streams, int) or isinstance(streams, bool) \
+            or not (1 <= streams <= 16):
+        raise DispatchError("streams must be an int between 1 and 16")
     pf = preflight.preflight(
         server_url,
         kind="bench" if transport_name == "native" else "eval",
@@ -116,7 +120,7 @@ def dispatch_bench(
             points = bench.run_benchmark(
                 server_url, "default", targets, n_predict,
                 timeout=timeout, transport=transport, on_point=on_point,
-                api_key=api_key)
+                api_key=api_key, streams=streams)
         except (RuntimeError, ValueError) as exc:
             raise DispatchFailure(f"bench failed against {server_url}: {exc} "
                                   "— check the server is still up") from exc
@@ -146,6 +150,7 @@ def dispatch_bench(
                 "mtp_accepted": p.mtp_accepted,
                 "prompt_tokens": p.prompt_tokens,
                 "stop_reason": p.stop_reason,
+                "streams": p.streams,
             }
             for p in points
         ],
@@ -380,7 +385,7 @@ def run_bench_job(
                 db_path=db_path, server_url=server_url, targets=targets,
                 n_predict=n_predict, api_key=api_key,
                 transport_name=transport_name, model=model,
-                on_point=on_point)
+                on_point=on_point, streams=streams)
             with _JOBS_LOCK:
                 job["status"] = "done"
                 job["run_id"] = result["run_id"]

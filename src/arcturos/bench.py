@@ -27,6 +27,7 @@ from __future__ import annotations
 import subprocess
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -91,6 +92,7 @@ class BenchPoint:
     power_watts: Optional[float] = None
     power_host: Optional[str] = None
     power_gpu_index: Optional[int] = None
+    streams: int = 1
 
 
 class RunNotFoundError(ValueError):
@@ -264,6 +266,61 @@ def run_benchmark_point(
     )
 
 
+def run_point_streams(make_point, streams: int) -> BenchPoint:
+    """Run ``streams`` identical point measurements concurrently, aggregate.
+
+    ``streams == 1`` runs inline (byte-identical to the sequential path).
+    Any stream failure fails the whole point — the first exception
+    propagates after the pool shuts down. Aggregation: mean rates and
+    token counts across streams, max wall_s (the sweep is as slow as the
+    slowest stream), stream count recorded on the row.
+    """
+    if streams <= 1:
+        return make_point()
+    with ThreadPoolExecutor(max_workers=streams) as pool:
+        futures = [pool.submit(make_point) for _ in range(streams)]
+        try:
+            results = [f.result() for f in futures]
+        except BaseException:
+            pool.shutdown(wait=False, cancel_futures=True)
+            raise
+    return _aggregate_stream_points(results, streams)
+
+
+def _aggregate_stream_points(points: list[BenchPoint], streams: int) -> BenchPoint:
+    """Collapse N identical-stream measurements into one stored point."""
+    def _mean(values):
+        vals = [v for v in values if v is not None]
+        return sum(vals) / len(vals) if vals else None
+
+    def _mean_int(values):
+        m = _mean(values)
+        return int(round(m)) if m is not None else None
+
+    first = points[0]
+    return BenchPoint(
+        target_tokens=first.target_tokens,
+        prefill_tps=_mean([p.prefill_tps for p in points]),
+        decode_tps=_mean([p.decode_tps for p in points]),
+        ttft_ms=_mean([p.ttft_ms for p in points]),
+        wall_s=max((p.wall_s for p in points if p.wall_s is not None),
+                   default=None),
+        output_tokens=_mean_int([p.output_tokens for p in points]),
+        mtp_draft_n=_mean_int([p.mtp_draft_n for p in points]),
+        mtp_accepted=_mean_int([p.mtp_accepted for p in points]),
+        stop_reason=next((p.stop_reason for p in points
+                          if p.stop_reason is not None), None),
+        prompt_tokens=next((p.prompt_tokens for p in points
+                            if p.prompt_tokens is not None), None),
+        power_watts=_mean([p.power_watts for p in points]),
+        power_host=next((p.power_host for p in points
+                         if p.power_host is not None), None),
+        power_gpu_index=next((p.power_gpu_index for p in points
+                              if p.power_gpu_index is not None), None),
+        streams=streams,
+    )
+
+
 def run_benchmark(
     base_url: str,
     model: str,
@@ -274,6 +331,7 @@ def run_benchmark(
     unit_text: str = DEFAULT_UNIT_TEXT,
     transport=None,
     api_key: str | None = None,
+    streams: int = 1,
 ) -> list[BenchPoint]:
     """Plan sizes for every target, then run each point sequentially.
 
@@ -287,10 +345,11 @@ def run_benchmark(
                               api_key=api_key)
     points: list[BenchPoint] = []
     for plan in plans:
-        point = run_benchmark_point(
-            base_url, model, plan, n_predict, timeout=timeout, transport=transport,
-            api_key=api_key
-        )
+        point = run_point_streams(
+            lambda: run_benchmark_point(
+                base_url, model, plan, n_predict, timeout=timeout,
+                transport=transport, api_key=api_key),
+            streams)
         points.append(point)
         if on_point is not None:
             on_point(point)
@@ -431,8 +490,8 @@ def store_benchmark_run(
             conn.execute(
                 "INSERT INTO benchmarks (run_id, context_tokens, prefill_tps, decode_tps,"
                 " ttft_ms, wall_s, output_tokens, mtp_draft_n, mtp_accepted, power_watts,"
-                " power_host, power_gpu_index, created_at)"
-                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                " power_host, power_gpu_index, streams, created_at)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     run_id,
                     point.target_tokens,
@@ -446,6 +505,7 @@ def store_benchmark_run(
                     point.power_watts,
                     point.power_host,
                     point.power_gpu_index,
+                    point.streams,
                     now,
                 ),
             )

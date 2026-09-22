@@ -110,6 +110,15 @@ arcturos/
 
 ### Log (newest first)
 
+- 2026-09-22 — Parallel streams: bench dispatch accepts `streams`
+  (default 1, max 16, bools rejected); each context length runs that many
+  identical concurrent workstreams (ThreadPoolExecutor per target, targets
+  stay sequential); per-point aggregation = mean rates/TTFT/token counts,
+  max wall_s; the stream count is stored per benchmark row (schema +
+  idempotent migration), surfaced in the dispatch payload, job status
+  rows, run-detail table, live job detail table, compare metrics
+  (neutral), and CSV exports. +4 tests — 160 passed.
+
 - 2026-09-22 — Run-17 decode fix (burst-flush artifact). User reported run 17
   (ruapehu, openai transport) showing 15054.43 t/s decode at 64k and no decode
   at 128k. Root cause verified live: tabbyAPI burst-flushes SSE chunks under

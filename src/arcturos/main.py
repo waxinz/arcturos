@@ -258,10 +258,11 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
         cur = db.execute(
             "INSERT INTO benchmarks (run_id, context_tokens, prefill_tps, decode_tps, ttft_ms, "
             "wall_s, output_tokens, mtp_draft_n, mtp_accepted, power_watts, power_host, "
-            "power_gpu_index, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "power_gpu_index, streams, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (run_id, body.context_tokens, body.prefill_tps, body.decode_tps, body.ttft_ms,
              body.wall_s, body.output_tokens, body.mtp_draft_n, body.mtp_accepted,
-             body.power_watts, body.power_host, body.power_gpu_index, body.created_at),
+             body.power_watts, body.power_host, body.power_gpu_index, body.streams,
+             body.created_at),
         )
         db.commit()  # durable before the response is sent (teardown runs after send)
         return fetch_one(db, "SELECT rowid AS id, * FROM benchmarks WHERE rowid = ?",
@@ -535,6 +536,7 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
         api_key = body.get("api_key")
         transport = body.get("transport", "native")
         model = body.get("model")
+        streams = body.get("streams", 1)
         if not isinstance(server_url, str) or not server_url.startswith("http"):
             raise HTTPException(status_code=422, detail="server_url must be an http(s) URL")
         if not isinstance(targets, list) or not all(
@@ -547,11 +549,15 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
                                 detail="transport must be 'native' or 'openai'")
         if model is not None and not isinstance(model, str):
             raise HTTPException(status_code=422, detail="model must be a string")
+        if not isinstance(streams, int) or isinstance(streams, bool) \
+                or not (1 <= streams <= 16):
+            raise HTTPException(status_code=422,
+                                detail="streams must be an int between 1 and 16")
         try:
             return ops.dispatch_bench(
                 db_path=db_path, server_url=server_url,
                 targets=targets, n_predict=n_predict, api_key=api_key,
-                transport_name=transport, model=model)
+                transport_name=transport, model=model, streams=streams)
         except ops.DispatchError as exc:
             raise HTTPException(status_code=422, detail=str(exc))
         except ops.DispatchFailure as exc:
@@ -575,6 +581,7 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
         api_key = body.get("api_key")
         transport = body.get("transport", "native")
         model = body.get("model")
+        streams = body.get("streams", 1)
         if not isinstance(server_url, str) or not server_url.startswith("http"):
             raise HTTPException(status_code=422, detail="server_url must be an http(s) URL")
         if not isinstance(targets, list) or not all(
@@ -587,11 +594,15 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
                                 detail="transport must be 'native' or 'openai'")
         if model is not None and not isinstance(model, str):
             raise HTTPException(status_code=422, detail="model must be a string")
+        if not isinstance(streams, int) or isinstance(streams, bool) \
+                or not (1 <= streams <= 16):
+            raise HTTPException(status_code=422,
+                                detail="streams must be an int between 1 and 16")
         try:
             job_id = ops.run_bench_job(
                 db_path=db_path, server_url=server_url, targets=targets,
                 n_predict=n_predict, api_key=api_key,
-                transport_name=transport, model=model)
+                transport_name=transport, model=model, streams=streams)
         except ops.DispatchError as exc:
             raise HTTPException(status_code=422, detail=str(exc))
         return {"job_id": job_id}
