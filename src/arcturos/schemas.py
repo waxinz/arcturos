@@ -22,6 +22,7 @@ class RunCreate(BaseModel):
     model_fingerprint: str = Field(..., min_length=1)
     engine: str = Field(..., min_length=1)
     context_size: int = Field(..., ge=1)
+    name: Optional[str] = Field(None, min_length=1)
     created_at: str = Field(default_factory=_utcnow)
 
 

@@ -55,9 +55,14 @@
     .bp-detail { display: none; margin-top: .4rem; font-size: .78rem;
                  border-top: 1px dashed #ccc; padding-top: .4rem; }
     .bp-detail.open { display: block; }
-    .bp-detail table { width: 100%; border-collapse: collapse; }
+    /* Wide tables must not clip or overlay the next card: the panel grows
+       with content and the table scrolls horizontally inside it. */
+    .bp-detail table { width: 100%; border-collapse: collapse;
+                       min-width: 480px; }
+    .bp-detail .table-scroll { overflow-x: auto; }
     .bp-detail th, .bp-detail td { text-align: left; padding: 2px 4px;
-                                   border-bottom: 1px solid #eee; }
+                                   border-bottom: 1px solid #eee;
+                                   white-space: nowrap; }
     .bp-detail th { color: #666; font-weight: 600; }
     .bp-ev { color: #444; font-family: ui-monospace, monospace; font-size: .72rem;
              margin: 2px 0; white-space: nowrap; overflow: hidden;
@@ -111,6 +116,9 @@
       <label>n_predict (tokens per point)
         <input id="bench-npredict" value="256">
       </label>
+      <label>Run name (optional — default: host · model · targets)
+        <input id="bench-name" placeholder="e.g. pakuranga GLM 192k sweep">
+      </label>
       <label>Parallel streams (identical runs per target, 1-16)
         <input id="bench-streams" value="1">
       </label>
@@ -134,9 +142,11 @@
         <div id="bp-clock" class="bp-clock"></div>
         <button id="bp-zoom" class="bp-toggle" type="button">▸ details</button>
         <div id="bp-detail" class="bp-detail">
+          <div class="table-scroll">
           <table><thead id="bp-head"><tr><th>#</th><th>ctx</th><th>prefill</th><th>decode</th>
-            <th>ttft</th><th>wall</th><th>streams</th></tr></thead>
+            <th>ttft (s)</th><th>wall</th><th>streams</th></tr></thead>
             <tbody id="bp-rows"></tbody></table>
+          </div>
           <div id="bp-events"></div>
         </div>
       </div>
@@ -301,9 +311,9 @@
       const head = $('bp-head').firstElementChild;
       head.innerHTML = (streams > 1)
         ? '<th>#</th><th>ctx</th><th>prefill</th><th>decode</th>' +
-          '<th>Σ prefill</th><th>Σ decode</th><th>ttft</th><th>wall</th><th>streams</th>'
+          '<th>Σ prefill</th><th>Σ decode</th><th>ttft (s)</th><th>wall</th><th>streams</th>'
         : '<th>#</th><th>ctx</th><th>prefill</th><th>decode</th>' +
-          '<th>ttft</th><th>wall</th><th>streams</th>';
+          '<th>ttft (s)</th><th>wall</th><th>streams</th>';
     }
 
     function bpFmtSecs(s) {
@@ -314,11 +324,16 @@
     function bpRow(p, i) {
           const cell = (v, suffix) => {
         // 2dp display precision: 30.105000000000004 -> '30.11 t/s'.
-        // Integers and strings pass through; presentation-only.
+        // Time metrics display in SECONDS (2026-09-22 UX rule): ttft_ms
+        // is stored in ms -> /1000 for display. Integers and strings pass
+        // through; presentation-only.
         if (v == null) return '—';
-        if (typeof v === 'number' && !Number.isInteger(v)) return v.toFixed(2) + (suffix || '');
+        if (typeof v === 'number' && !Number.isInteger(v)) {
+          return v.toFixed(2) + (suffix || '');
+        }
         return v + (suffix || '');
       };
+      const secs = (ms) => (ms == null ? null : ms / 1000);
           // Multi-stream jobs: one extra Σ pair after decode — combined
           // throughput across all streams (true server capacity). Single-stream
           // jobs keep the compact table (nothing to sum).
@@ -328,14 +343,14 @@
               '<td>' + cell(p.decode_tps, ' t/s') + '</td>' +
               '<td>' + cell(p.prefill_tps_combined, ' t/s') + '</td>' +
               '<td>' + cell(p.decode_tps_combined, ' t/s') + '</td>' +
-              '<td>' + cell(p.ttft_ms, ' ms') + '</td>' +
+              '<td>' + cell(secs(p.ttft_ms), ' s') + '</td>' +
               '<td>' + cell(p.wall_s, ' s') + '</td>' +
               '<td>' + cell(p.streams) + '</td></tr>';
           }
           return '<tr><td>' + (i + 1) + '</td><td>' + p.context_tokens + '</td>' +
             '<td>' + cell(p.prefill_tps, ' t/s') + '</td>' +
             '<td>' + cell(p.decode_tps, ' t/s') + '</td>' +
-            '<td>' + cell(p.ttft_ms, ' ms') + '</td>' +
+            '<td>' + cell(secs(p.ttft_ms), ' s') + '</td>' +
             '<td>' + cell(p.wall_s, ' s') + '</td>' +
             '<td>' + cell(p.streams) + '</td></tr>';
         }
@@ -454,6 +469,7 @@
             targets: targets,
             n_predict: parseInt($('bench-npredict').value, 10) || 256,
             streams: parseInt($('bench-streams').value, 10) || 1,
+            name: $('bench-name').value.trim() || null,
             power_host: $('bench-power-host').value.trim() || null,
             power_gpu_index: parseInt($('bench-power-gpu').value, 10) || 0,
             api_key: $('bench-key').value.trim() || null,

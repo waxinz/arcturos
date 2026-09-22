@@ -179,6 +179,7 @@ def build_benchmarks_payload(
         "runs": [
             {
                 "id": run["id"],
+                "name": run.get("name"),
                 "model_fingerprint_short": short_fingerprint(run["model_fingerprint"]),
                 "model_fingerprint": run["model_fingerprint"],
                 "engine": run["engine"],
@@ -205,6 +206,7 @@ def build_benchmarks_payload(
             ]
         payload["baseline"] = {
             "run_id": baseline_run_id,
+            "name": baseline_run["name"] if "name" in baseline_run.keys() else None,
             "model_fingerprint": baseline_run["model_fingerprint"],
             "model_fingerprint_short": short_fingerprint(baseline_run["model_fingerprint"]),
             "engine": baseline_run["engine"],
@@ -296,11 +298,13 @@ def build_run_diff_payload(
     return {
         "run_a": {
             "id": run_a["id"],
+            "name": run_a.get("name"),
             "model_fingerprint_short": short_fingerprint(run_a["model_fingerprint"]),
             "engine": run_a["engine"],
         },
         "run_b": {
             "id": run_b["id"],
+            "name": run_b.get("name"),
             "model_fingerprint_short": short_fingerprint(run_b["model_fingerprint"]),
             "engine": run_b["engine"],
         },
@@ -333,13 +337,14 @@ def export_benchmarks_csv(payload: dict[str, Any]) -> str:
     SCHEMA_VERSION = "arcturos-compare-v1"
     buf = io.StringIO()
     writer = csv.writer(buf, lineterminator="\n")
-    writer.writerow(["schema_version", "run_id", "model_fingerprint",
+    writer.writerow(["schema_version", "run_id", "name", "model_fingerprint",
                      "model_fingerprint_short", "engine", "server_url",
                      "host_label", "metric", "context_tokens", "value"])
     baseline_fp = None
     if "baseline" in payload:
         baseline_fp = payload["baseline"]["model_fingerprint"]
         writer.writerow([SCHEMA_VERSION, payload["baseline"]["run_id"],
+                         payload["baseline"].get("name") or "",
                          baseline_fp, payload["baseline"]["model_fingerprint_short"],
                          payload["baseline"]["engine"], "",  # server_url n/a for reference row
                          payload["baseline"]["host_label"], "baseline",
@@ -349,6 +354,7 @@ def export_benchmarks_csv(payload: dict[str, Any]) -> str:
             for point in payload["series"][metric].get(str(run["id"]), []):
                 value = point["value"]
                 writer.writerow([SCHEMA_VERSION, run["id"],
+                                 run.get("name") or "",
                                  run["model_fingerprint"],
                                  run["model_fingerprint_short"],
                                  run["engine"], run["server_url"],

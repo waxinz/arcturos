@@ -228,15 +228,36 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
     @app.post("/api/runs", status_code=201)
     def create_run(body: RunCreate, db=Depends(get_db)):
         cur = db.execute(
-            "INSERT INTO runs (server_url, model_fingerprint, engine, context_size, created_at) "
-            "VALUES (?, ?, ?, ?, ?)",
+            "INSERT INTO runs (server_url, model_fingerprint, engine, context_size, name, created_at) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
             (body.server_url, body.model_fingerprint, body.engine,
-             body.context_size, body.created_at),
+             body.context_size, body.name, body.created_at),
         )
         register_model(db, body.model_fingerprint, body.engine,
                        seen_at=body.created_at)
         db.commit()  # durable before the response is sent (teardown runs after send)
         return fetch_one(db, "SELECT * FROM runs WHERE id = ?", (cur.lastrowid,))
+
+    @app.patch("/api/runs/{run_id}/name", status_code=200)
+    def rename_run(run_id: int, body: dict, db=Depends(get_db)):
+        """Rename a run (2026-09-22 naming feature).
+
+        The name is a LABEL, not measurement data: the append-only trigger
+        allows exactly this column to change (mirrors the models.alias
+        precedent). Set `{"name": null}` to clear a custom name back to
+        the default rendering; `{"name": "..."}` sets it. Measurement
+        columns stay immutable — the trigger aborts anything else.
+        """
+        name = body.get("name")
+        if name is not None and (not isinstance(name, str) or not name.strip()):
+            raise HTTPException(status_code=422,
+                                detail="name must be a non-empty string or null")
+        if fetch_one(db, "SELECT 1 AS ok FROM runs WHERE id = ?", (run_id,)) is None:
+            raise HTTPException(status_code=404, detail=f"run id {run_id} not found")
+        db.execute("UPDATE runs SET name = ? WHERE id = ?",
+                   (name.strip() if isinstance(name, str) else None, run_id))
+        db.commit()
+        return fetch_one(db, "SELECT * FROM runs WHERE id = ?", (run_id,))
 
     @app.get("/api/runs")
     def list_runs(db=Depends(get_db), include_hidden: bool = False,
@@ -557,6 +578,7 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
         streams = body.get("streams", 1)
         power_host = body.get("power_host")
         power_gpu_index = body.get("power_gpu_index", 0)
+        name = body.get("name")
         if not isinstance(server_url, str) or not server_url.startswith("http"):
             raise HTTPException(status_code=422, detail="server_url must be an http(s) URL")
         if not isinstance(targets, list) or not all(
@@ -581,12 +603,16 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
                 or power_gpu_index < 0:
             raise HTTPException(status_code=422,
                                 detail="power_gpu_index must be an int >= 0")
+        if name is not None and (not isinstance(name, str) or not name.strip()):
+            raise HTTPException(status_code=422,
+                                detail="name must be a non-empty string when set")
         try:
             return ops.dispatch_bench(
                 db_path=db_path, server_url=server_url,
                 targets=targets, n_predict=n_predict, api_key=api_key,
                 transport_name=transport, model=model, streams=streams,
-                power_host=power_host, power_gpu_index=power_gpu_index)
+                power_host=power_host, power_gpu_index=power_gpu_index,
+                name=name.strip() if isinstance(name, str) else None)
         except ops.DispatchError as exc:
             raise HTTPException(status_code=422, detail=str(exc))
         except ops.DispatchFailure as exc:
@@ -613,6 +639,7 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
         streams = body.get("streams", 1)
         power_host = body.get("power_host")
         power_gpu_index = body.get("power_gpu_index", 0)
+        name = body.get("name")
         if not isinstance(server_url, str) or not server_url.startswith("http"):
             raise HTTPException(status_code=422, detail="server_url must be an http(s) URL")
         if not isinstance(targets, list) or not all(
@@ -637,12 +664,16 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
                 or power_gpu_index < 0:
             raise HTTPException(status_code=422,
                                 detail="power_gpu_index must be an int >= 0")
+        if name is not None and (not isinstance(name, str) or not name.strip()):
+            raise HTTPException(status_code=422,
+                                detail="name must be a non-empty string when set")
         try:
             job_id = ops.run_bench_job(
                 db_path=db_path, server_url=server_url, targets=targets,
                 n_predict=n_predict, api_key=api_key,
                 transport_name=transport, model=model, streams=streams,
-                power_host=power_host, power_gpu_index=power_gpu_index)
+                power_host=power_host, power_gpu_index=power_gpu_index,
+                name=name.strip() if isinstance(name, str) else None)
         except ops.DispatchError as exc:
             raise HTTPException(status_code=422, detail=str(exc))
         return {"job_id": job_id}
@@ -675,6 +706,7 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
         model_fingerprint = body.get("model_fingerprint")
         api_key = body.get("api_key")
         suite = body.get("suite")
+        name = body.get("name")
         if not isinstance(suite_id, int) or suite_id < 1:
             raise HTTPException(status_code=422, detail="suite_id must be a positive int")
         if not isinstance(target, str) or not target.startswith("http"):
@@ -683,11 +715,15 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
             raise HTTPException(status_code=422, detail="model_fingerprint required")
         if not isinstance(suite, dict):
             raise HTTPException(status_code=422, detail="suite must be an inline JSON object with 'items'")
+        if name is not None and (not isinstance(name, str) or not name.strip()):
+            raise HTTPException(status_code=422,
+                                detail="name must be a non-empty string when set")
         try:
             return ops.dispatch_eval(
                 db_path=db_path, suite_id=suite_id, target=target,
                 model_fingerprint=model_fingerprint, suite=suite,
-                api_key=api_key)
+                api_key=api_key,
+                name=name.strip() if isinstance(name, str) else None)
         except ops.DispatchError as exc:
             raise HTTPException(status_code=422, detail=str(exc))
         except ops.DispatchFailure as exc:
@@ -882,13 +918,13 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
         """CSV of every stored run row (§4.6 per-view export button)."""
         rows = fetch_all(
             db,
-            "SELECT id AS run_id, server_url, model_fingerprint, engine, "
-            "context_size, created_at FROM runs ORDER BY id",
+            "SELECT id AS run_id, name, server_url, model_fingerprint, engine, "
+            "context_size, status, created_at FROM runs ORDER BY id",
         )
         return _csv_response(
             rows,
-            ["run_id", "server_url", "model_fingerprint", "engine",
-             "context_size", "created_at"],
+            ["run_id", "name", "server_url", "model_fingerprint", "engine",
+             "context_size", "status", "created_at"],
             "arcturos-runs.csv",
         )
 

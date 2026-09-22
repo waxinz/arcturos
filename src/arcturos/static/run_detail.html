@@ -70,7 +70,7 @@
         <tr>
           <th>ctx tokens</th><th>prefill tok/s</th><th>decode tok/s</th>
           <th>Σ prefill t/s</th><th>Σ decode t/s</th>
-          <th>TTFT ms</th><th>wall s</th><th>out tok</th><th>streams</th>
+          <th>TTFT s</th><th>wall s</th><th>out tok</th><th>streams</th>
           <th>MTP accept</th><th>power</th><th>created</th>
         </tr>
       </thead>
@@ -125,7 +125,8 @@
         // textContent-built meta card: no innerHTML injection from API strings
         const meta = document.getElementById('run-meta');
         meta.innerHTML = '';  // static empty shell, no data
-        for (const [k, v] of [['Server', run.server_url], ['Engine', run.engine],
+        for (const [k, v] of [['Name', run.name || '—'],
+                              ['Server', run.server_url], ['Engine', run.engine],
                               ['Context size', run.context_size],
                               ['Created', run.created_at]]) {
           const dt = document.createElement('dt'); dt.textContent = k;
@@ -133,6 +134,26 @@
           dd.textContent = (v === null || v === undefined) ? '—' : String(v);
           meta.appendChild(dt); meta.appendChild(dd);
         }
+
+        // Rename action (2026-09-22 naming feature): the name is a label,
+        // editable on the run-detail page per the PRD.
+        const renameBtn = document.createElement('button');
+        renameBtn.className = 'linklike';
+        renameBtn.textContent = '✎ Rename';
+        renameBtn.onclick = async () => {
+          const current = run.name || '';
+          const next = window.prompt('Run name (empty = clear back to default)', current);
+          if (next === null) return;  // cancelled
+          const res = await fetch('/api/runs/' + run.id + '/name', {
+            method: 'PATCH', headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({name: next.trim() || null})});
+          if (res.ok) location.reload();
+          else {
+            const detail = await res.json().then(d => d.detail).catch(() => res.status);
+            window.alert('Rename failed: ' + detail);
+          }
+        };
+        document.getElementById('run-actions').appendChild(renameBtn);
 
         // Spec'd header actions (ux-design §4.6/§6): compare-from-here,
         // pin-as-baseline stub, export — no dead-end page.
@@ -244,7 +265,11 @@
             : 'combined throughput applies to multi-stream points only';
           const cells = [p.context_tokens, p.prefill_tps, p.decode_tps,
             sumPre, sumDec,
-            p.ttft_ms, p.wall_s, p.output_tokens, p.streams, mtp, power,
+            // Time metrics display in SECONDS at 2dp (2026-09-22 UX rule):
+            // TTFT is stored in ms -> /1000 for display; wall_s passes
+            // through. Storage/exports keep raw ms.
+            (p.ttft_ms == null ? null : p.ttft_ms / 1000), p.wall_s,
+            p.output_tokens, p.streams, mtp, power,
             p.created_at];
           for (let i = 0; i < cells.length; i++) {
             const c = cells[i];

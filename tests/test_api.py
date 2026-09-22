@@ -11,7 +11,7 @@ import sqlite3
 import pytest
 
 EXPECTED_COLUMNS = {
-    "runs": {"id", "server_url", "model_fingerprint", "engine", "context_size", "status", "created_at"},
+    "runs": {"id", "server_url", "model_fingerprint", "engine", "context_size", "status", "name", "created_at"},
     "benchmarks": {
         "run_id", "context_tokens", "prefill_tps", "decode_tps", "ttft_ms",
         "wall_s", "output_tokens", "mtp_draft_n", "mtp_accepted", "power_watts",
@@ -21,8 +21,9 @@ EXPECTED_COLUMNS = {
     "eval_suites": {"id", "name", "version"},
     "eval_results": {
         "id", "suite_id", "model_fingerprint", "item_id", "output", "prompt_tokens",
-        "completion_tokens", "latency_ms", "created_at",
+        "completion_tokens", "latency_ms", "eval_run_id", "created_at",
     },
+    "eval_runs": {"id", "suite_id", "model_fingerprint", "name", "created_at"},
     "judgments": {
         "id", "eval_result_a", "eval_result_b", "judge_model", "judge_template_version",
         "winner", "confidence", "rationale", "created_at",
@@ -380,7 +381,9 @@ def test_api_has_no_update_or_delete_paths(client):
         r.path for r in client.app.routes
         if getattr(r, "methods", set()) & {"PATCH", "DELETE"}}
     assert editable == {"/api/models/{fingerprint:path}",
-                        "/api/baselines/{baseline_id}"}
+                        "/api/baselines/{baseline_id}",
+                        # 2026-09-22: run names are LABELS (alias precedent)
+                        "/api/runs/{run_id}/name"}
 
 
 def test_db_rejects_update_and_delete(client):
@@ -516,3 +519,53 @@ def test_create_page_links_partial_run_on_failure(client):
     html = client.get("/create").text
     assert "(partial)" in html
     assert "completed point(s) kept" in html
+
+
+def test_rename_run_sets_and_clears_name(client):
+    """PATCH /api/runs/{id}/name sets the label; null clears it back to
+    the default rendering; measurement columns stay untouched."""
+    run_id = client.post("/api/runs", json=RUN).json()["id"]
+    r = client.patch(f"/api/runs/{run_id}/name", json={"name": "evening sweep"})
+    assert r.status_code == 200
+    assert r.json()["name"] == "evening sweep"
+    # clear
+    r = client.patch(f"/api/runs/{run_id}/name", json={"name": None})
+    assert r.status_code == 200
+    assert r.json()["name"] is None
+    # validation: empty string rejected
+    r = client.patch(f"/api/runs/{run_id}/name", json={"name": "  "})
+    assert r.status_code == 422
+    # unknown run
+    r = client.patch("/api/runs/999999/name", json={"name": "x"})
+    assert r.status_code == 404
+
+
+def test_rename_run_cannot_touch_measurements(client):
+    """The trigger whitelists ONLY the name column — any other UPDATE
+    aborts (append-only integrity, ADR 003)."""
+    import sqlite3
+    run_id = client.post("/api/runs", json=RUN).json()["id"]
+    conn = sqlite3.connect(client.app.state.db_path)
+    try:
+        conn.execute("UPDATE runs SET context_size = 1 WHERE id = ?", (run_id,))
+        raised = False
+    except sqlite3.IntegrityError:
+        raised = True
+    finally:
+        conn.close()
+    assert raised
+
+
+def test_runs_list_page_shows_name_column(client):
+    """/runs second column is the run name (2026-09-22 naming feature);
+    unset names render the honest `—` placeholder."""
+    html = client.get("/runs").text
+    assert "<th>Name</th>" in html
+    assert "r.name || '—'" in html          # honest fallback, never blank
+
+
+def test_run_detail_page_shows_name_row(client):
+    """Run-detail meta shows Name first; rename control present."""
+    run_id = client.post("/api/runs", json=RUN).json()["id"]
+    html = client.get(f"/runs/{run_id}").text
+    assert "['Name', run.name || '—']" in html

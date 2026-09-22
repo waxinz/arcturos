@@ -175,8 +175,8 @@
           '(higher-is-better: decode/prefill tps, MTP acceptance, ' +
           'combined (Σ) tps; lower-is-better: TTFT, wall time)</div>' +
           '<div class="meta"><h3>Engine metadata</h3>' + metaTable(data.engine_metadata) + '</div>' +
-          '<h3>Metrics — ' + data.run_a.model_fingerprint_short + ' vs ' +
-          data.run_b.model_fingerprint_short + '</h3>' +
+          '<h3>Metrics — ' + (data.run_a.name || data.run_a.model_fingerprint_short) +
+          ' vs ' + (data.run_b.name || data.run_b.model_fingerprint_short) + '</h3>' +
           deltaTable(data);
         status.textContent = 'Run #' + a + ' vs run #' + b + ' — deltas are B − A, pct relative to A.';
       } catch (err) {

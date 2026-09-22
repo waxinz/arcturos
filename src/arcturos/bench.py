@@ -447,7 +447,8 @@ def power_draw_avg(gpu_index: int, duration_s: int) -> Optional[float]:
 # --------------------------------------------------------- engine meta ------
 
 
-_PROPS_KEYS = ("n_ctx", "model_path", "build", "engine", "system_info")
+_PROPS_KEYS = ("n_ctx", "model_path", "build", "engine", "system_info",
+               "model_fingerprint")
 
 
 def capture_engine_metadata(base_url: str, timeout: float = 15.0, transport=None,
@@ -480,6 +481,7 @@ def store_benchmark_run(
     db_path, base_url: str, engine_metadata: dict, points: list[BenchPoint],
     engine: str | None = None,
     status: str = "complete",
+    name: str | None = None,
 ) -> int:
     """Store a benchmark run + its points into the Arcturos SQLite schema.
 
@@ -504,14 +506,15 @@ def store_benchmark_run(
         engine = engine if engine is not None else "llama.cpp"
         created = _utcnow()
         cur = conn.execute(
-            "INSERT INTO runs (server_url, model_fingerprint, engine, context_size, status, created_at)"
-            " VALUES (?, ?, ?, ?, ?, ?)",
+            "INSERT INTO runs (server_url, model_fingerprint, engine, context_size, status, name, created_at)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?)",
             (
                 base_url,
                 fingerprint,
                 engine,
                 n_ctx if n_ctx is not None else 0,
                 status,
+                name,
                 created,
             ),
         )

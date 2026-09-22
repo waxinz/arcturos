@@ -20,6 +20,7 @@ from typing import Any
 
 from arcturos import bench
 from arcturos import bench_openai
+from arcturos import compare
 from arcturos import power
 from arcturos import multiturn as mt
 from arcturos import preflight
@@ -50,6 +51,22 @@ class DispatchFailure(RuntimeError):
     -> 502 ("check the server"), so the UI error message points at the right
     next step instead of blaming the input for a dead target.
     """
+
+
+def default_run_name(server_url: str, model_fingerprint: str,
+                     targets: list[int]) -> str:
+    """Humanized default run name (2026-09-22 naming feature).
+
+    'host · model · 64k/128k' — host from the URL, model as given
+    (registry alias rendering happens at display time), context targets
+    humanized (32768 -> 64k, 1500 -> 1500). Used when the operator does
+    not name a run explicitly.
+    """
+    host = compare.host_label(server_url)
+    humanized = "/".join(
+        f"{t // 1024}k" if t >= 1024 and t % 1024 == 0 else str(t)
+        for t in targets)
+    return f"{host} · {model_fingerprint} · {humanized}"
 
 
 def _point_payload(p) -> dict:
@@ -88,6 +105,7 @@ def dispatch_bench(
     streams: int = 1,
     power_host: str | None = None,
     power_gpu_index: int = 0,
+    name: str | None = None,
 ) -> dict:
     """Run a cold-cache bench sweep; store run + points; return run payload.
 
@@ -177,7 +195,7 @@ def dispatch_bench(
                 server_url, transport=transport, api_key=api_key)
             run_id = bench.store_benchmark_run(
                 db_path, server_url, engine_meta, partial_points,
-                engine=None, status="partial")
+                engine=None, status="partial", name=name)
             return {
                 "run_id": run_id,
                 "status": "partial",
@@ -188,6 +206,12 @@ def dispatch_bench(
         engine_meta = bench.capture_engine_metadata(server_url,
                                                     transport=transport,
                                                     api_key=api_key)
+        if name is None:
+            name = default_run_name(server_url,
+                                    engine_meta.get("model_fingerprint", "?"),
+                                    targets)
+        run_id = bench.store_benchmark_run(db_path, server_url, engine_meta, points,
+                                           engine=None, name=name)
     else:
         try:
             points = _run_openai_bench_points(
@@ -203,7 +227,7 @@ def dispatch_bench(
             engine_meta = _openai_engine_meta(model)
             run_id = bench.store_benchmark_run(
                 db_path, server_url, engine_meta, partial_points,
-                engine="openai", status="partial")
+                engine="openai", status="partial", name=name)
             return {
                 "run_id": run_id,
                 "status": "partial",
@@ -212,9 +236,14 @@ def dispatch_bench(
                 "points": [_point_payload(p) for p in partial_points],
             }
         engine_meta = _openai_engine_meta(model)
-    run_id = bench.store_benchmark_run(db_path, server_url, engine_meta, points,
+        if name is None:
+            name = default_run_name(server_url,
+                                    engine_meta.get("model_fingerprint", "?"),
+                                    targets)
+        run_id = bench.store_benchmark_run(db_path, server_url, engine_meta, points,
                                        engine="openai"
-                                       if transport_name == "openai" else None)
+                                       if transport_name == "openai" else None,
+                                       name=name)
     return {
         "run_id": run_id,
         "status": "complete",
@@ -358,6 +387,7 @@ def _openai_engine_meta(model: str) -> dict:
         "build": None,
         "engine": "openai",
         "system_info": None,
+        "model_fingerprint": model,
     }
 
 
@@ -434,6 +464,7 @@ def run_bench_job(
     streams: int = 1,
     power_host: str | None = None,
     power_gpu_index: int = 0,
+    name: str | None = None,
 ) -> str:
     """Validate + snapshot a job, spawn the sweep in a daemon thread.
 
@@ -496,7 +527,8 @@ def run_bench_job(
                 n_predict=n_predict, api_key=api_key,
                 transport_name=transport_name, model=model,
                 on_point=on_point, streams=streams,
-                power_host=power_host, power_gpu_index=power_gpu_index)
+                power_host=power_host, power_gpu_index=power_gpu_index,
+                name=name)
             with _JOBS_LOCK:
                 if result.get("status") == "partial":
                     # Partial-run preservation (2026-09-22): the sweep failed
@@ -548,6 +580,7 @@ def dispatch_eval(
     model_fingerprint: str,
     suite: dict[str, Any],
     api_key: str | None = None,
+    name: str | None = None,
 ) -> dict:
     """Replay one eval suite against a target; store eval_results per item.
 
@@ -556,6 +589,10 @@ def dispatch_eval(
     ``model_fingerprint`` is passed to the target as the chat model name —
     proxy-fronted endpoints (litellm/vLLM) need the real name; native
     llama.cpp servers ignore it.
+
+    ``name`` (optional run label, 2026-09-22): names the eval run shown
+    on /evals and reports; None stores NULL and the UI falls back to the
+    default 'suite · model · N items' rendering.
     """
     items = suite.get("items")
     if not isinstance(items, list) or not items:
@@ -587,6 +624,17 @@ def dispatch_eval(
     dbmod.init_db(conn)
     stored: list[dict] = []
     try:
+        # Eval-run entity (2026-09-22): one replay = one eval_runs row; the
+        # items stamp eval_run_id so results group per run. Insert happens
+        # before replay: a mid-replay failure still leaves the (partial)
+        # run row + whatever items completed — consistent with bench's
+        # partial-run preservation.
+        now = bench._utcnow()
+        cur = conn.execute(
+            "INSERT INTO eval_runs (suite_id, model_fingerprint, name, created_at)"
+            " VALUES (?, ?, ?, ?)",
+            (suite_id, model_fingerprint, name, now))
+        eval_run_id = int(cur.lastrowid)
         for item in items:
             if item.get("type") == "multi-turn":
                 records = mt.replay_multiturn(target, item, api_key=api_key,
@@ -595,7 +643,8 @@ def dispatch_eval(
                     row = _store_eval_result(
                         conn, suite_id, model_fingerprint, rec["item_id"],
                         rec["output"], rec["prompt_tokens"],
-                        rec["completion_tokens"], rec["latency_ms"])
+                        rec["completion_tokens"], rec["latency_ms"],
+                        eval_run_id=eval_run_id)
                     stored.append(row)
             else:
                 item_id = item.get("id") or item.get("item_id")
@@ -612,7 +661,8 @@ def dispatch_eval(
                 content, ptoks, ctoks = mt.extract_output(resp)
                 stored.append(_store_eval_result(
                     conn, suite_id, model_fingerprint, item_id,
-                    content, ptoks, ctoks, latency_ms))
+                    content, ptoks, ctoks, latency_ms,
+                    eval_run_id=eval_run_id))
         conn.commit()
     except (RuntimeError, ValueError) as exc:
         conn.rollback()
@@ -624,12 +674,14 @@ def dispatch_eval(
         raise
     finally:
         conn.close()
-    return {"suite_id": suite_id, "stored": stored}
+    return {"suite_id": suite_id, "eval_run_id": eval_run_id,
+            "stored": stored}
 
 
 def _store_eval_result(conn, suite_id: int, model_fingerprint: str,
                        item_id: str, output: str, prompt_tokens: int,
-                       completion_tokens: int, latency_ms: float) -> dict:
+                       completion_tokens: int, latency_ms: float,
+                       eval_run_id: int | None = None) -> dict:
     # Registry auto-registration on first sighting (§4.6): eval replays
     # register their model even without a bench ever touching it.
     now = bench._utcnow()  # one clock read: registry provenance == row timestamp
@@ -641,10 +693,10 @@ def _store_eval_result(conn, suite_id: int, model_fingerprint: str,
     )
     cur = conn.execute(
         "INSERT INTO eval_results (suite_id, model_fingerprint, item_id, output,"
-        " prompt_tokens, completion_tokens, latency_ms, created_at)"
-        " VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        " prompt_tokens, completion_tokens, latency_ms, eval_run_id, created_at)"
+        " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (suite_id, model_fingerprint, item_id, output,
-         prompt_tokens, completion_tokens, latency_ms, now))
+         prompt_tokens, completion_tokens, latency_ms, eval_run_id, now))
     row = dict(conn.execute(
         "SELECT * FROM eval_results WHERE id = ?", (cur.lastrowid,)).fetchone())
     return row

@@ -23,6 +23,7 @@ CREATE TABLE IF NOT EXISTS runs (
     context_size      INTEGER NOT NULL,
     status            TEXT    NOT NULL DEFAULT 'complete'
                       CHECK (status IN ('complete', 'partial')),
+    name              TEXT,
     created_at        TEXT    NOT NULL
 );
 
@@ -60,6 +61,15 @@ CREATE TABLE IF NOT EXISTS eval_results (
     prompt_tokens     INTEGER NOT NULL,
     completion_tokens INTEGER NOT NULL,
     latency_ms        REAL    NOT NULL,
+    eval_run_id       INTEGER REFERENCES eval_runs(id),
+    created_at        TEXT    NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS eval_runs (
+    id                INTEGER PRIMARY KEY AUTOINCREMENT,
+    suite_id          INTEGER NOT NULL REFERENCES eval_suites(id),
+    model_fingerprint TEXT    NOT NULL,
+    name              TEXT,
     created_at        TEXT    NOT NULL
 );
 
@@ -116,9 +126,19 @@ CREATE TABLE IF NOT EXISTS suite_definitions (
 # Hard append-only enforcement at the storage layer: any UPDATE or DELETE on a
 # stored table aborts with an 'append-only' error, even outside the API.
 TRIGGERS = """
+-- runs: measurements are append-only, but name is a LABEL (§4.6 alias
+-- precedent) the owner may set/rename. Any other column change aborts.
 CREATE TRIGGER IF NOT EXISTS trg_runs_no_update
 BEFORE UPDATE ON runs BEGIN
-    SELECT RAISE(ABORT, 'append-only: UPDATE forbidden on runs');
+    SELECT CASE WHEN
+        NEW.server_url IS NOT OLD.server_url OR
+        NEW.model_fingerprint IS NOT OLD.model_fingerprint OR
+        NEW.engine IS NOT OLD.engine OR
+        NEW.context_size IS NOT OLD.context_size OR
+        NEW.status IS NOT OLD.status OR
+        NEW.created_at IS NOT OLD.created_at
+    THEN RAISE(ABORT, 'append-only: only the name may be updated on runs')
+    END;
 END;
 CREATE TRIGGER IF NOT EXISTS trg_runs_no_delete
 BEFORE DELETE ON runs BEGIN
@@ -197,6 +217,22 @@ BEFORE UPDATE ON models BEGIN
     END;
 END;
 
+-- eval_runs: the replay batch is a stored fact (append-only), but name is
+-- a LABEL the owner may set/rename. Everything else stays immutable.
+CREATE TRIGGER IF NOT EXISTS trg_eval_runs_no_update
+BEFORE UPDATE ON eval_runs BEGIN
+    SELECT CASE WHEN
+        NEW.suite_id IS NOT OLD.suite_id OR
+        NEW.model_fingerprint IS NOT OLD.model_fingerprint OR
+        NEW.created_at IS NOT OLD.created_at
+    THEN RAISE(ABORT, 'append-only: only the name may be updated on eval_runs')
+    END;
+END;
+CREATE TRIGGER IF NOT EXISTS trg_eval_runs_no_delete
+BEFORE DELETE ON eval_runs BEGIN
+    SELECT RAISE(ABORT, 'append-only: DELETE forbidden on eval_runs');
+END;
+
 -- baselines are reference pointers (§4.6), not stored data: re-pinning a
 -- (model, metric-family) pair replaces the pointer, and unpinning removes
 -- it. The underlying run rows stay untouched.
@@ -269,6 +305,8 @@ _MIGRATIONS = (
     ("benchmarks", "decode_tps_combined", "REAL"),
     ("benchmarks", "prefill_tps_combined", "REAL"),
     ("runs", "status", "TEXT NOT NULL DEFAULT 'complete'"),
+    ("runs", "name", "TEXT"),
+    ("eval_results", "eval_run_id", "INTEGER"),
 )
 
 

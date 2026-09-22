@@ -54,7 +54,8 @@ def _bench_app(targets_tokenized: int = 27, authed: bool = False):
         if path == "/props":
             return httpx.Response(200, json={
                 "n_ctx": 4096, "model_path": "/models/test.gguf",
-                "build": "1234", "engine": "llama.cpp"})
+                "build": "1234", "engine": "llama.cpp",
+                "model_fingerprint": "/models/test.gguf"})
         return httpx.Response(404)
 
     return httpx.MockTransport(handler)
@@ -653,7 +654,8 @@ def _dying_after_n_points_app(good_points: int, total_requests: int):
         if path == "/props":
             return httpx.Response(200, json={
                 "n_ctx": 4096, "model_path": "/models/test.gguf",
-                "build": "1234", "engine": "llama.cpp"})
+                "build": "1234", "engine": "llama.cpp",
+                "model_fingerprint": "/models/test.gguf"})
         return httpx.Response(404)
 
     return httpx.MockTransport(handler)
@@ -728,3 +730,109 @@ def test_dispatch_bench_openai_mid_sweep_failure_stores_partial_run(db_path):
     assert exported["run"]["status"] == "partial"
     assert exported["run"]["engine"] == "openai"
     assert len(exported["benchmarks"]) == 1
+
+
+# ------------------------------------------------------- run naming --------
+
+
+def test_default_run_name_humanized():
+    """Default name format: 'host · model · 64k/128k' with humanized ctx."""
+    n = ops.default_run_name("http://10.10.10.222:8000", "GLM-5.3-Flash",
+                             [32768, 65536, 131072])
+    assert n == "10.10.10.222 · GLM-5.3-Flash · 32k/64k/128k"
+    # non-kibibyte targets stay raw
+    n2 = ops.default_run_name("http://h:8000", "m", [1500, 4096])
+    assert n2 == "h · m · 1500/4k"
+
+
+def test_dispatch_bench_custom_name_stored(db_path):
+    """Custom name flows through dispatch into the stored run row."""
+    transport = _bench_app()
+    result = ops.dispatch_bench(db_path, "http://fake:8000", [128], 8,
+                                transport=transport, name="evening sweep")
+    from arcturos.bench import export_run_json
+    exported = export_run_json(db_path, result["run_id"])
+    assert exported["run"]["name"] == "evening sweep"
+
+
+def test_dispatch_bench_default_name_when_unnamed(db_path):
+    """No name given -> the humanized default is stored (host · model · ctx)."""
+    transport = _bench_app()
+    result = ops.dispatch_bench(db_path, "http://fake:8000", [128, 256], 8,
+                                transport=transport)
+    from arcturos.bench import export_run_json
+    exported = export_run_json(db_path, result["run_id"])
+    assert exported["run"]["name"] == "fake · /models/test.gguf · 128/256"
+
+
+def test_dispatch_bench_openai_name_stored(db_path):
+    """openai transport: name + eval-run entity both carry through."""
+    with patch("arcturos.bench_openai.urlreq.urlopen",
+               side_effect=lambda req, timeout=None:
+                   _SSEFakeResp(_sse_text(content_chunks=4, prompt=500,
+                                          completion=30))):
+        result = ops.dispatch_bench(
+            db_path, "http://fake:4000/v1", [128], 30,
+            transport_name="openai", model="GLM-5.3-Flash",
+            transport=_openai_preflight_app(), name="pakuranga sweep")
+    from arcturos.bench import export_run_json
+    exported = export_run_json(db_path, result["run_id"])
+    assert exported["run"]["name"] == "pakuranga sweep"
+
+
+def test_dispatch_eval_creates_named_eval_run(db_path, pass_preflight):
+    """Eval replay creates an eval_runs row; items stamp eval_run_id;
+    the response carries eval_run_id; name is stored."""
+    import sqlite3
+    conn = sqlite3.connect(db_path)
+    conn.execute("INSERT INTO eval_suites (id, name, version) VALUES (1, 's', 'v1')")
+    conn.commit()
+    conn.close()
+
+    def fake_post(url, messages, api_key=None, model=None):
+        return {"choices": [{"message": {"content": "ok"},
+                             "finish_reason": "stop"}],
+               "usage": {"prompt_tokens": 5, "completion_tokens": 3}}
+
+    with patch("arcturos.multiturn.post_openai_chat", side_effect=fake_post):
+        result = ops.dispatch_eval(
+            db_path, suite_id=1, target="http://fake:4000/v1",
+            model_fingerprint="test-model",
+            suite={"items": [{"id": "q1", "prompt": "hello"},
+                             {"id": "q2", "prompt": "world"}]},
+            name="nightly eval")
+
+    assert result["eval_run_id"] == 1
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
+    erun = dict(conn.execute("SELECT * FROM eval_runs WHERE id = 1").fetchone())
+    assert erun["name"] == "nightly eval"
+    assert erun["suite_id"] == 1
+    stamped = conn.execute(
+        "SELECT COUNT(*) FROM eval_results WHERE eval_run_id = 1").fetchone()[0]
+    assert stamped == 2
+    conn.close()
+
+
+def test_dispatch_eval_unnamed_eval_run_stores_null_name(db_path, pass_preflight):
+    """name=None stores NULL — the UI falls back to the default rendering."""
+    import sqlite3
+    conn = sqlite3.connect(db_path)
+    conn.execute("INSERT INTO eval_suites (id, name, version) VALUES (1, 's', 'v1')")
+    conn.commit()
+    conn.close()
+
+    def fake_post(url, messages, api_key=None, model=None):
+        return {"choices": [{"message": {"content": "ok"},
+                             "finish_reason": "stop"}],
+               "usage": {"prompt_tokens": 5, "completion_tokens": 3}}
+
+    with patch("arcturos.multiturn.post_openai_chat", side_effect=fake_post):
+        result = ops.dispatch_eval(
+            db_path, suite_id=1, target="http://fake:4000/v1",
+            model_fingerprint="test-model",
+            suite={"items": [{"id": "q1", "prompt": "hello"}]})
+    conn = sqlite3.connect(db_path)
+    name = conn.execute("SELECT name FROM eval_runs WHERE id = 1").fetchone()[0]
+    conn.close()
+    assert name is None
