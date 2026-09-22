@@ -126,7 +126,7 @@
         <div id="bp-clock" class="bp-clock"></div>
         <button id="bp-zoom" class="bp-toggle" type="button">▸ details</button>
         <div id="bp-detail" class="bp-detail">
-          <table><thead><tr><th>#</th><th>ctx</th><th>prefill</th><th>decode</th>
+          <table><thead id="bp-head"><tr><th>#</th><th>ctx</th><th>prefill</th><th>decode</th>
             <th>ttft</th><th>wall</th><th>streams</th></tr></thead>
             <tbody id="bp-rows"></tbody></table>
           <div id="bp-events"></div>
@@ -283,7 +283,20 @@
     $('eval-pf-btn').onclick = () => checkPreflight($('eval-pf-btn'), $('eval-target'), $('eval-msg'), 'eval');
 
     // ---- async bench job + progress indicator ---------------------------
-    const bpPoll = { timer: null, zoom: false };
+    const bpPoll = { timer: null, zoom: false, streams: 1 };
+
+    // Live detail table adapts to the job: single-stream jobs keep the
+    // compact 7-column table; multi-stream jobs add a Σ prefill/decode pair
+    // (combined throughput across streams = true server capacity). Decided
+    // once at kick-off from the form so columns never flicker mid-run.
+    function bpColumns(streams) {
+      const head = $('bp-head').firstElementChild;
+      head.innerHTML = (streams > 1)
+        ? '<th>#</th><th>ctx</th><th>prefill</th><th>decode</th>' +
+          '<th>Σ prefill</th><th>Σ decode</th><th>ttft</th><th>wall</th><th>streams</th>'
+        : '<th>#</th><th>ctx</th><th>prefill</th><th>decode</th>' +
+          '<th>ttft</th><th>wall</th><th>streams</th>';
+    }
 
     function bpFmtSecs(s) {
       if (s == null) return '—';
@@ -291,14 +304,27 @@
       return m ? (m + 'm ' + String(r).padStart(2, '0') + 's') : (r + 's');
     }
     function bpRow(p, i) {
-      const cell = (v, suffix) => (v == null ? '—' : v + (suffix || ''));
-      return '<tr><td>' + (i + 1) + '</td><td>' + p.context_tokens + '</td>' +
-        '<td>' + cell(p.prefill_tps, ' t/s') + '</td>' +
-        '<td>' + cell(p.decode_tps, ' t/s') + '</td>' +
-        '<td>' + cell(p.ttft_ms, ' ms') + '</td>' +
-        '<td>' + cell(p.wall_s, ' s') + '</td>' +
-        '<td>' + cell(p.streams) + '</td></tr>';
-    }
+          const cell = (v, suffix) => (v == null ? '—' : v + (suffix || ''));
+          // Multi-stream jobs: one extra Σ pair after decode — combined
+          // throughput across all streams (true server capacity). Single-stream
+          // jobs keep the compact table (nothing to sum).
+          if (bpPoll.streams > 1) {
+            return '<tr><td>' + (i + 1) + '</td><td>' + p.context_tokens + '</td>' +
+              '<td>' + cell(p.prefill_tps, ' t/s') + '</td>' +
+              '<td>' + cell(p.decode_tps, ' t/s') + '</td>' +
+              '<td>' + cell(p.prefill_tps_combined, ' t/s') + '</td>' +
+              '<td>' + cell(p.decode_tps_combined, ' t/s') + '</td>' +
+              '<td>' + cell(p.ttft_ms, ' ms') + '</td>' +
+              '<td>' + cell(p.wall_s, ' s') + '</td>' +
+              '<td>' + cell(p.streams) + '</td></tr>';
+          }
+          return '<tr><td>' + (i + 1) + '</td><td>' + p.context_tokens + '</td>' +
+            '<td>' + cell(p.prefill_tps, ' t/s') + '</td>' +
+            '<td>' + cell(p.decode_tps, ' t/s') + '</td>' +
+            '<td>' + cell(p.ttft_ms, ' ms') + '</td>' +
+            '<td>' + cell(p.wall_s, ' s') + '</td>' +
+            '<td>' + cell(p.streams) + '</td></tr>';
+        }
     function bpRender(st) {
       const total = st.targets_total, done = st.points_done;
       const frac = total ? done / total : 0;
@@ -409,6 +435,8 @@
         if (!res.ok) { setMsg($('bench-msg'), 'Kick off failed: ' + fmtDetail(data.detail, res.status)); return; }
         // job accepted — hand over to the progress indicator
         $('bench-progress').classList.add('active');
+        bpPoll.streams = parseInt($('bench-streams').value, 10) || 1;
+        bpColumns(bpPoll.streams);
         $('bp-rows').innerHTML = '';
         $('bp-events').innerHTML = '';
         $('bp-bar').style.width = '0%';

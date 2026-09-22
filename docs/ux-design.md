@@ -312,7 +312,10 @@ elapsed/remaining clock whose ETA self-corrects after every point
 zoom that expands a live per-point table (ctx, prefill, decode, TTFT,
 wall) plus the event stream. Failures surface in the same panel with the
 exact reason; the poller retries transient backend hiccups instead of
-dying.
+dying. (2026-09-22 amendment: the live table adapts to the job —
+single-stream jobs keep the compact 7-column table; multi-stream jobs
+add a Σ prefill/decode pair showing combined throughput across all
+streams, decided once at kick-off so columns never flicker mid-run.)
 
 **Run visibility (added 2026-09-21):** /runs rows and the run-detail
 header carry a Hide action (confirm dialog: "append-only flag — nothing

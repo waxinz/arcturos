@@ -116,6 +116,8 @@ Rules:
 | S12 | combined series honest-null for single-stream points | `tests/test_compare.py::test_compare_combined_honest_null_when_not_multi_stream` | done |
 | S13 | run-diff exposes combined metrics as higher-is-better | `tests/test_compare.py::test_run_diff_combined_metrics_direction_and_deltas` | done |
 | S14 | /compare + run-detail pages render combined columns/checkboxes | `tests/test_compare.py::test_compare_page_lists_combined_metric_checkboxes`, `tests/test_api.py::test_run_detail_page_has_combined_throughput_columns` | done |
+| S15 | live job table stays compact (7 columns) for single-stream jobs | `tests/test_ops_api.py::test_create_view_live_table_single_stream_stays_compact` | done |
+| S16 | live job table adapts: Σ prefill/decode pair for multi-stream jobs | `tests/test_ops_api.py::test_create_view_live_table_adapts_for_multi_stream_jobs` | done |
 
 ## 3. Fixture suites (`qa/suites/`)
 
