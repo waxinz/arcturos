@@ -17,8 +17,21 @@ import time
 from typing import Any
 
 from arcturos import bench
+from arcturos import bench_openai
 from arcturos import multiturn as mt
 from arcturos import preflight
+
+# Bench transports: 'native' (llama.cpp /tokenize + /completion) and
+# 'openai' (any /v1/chat/completions server: tabbyAPI, vLLM, litellm).
+_BENCH_TRANSPORTS = ("native", "openai")
+
+# Client-side token estimate of bench.DEFAULT_UNIT_TEXT per section.
+# OpenAI-compatible servers expose no /tokenize endpoint (tabbyAPI returns
+# 404), so prompt sizing cannot come from the server's own tokenizer; this
+# estimate is measured against real tokenizers (Qwen2.5: 64, DeepSeek-V3: 65)
+# and feeds the same margin logic as the native path. The STORED prompt_tokens
+# always comes from the server's authoritative usage, not this constant.
+_UNIT_TEXT_TOKENS_EST = 65
 
 
 class DispatchError(ValueError):
@@ -43,35 +56,79 @@ def dispatch_bench(
     transport=None,
     on_point=None,
     api_key: str | None = None,
+    transport_name: str | None = None,
+    model: str | None = None,
 ) -> dict:
     """Run a cold-cache bench sweep; store run + points; return run payload.
 
     ``api_key`` authenticates every request (tokenize, completion, props)
     for key-protected llama.cpp servers; None is fine for open ones.
+
+    ``transport_name`` selects the wire protocol:
+
+    * ``'native'`` (default) — llama.cpp: preflight reachable + tokenize,
+      points via the native ``/completion`` endpoint (server-authoritative
+      timings, MTP acceptance).
+    * ``'openai'`` — any OpenAI-compatible ``/v1/chat/completions`` server
+      (tabbyAPI, vLLM, litellm). Preflight runs kind='eval' (reachable +
+      chat, since these servers have no ``/tokenize`` — 404); prompts are
+      cold UUID-prefixed and sized client-side (no server tokenizer);
+      each point streams via ``bench_openai.run_openai_stream_point`` and
+      reports client-side TTFT + decode with the prefill estimate.
+      ``model`` (the chat model name) is required for this transport.
+
+      Power stays None for the openai transport: ADR 002 forbids watts
+      without a dedicated-host sampler, and an OpenAI endpoint may sit
+      behind a proxy with no knowable serving host.
+
+    ``transport`` (the ``transport=None`` kwarg) is the injectable httpx
+    transport used by the native path's preflight/completion/props and by
+    tests; the openai path's SSE call is mocked via
+    ``bench_openai.run_openai_stream_point`` in tests.
     """
+    if transport_name is None:
+        transport_name = "native"
+    if transport_name not in _BENCH_TRANSPORTS:
+        raise DispatchError(
+            f"unknown transport {transport_name!r} — expected one of "
+            f"{', '.join(_BENCH_TRANSPORTS)}")
+    if transport_name == "openai" and not (isinstance(model, str) and model):
+        raise DispatchError(
+            "transport 'openai' requires 'model' (the chat model name the "
+            "target serves)")
     if not targets:
         raise DispatchError("targets list is empty")
     if any(t < 1 for t in targets):
         raise DispatchError("every target must be >= 1 token")
     if n_predict < 1:
         raise DispatchError("n_predict must be >= 1")
-    pf = preflight.preflight(server_url, kind="bench", transport=transport,
-                             api_key=api_key)
+    pf = preflight.preflight(
+        server_url,
+        kind="bench" if transport_name == "native" else "eval",
+        model=model, transport=transport, api_key=api_key)
     if not pf.ok():
         raise DispatchError(
             _preflight_detail(server_url, pf))
-    try:
-        points = bench.run_benchmark(
-            server_url, "default", targets, n_predict,
-            timeout=timeout, transport=transport, on_point=on_point,
-            api_key=api_key,
-        )
-    except (RuntimeError, ValueError) as exc:
-        raise DispatchFailure(f"bench failed against {server_url}: {exc} "
-                              "— check the server is still up") from exc
-    engine_meta = bench.capture_engine_metadata(server_url, transport=transport,
-                                                api_key=api_key)
-    run_id = bench.store_benchmark_run(db_path, server_url, engine_meta, points)
+    if transport_name == "native":
+        try:
+            points = bench.run_benchmark(
+                server_url, "default", targets, n_predict,
+                timeout=timeout, transport=transport, on_point=on_point,
+                api_key=api_key)
+        except (RuntimeError, ValueError) as exc:
+            raise DispatchFailure(f"bench failed against {server_url}: {exc} "
+                                  "— check the server is still up") from exc
+        engine_meta = bench.capture_engine_metadata(server_url,
+                                                    transport=transport,
+                                                    api_key=api_key)
+    else:
+        points = _run_openai_bench_points(
+            server_url, model, targets, n_predict,
+            timeout=timeout, on_point=on_point, api_key=api_key)
+        engine_meta = _openai_engine_meta(model)
+    run_id = bench.store_benchmark_run(db_path, server_url, engine_meta, points,
+                                       engine="openai"
+                                       if transport_name == "openai" else None)
     return {
         "run_id": run_id,
         "engine_metadata": engine_meta,
@@ -80,6 +137,7 @@ def dispatch_bench(
                 "context_tokens": p.target_tokens,
                 "prefill_tps": p.prefill_tps,
                 "decode_tps": p.decode_tps,
+                "ttft_ms": p.ttft_ms,
                 "wall_s": p.wall_s,
                 "output_tokens": p.output_tokens,
                 "mtp_draft_n": p.mtp_draft_n,
@@ -89,6 +147,105 @@ def dispatch_bench(
             }
             for p in points
         ],
+    }
+
+
+def _plan_openai_points(targets: list[int],
+                        unit_text: str = bench.DEFAULT_UNIT_TEXT,
+                        margin: int = bench.DEFAULT_MARGIN) -> list[bench.PromptPlan]:
+    """Cold prompt plans for an OpenAI-compatible target (no /tokenize).
+
+    Mirrors the sizing math of ``bench.plan_prompt_sizes`` — same margin,
+    same cold-UUID construction — but derives ``tokens_per_section`` from
+    ``_UNIT_TEXT_TOKENS_EST`` instead of the server tokenizer, which these
+    servers do not expose (tabbyAPI returns 404 on /tokenize).
+    """
+    plans: list[bench.PromptPlan] = []
+    for target in targets:
+        sections = max(1, int((target - margin) / _UNIT_TEXT_TOKENS_EST))
+        plans.append(bench.PromptPlan(
+            target_tokens=target, sections=sections, unit_text=unit_text))
+    return plans
+
+
+def _openai_point_to_bench_point(
+    op: "bench_openai.OpenAIBenchPoint", target_tokens: int
+) -> bench.BenchPoint:
+    """Map one OpenAI stream point into the native BenchPoint shape.
+
+    Semantics preserved from bench_openai: TTFT = first stream chunk,
+    decode = client-side content-chunk rate, prefill = prompt_tokens/ttft
+    (an estimate, not server-authoritative). MTP fields stay None —
+    OpenAI responses carry no draft acceptance. Power stays None — ADR 002
+    (no watts without a dedicated-host sampler).
+    """
+    return bench.BenchPoint(
+        target_tokens=target_tokens,
+        prefill_tps=op.prefill_tps_estimate,
+        decode_tps=op.decode_tps_client,
+        ttft_ms=op.ttft_ms,
+        wall_s=op.wall_s,
+        output_tokens=op.completion_tokens,
+        mtp_draft_n=None,
+        mtp_accepted=None,
+        stop_reason=op.stop_reason,
+        prompt_tokens=op.prompt_tokens,
+        power_watts=None,
+        power_host=None,
+        power_gpu_index=None,
+    )
+
+
+def _run_openai_bench_points(
+    server_url: str,
+    model: str,
+    targets: list[int],
+    n_predict: int,
+    timeout: float = 3600.0,
+    on_point=None,
+    api_key: str | None = None,
+) -> list[bench.BenchPoint]:
+    """Sweep one OpenAI-compatible target over the given context lengths.
+
+    Per target: build the same cold UUID-prefixed prompt the native bench
+    builds, stream it via ``bench_openai.run_openai_stream_point`` (SSE,
+    client-side metrics), and map the result into a BenchPoint. A stream
+    point that reports an error (server dropped the connection, HTTP
+    failure inside the stream) fails the sweep — dispatch surfaces it as
+    DispatchFailure, same as the native path.
+    """
+    points: list[bench.BenchPoint] = []
+    for plan in _plan_openai_points(targets):
+        prompt = bench.build_cold_prompt(plan)
+        op = bench_openai.run_openai_stream_point(
+            server_url, model,
+            [{"role": "user", "content": prompt}],
+            api_key=api_key, max_tokens=n_predict,
+            timeout_s=timeout,
+        )
+        if op.error:
+            raise RuntimeError(f"openai bench point failed at "
+                               f"{plan.target_tokens} tokens: {op.error}")
+        point = _openai_point_to_bench_point(op, plan.target_tokens)
+        points.append(point)
+        if on_point is not None:
+            on_point(point)
+    return points
+
+
+def _openai_engine_meta(model: str) -> dict:
+    """Engine metadata for an OpenAI-compatible run.
+
+    These servers have no /props endpoint, so n_ctx/build/system_info stay
+    None (the storage layer stores the 0 sentinel for n_ctx). The chat
+    model name is the best available fingerprint.
+    """
+    return {
+        "n_ctx": None,
+        "model_path": model,
+        "build": None,
+        "engine": "openai",
+        "system_info": None,
     }
 
 
