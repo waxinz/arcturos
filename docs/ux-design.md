@@ -287,6 +287,30 @@ version, last refresh). No auth. All views URL-addressable.
   green (success + stored ids echoed for the next form) or red (422/502
   detail shown verbatim). Suite-create echoes the new id into the replay
   form. Dispatches are append-only INSERTs — no edit/delete anywhere.
+  (2026-09-21 amendments: bench card gained a transport select
+  native|openai + model field, Check target follows the selected
+  transport, default targets 65535/131072/196608; kick-off is async —
+  see the progress indicator below.)
+
+**Bench progress indicator (added 2026-09-21):** kicking off a bench on
+`/create` submits an async job and immediately shows a progress panel:
+an animated bar (indeterminate stripes during preflight, then fill per
+completed point with a % overlay), a status line in plain language
+("point 2/3 (131072 tokens) streaming…" → "run #13 stored"), an
+elapsed/remaining clock whose ETA self-corrects after every point
+(elapsed ÷ done × remaining from actual wall times), and a "▸ details"
+zoom that expands a live per-point table (ctx, prefill, decode, TTFT,
+wall) plus the event stream. Failures surface in the same panel with the
+exact reason; the poller retries transient backend hiccups instead of
+dying.
+
+**Run visibility (added 2026-09-21):** /runs rows and the run-detail
+header carry a Hide action (confirm dialog: "append-only flag — nothing
+is deleted, unhide any time"). Hidden runs disappear from /runs and are
+rejected by compare/diff with an actionable 404 that names the unhide
+call. The run-detail button flips to "Unhide run" when the newest flag
+says hidden. `/api/runs?include_hidden=true` is the operator escape
+hatch.
 
 ## 7. Cross-cutting UX rules
 

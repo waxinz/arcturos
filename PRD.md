@@ -156,6 +156,25 @@ the launch surface, not only the reading surface).
   `POST /api/ops/eval`. Both accept an optional `api_key` body field passed
   through to every outbound request. Synchronous, bounded by timeouts;
   validation errors are 422, server-side failures 502.
+- **Async bench jobs + progress (added 2026-09-21):** `POST /api/ops/bench/jobs`
+  validates synchronously, then runs the sweep in a background thread and
+  returns `{job_id}` immediately; `GET /api/ops/bench/jobs/{id}` reports the
+  phase (preflight/running/done/error), per-point metrics as they land,
+  elapsed time and a self-correcting ETA (elapsed ÷ done × remaining,
+  recomputed per completed point). The UI renders an animated progress bar,
+  a status line, an elapsed/remaining clock, and a zoomable per-point
+  detail table. The synchronous endpoint is unchanged for scripted use.
+- **Transport choice (added 2026-09-21):** bench dispatch accepts
+  `transport: native|openai` (+ `model` for openai) — native targets
+  llama.cpp `/completion`; openai targets any OpenAI-compatible chat server
+  (tabbyAPI, vLLM, litellm) with reachable+chat preflight and streamed
+  client-side TTFT/decode. Engine stored as `openai`; power fields stay
+  null per ADR 002.
+- **Run visibility — soft hide (added 2026-09-21):** `PUT
+  /api/runs/{id}/visibility` `{hidden: true|false, reason?}` appends a flag
+  row (append-only, newest wins). Hidden runs drop out of `/api/runs` and
+  are rejected by compare/diff with an actionable 404, but stay directly
+  addressable and can be unhidden at any time. Nothing is ever deleted.
 - **Append-only preserved:** dispatch only ever INSERTs. Re-runs supersede.
   There is no edit/delete of stored data anywhere in the UI or API.
 - **Power provenance (ADR 002):** `benchmarks.power_host` /
@@ -170,6 +189,9 @@ the launch surface, not only the reading surface).
 - [x] Suite existence checked before replay; eval batch is transactional (failure → nothing stored).
 - [x] Power numbers always carry host + GPU index provenance.
 - [x] Health preflight before dispatch (J6).
+- [x] First real benchmark captured via /create dispatch (openai transport, run 9 vs pakuranga tabbyAPI GLM-5.3-Flash).
+- [x] Async bench jobs with live progress (bar + status + ETA + zoom) on /create.
+- [x] Runs can be soft-hidden from list/compare views and unhidden, without deleting data.
 
 ## 4. Non-goals (v1)
 - Distributed multi-node orchestration; multi-tenant UI; managed cloud.

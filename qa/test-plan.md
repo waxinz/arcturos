@@ -58,6 +58,19 @@ Rules:
 - [ ] Live smoke: dispatch a 1-point bench from `/create` against ruapehu during a quiet window; verify row lands in /compare
 - [ ] Live smoke: eval replay from `/create` against qwen rotation; verify rows land in /evals
 
+### Async bench jobs + progress indicator (added 2026-09-21)
+- [x] `tests/test_ops_dispatch.py` — openai transport dispatch: happy path stores points with no power fields (ADR 002), preflight failure surfaces actionable DispatchError, missing model → DispatchError, invalid transport name → 422; all network mocked
+- [x] Job API live-validated on taupo: job poll mid-run returns running + per-point metrics + self-correcting ETA; done state carries run_id; unknown job id → 404; openai job without model → 422 before any thread starts
+- [x] Job-status 500 regression (missing `time` import crashed running-job polls; fixed a7cba82) — poller retries transient failures client-side
+- [ ] Load: two concurrent jobs against different targets do not interleave stored rows
+
+### Run visibility — soft hide (added 2026-09-21)
+- [x] `tests/test_api.py::test_run_visibility_hide_unhide_roundtrip` — hide drops the run from /api/runs but direct fetch still works; unhide restores; `include_hidden=true` escape hatch; newest-flag-wins with reason preserved
+- [x] `tests/test_api.py::test_run_visibility_validation_and_404` — non-bool hidden → 422, missing key → 422, unknown run → 404 (both endpoints)
+- [x] `tests/test_api.py::test_run_visibility_survives_append_only_triggers` — UPDATE/DELETE on run_visibility rejected at the storage layer
+- [x] `tests/test_api.py::test_hidden_run_excluded_from_compare` — compare rejects a hidden run with actionable 404 naming the unhide call; unhidden run compares again
+- [x] Live-validated on taupo: hide run 9 → gone from /api/runs (reason stored), unhide → back; 144 tests green
+
 ### Cross-cutting
 - [x] /health returns ok; index served
 - [ ] concurrent POSTs don't race (commit-before-respond fix regression suite)
