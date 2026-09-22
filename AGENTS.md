@@ -110,6 +110,12 @@ arcturos/
 
 ### Log (newest first)
 
+- 2026-09-21 — Transport-aware bench card (be64bf6): /create bench card
+  gains a transport select (native|openai) + model field wired through to
+  dispatch; Check target now runs the preflight kind matching the selected
+  transport (fixes the misleading tokenize-404 failure on OpenAI-compatible
+  targets); default context targets 65535, 131072, 196608 per operator.
+
 - 2026-09-21 — OpenAI-compatible bench transport (26474d8): /api/ops/bench
   gains transport=native|openai + model; openai runs eval-kind preflight
   (no /tokenize on tabbyAPI/vLLM), cold UUID prompts sized client-side,
