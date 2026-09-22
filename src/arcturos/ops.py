@@ -128,7 +128,8 @@ def dispatch_bench(
             points = bench.run_benchmark(
                 server_url, "default", targets, n_predict,
                 timeout=timeout, transport=transport, on_point=on_point,
-                api_key=api_key, streams=streams)
+                api_key=api_key, streams=streams,
+                power_host=power_host, power_gpu_index=power_gpu_index)
         except (RuntimeError, ValueError) as exc:
             raise DispatchFailure(f"bench failed against {server_url}: {exc} "
                                   "— check the server is still up") from exc
