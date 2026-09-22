@@ -40,11 +40,23 @@ def test_preflight_eval_happy_with_model():
 
 
 def test_preflight_unreachable():
+    # /health 404 -> warning (server answered), NOT a gate failure
     pf = preflight("http://fake:8000", kind="bench",
                    transport=_transport(health=404))
-    # /health 404 -> reachable check fails with a hint
-    assert not pf.ok()
+    assert pf.ok()
     assert "404" in pf["checks"][0]["detail"]
+    assert "non-blocking" in pf["checks"][0]["detail"]
+
+
+def test_preflight_health_503_tabbyapi_style_is_nonblocking():
+    """tabbyAPI /health aggregates unrelated internal issues into its
+    status (e.g. a stale 'IndexError' entry) and returns 503 while
+    inference works fine — dispatch must not be blocked by it."""
+    pf = preflight("http://fake:8000", kind="eval",
+                   transport=_transport(health=503))
+    assert pf.ok()
+    assert "503" in pf["checks"][0]["detail"]
+    assert "non-blocking" in pf["checks"][0]["detail"]
 
 
 def test_preflight_tokenize_missing_on_eval_target():
