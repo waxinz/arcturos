@@ -105,10 +105,20 @@ arcturos/
 - [x] Power draw: power.py validated (134W on ruapehu during bench) — dedicated hosts only per ADR 002
 - [x] Power provenance wired into store path: benchmarks.power_host + power_gpu_index columns, db migration for pre-existing DBs, API enforces watts-require-host (422)
 - [x] J7 CRUD + dispatch: ops.py (dispatch_bench/dispatch_eval), /api/ops/bench + /api/ops/eval, /create view (6 form cards: bench dispatch, suite create, suite item editor, eval replay, manual bench point, judgment record); PRD J7 + ux-design §J7 + test-plan J7 sections written; 86 tests green
-- [ ] M9 hardening remainder: multi-host compare metadata (server_url in compare payload), health preflight before dispatch (J6), seed power into seed_demo path
+- [x] M9 hardening remainder: multi-host compare metadata (server_url in compare payload), health preflight before dispatch (J6), seed power into seed_demo path
 - [ ] First real benchmark captured via /create dispatch (live smoke, quiet window)
 
 ### Log (newest first)
+
+- 2026-09-21 — M9 hardening remainder closed (288b1ed + 1b847ee):
+  seed demo benches carry power_host/gpu_index per ADR 002
+  (demo-seed.json); tabbyAPI returns usage:null — resp.get('usage',
+  {}) default never fires on explicit None, so extract_output
+  crashed mid-dispatch with AttributeError; fixed with 'or {}' in
+  multiturn.py extract_output + scripts/seed_demo.py; regression
+  test test_extract_output_null_usage added; live re-verified: eval
+  dispatch vs pakuranga tabbyAPI GLM-5.3-Flash stored eval_result
+  id 38, latency 794.1ms, 133 tests green.
 
 - 2026-09-17 — §4.6 backlog finished (bcd1cb8): compare baseline overlay
   (dashed 📌 reference dataset + per-run delta tables with direction-aware
