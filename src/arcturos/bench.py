@@ -479,6 +479,7 @@ def capture_engine_metadata(base_url: str, timeout: float = 15.0, transport=None
 def store_benchmark_run(
     db_path, base_url: str, engine_metadata: dict, points: list[BenchPoint],
     engine: str | None = None,
+    status: str = "complete",
 ) -> int:
     """Store a benchmark run + its points into the Arcturos SQLite schema.
 
@@ -489,6 +490,11 @@ def store_benchmark_run(
     ``benchmarks`` row per point. The schema's ``runs.context_size`` column
     is NOT NULL, so an unknown n_ctx is stored as ``0`` (documented
     sentinel for "unknown"). Returns the new run_id.
+
+    ``status`` (append-only run outcome, added 2026-09-22): ``'complete'``
+    (default) or ``'partial'`` — a run whose sweep failed mid-way but
+    whose completed points are preserved. Partial runs keep every
+    measured point; nothing is discarded, nothing is rewritten.
     """
     conn = db.connect(db_path)
     db.init_db(conn)
@@ -498,13 +504,14 @@ def store_benchmark_run(
         engine = engine if engine is not None else "llama.cpp"
         created = _utcnow()
         cur = conn.execute(
-            "INSERT INTO runs (server_url, model_fingerprint, engine, context_size, created_at)"
-            " VALUES (?, ?, ?, ?, ?)",
+            "INSERT INTO runs (server_url, model_fingerprint, engine, context_size, status, created_at)"
+            " VALUES (?, ?, ?, ?, ?, ?)",
             (
                 base_url,
                 fingerprint,
                 engine,
                 n_ctx if n_ctx is not None else 0,
+                status,
                 created,
             ),
         )

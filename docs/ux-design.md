@@ -328,6 +328,15 @@ call. The run-detail button flips to "Unhide run" when the newest flag
 says hidden. `/api/runs?include_hidden=true` is the operator escape
 hatch.
 
+**Partial runs (added 2026-09-22):** a bench sweep that fails mid-way
+keeps every point it completed — the run is stored with
+`status: 'partial'` and badged ⚠ on /runs and run-detail ("partial —
+sweep failed mid-way"; tooltip names what happened). The live job panel
+turns the failure into a link: "⚠ run #N (partial) — K completed
+point(s) kept". `/api/runs?status=partial|complete` filters the list.
+Partial runs are first-class data: comparable, exportable, hideable —
+never hidden by default, never silently dropped.
+
 ## 7. Cross-cutting UX rules
 
 - **Nulls:** `—` in tables, never `0`; reason string always one hover or

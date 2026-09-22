@@ -185,6 +185,13 @@ the launch surface, not only the reading surface).
   row (append-only, newest wins). Hidden runs drop out of `/api/runs` and
   are rejected by compare/diff with an actionable 404, but stay directly
   addressable and can be unhidden at any time. Nothing is ever deleted.
+- **Partial-run preservation (added 2026-09-22):** a bench sweep that
+  fails mid-way still stores the points it completed before failing,
+  marked `status: 'partial'` on the run row (append-only column, default
+  `'complete'`). `/api/runs?status=partial|complete` filters; the /runs
+  list and run-detail pages badge partial runs; the live job panel links
+  to the partial run instead of dead-ending. Nothing measured is ever
+  discarded; failed points are simply absent.
 - **Append-only preserved:** dispatch only ever INSERTs. Re-runs supersede.
   There is no edit/delete of stored data anywhere in the UI or API.
 - **Power provenance (ADR 002):** `benchmarks.power_host` /

@@ -21,6 +21,8 @@ CREATE TABLE IF NOT EXISTS runs (
     model_fingerprint TEXT    NOT NULL,
     engine            TEXT    NOT NULL,
     context_size      INTEGER NOT NULL,
+    status            TEXT    NOT NULL DEFAULT 'complete'
+                      CHECK (status IN ('complete', 'partial')),
     created_at        TEXT    NOT NULL
 );
 
@@ -266,6 +268,7 @@ _MIGRATIONS = (
     ("benchmarks", "streams", "INTEGER"),
     ("benchmarks", "decode_tps_combined", "REAL"),
     ("benchmarks", "prefill_tps_combined", "REAL"),
+    ("runs", "status", "TEXT NOT NULL DEFAULT 'complete'"),
 )
 
 
