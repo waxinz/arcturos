@@ -290,11 +290,17 @@ def test_judgment_self_comparison_rejected(client):
 
 
 def test_api_has_no_update_or_delete_paths(client):
-    # PUT never existed and must never appear. PATCH and DELETE are allowed
-    # on exactly two non-data surfaces (§4.6): the model alias (a label) and
-    # baseline unpin (a reference pointer). Neither touches stored rows.
+    # PUT is allowed on exactly one append-only snapshot surface: the suite
+    # definition (each PUT appends a new snapshot row; nothing stored is
+    # ever mutated). PATCH and DELETE are allowed on exactly two non-data
+    # surfaces (§4.6): the model alias (a label) and baseline unpin (a
+    # reference pointer). None of these touch stored measurement rows.
     methods = {m for r in client.app.routes for m in getattr(r, "methods", set())}
-    assert "PUT" not in methods
+    assert "PUT" in methods  # suite definition snapshots only — see below
+    put_paths = {
+        r.path for r in client.app.routes
+        if getattr(r, "methods", set()) & {"PUT"}}
+    assert put_paths == {"/api/eval-suites/{suite_id}/definition"}
     editable = {
         r.path for r in client.app.routes
         if getattr(r, "methods", set()) & {"PATCH", "DELETE"}}
