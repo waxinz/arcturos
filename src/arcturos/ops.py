@@ -176,7 +176,9 @@ def _openai_point_to_bench_point(
     """Map one OpenAI stream point into the native BenchPoint shape.
 
     Semantics preserved from bench_openai: TTFT = first stream chunk,
-    decode = client-side content-chunk rate, prefill = prompt_tokens/ttft
+    decode = resolved rate (server-authoritative usage timing when the
+    final chunk carries it, client chunk-rate fallback otherwise — the
+    fallback rejects burst-flushed spans), prefill = prompt_tokens/ttft
     (an estimate, not server-authoritative). MTP fields stay None —
     OpenAI responses carry no draft acceptance. Power stays None — ADR 002
     (no watts without a dedicated-host sampler).
@@ -184,7 +186,7 @@ def _openai_point_to_bench_point(
     return bench.BenchPoint(
         target_tokens=target_tokens,
         prefill_tps=op.prefill_tps_estimate,
-        decode_tps=op.decode_tps_client,
+        decode_tps=op.decode_tps,
         ttft_ms=op.ttft_ms,
         wall_s=op.wall_s,
         output_tokens=op.completion_tokens,
