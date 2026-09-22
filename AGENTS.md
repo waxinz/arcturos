@@ -110,6 +110,18 @@ arcturos/
 
 ### Log (newest first)
 
+- 2026-09-21 — Async bench jobs + live progress indicator (803ae7b):
+  POST /api/ops/bench/jobs validates synchronously then runs the sweep in
+  a daemon thread (in-process job registry, TTL-pruned; storage still
+  append-only via the normal dispatch path); GET /api/ops/bench/jobs/{id}
+  returns phase (preflight|running|done|error), per-point metrics, elapsed
+  and a self-correcting ETA (elapsed/done*remaining, recomputed per point).
+  /create bench card: animated progress bar (indeterminate during
+  preflight), status line, elapsed/remaining clock, zoomable detail
+  (per-point table + live events). Synchronous POST /api/ops/bench
+  unchanged for API users. Live-validated: job df1b0acd118e -> run 12
+  (2 points, 16.5s) vs pakuranga tabbyAPI; 140 tests green.
+
 - 2026-09-21 — Transport-aware bench card (be64bf6): /create bench card
   gains a transport select (native|openai) + model field wired through to
   dispatch; Check target now runs the preflight kind matching the selected
