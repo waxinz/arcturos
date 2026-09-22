@@ -203,6 +203,9 @@ def test_dispatch_bench_streams_two_stores_stream_count(db_path):
     # the mock timings are deterministic, so the mean equals the single value
     assert p0["decode_tps"] == 50.0
     assert p0["prefill_tps"] == 400.0
+    # combined = sum across the 2 streams
+    assert p0["decode_tps_combined"] == 100.0
+    assert p0["prefill_tps_combined"] == 800.0
     from arcturos.bench import export_run_json
     exported = export_run_json(db_path, 1)
     assert exported["benchmarks"][0]["streams"] == 2

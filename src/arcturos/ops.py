@@ -151,6 +151,8 @@ def dispatch_bench(
                 "prompt_tokens": p.prompt_tokens,
                 "stop_reason": p.stop_reason,
                 "streams": p.streams,
+                "decode_tps_combined": p.decode_tps_combined,
+                "prefill_tps_combined": p.prefill_tps_combined,
             }
             for p in points
         ],
@@ -305,9 +307,12 @@ def _track_point(job: dict[str, Any], point) -> None:
         "context_tokens": point.target_tokens,
         "prefill_tps": point.prefill_tps,
         "decode_tps": point.decode_tps,
+        "prefill_tps_combined": getattr(point, "prefill_tps_combined", None),
+        "decode_tps_combined": getattr(point, "decode_tps_combined", None),
         "ttft_ms": point.ttft_ms,
         "wall_s": point.wall_s,
         "output_tokens": point.output_tokens,
+        "streams": getattr(point, "streams", 1),
     })
     done = job["points_done"]
     elapsed = time.monotonic() - job["started_at"]
