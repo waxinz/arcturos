@@ -316,8 +316,17 @@
     async function bpPollLoop(jobId) {
       try {
         const res = await fetch('/api/ops/bench/jobs/' + jobId);
-        const st = await res.json();
-        if (!res.ok) { bpStop(); setMsg($('bench-msg'), 'Job poll failed: ' + (st.detail || res.status)); return; }
+        let st = null;
+        try { st = await res.json(); } catch (_) { /* non-JSON body */ }
+        if (!res.ok || !st || !st.status) {
+          // Transient backend hiccup (restart, 500): keep polling instead of
+          // killing the indicator — the sweep itself runs server-side.
+          bpPoll.retries = (bpPoll.retries || 0) + 1;
+          if (bpPoll.retries > 20) { bpStop(); setMsg($('bench-msg'), 'Job poll failed: HTTP ' + res.status); }
+          else bpPoll.timer = setTimeout(() => bpPollLoop(jobId), 2000);
+          return;
+        }
+        bpPoll.retries = 0;
         bpRender(st);
         if (st.status === 'done') {
           bpStop();
