@@ -87,6 +87,17 @@ Rules:
 | R5 | Registry provenance: `first_seen`/`last_seen` derive from the triggering row's own timestamp (single clock read) — deterministic, no ms-boundary flake | `tests/test_registry.py::test_second_run_updates_last_seen_not_first` (now stable across consecutive full-suite runs) | ✅ |
 | R6 | `run_visibility` covered by the schema assertion map (`EXPECTED_COLUMNS`) | `tests/test_api.py::test_schema_creation` | ✅ |
 
+## 2b. Review round 2 — run-17 decode fix
+
+| # | Test | File | Status |
+|---|------|------|--------|
+| D1 | Server `completion_tokens_per_sec` wins over client chunk rate | `tests/test_bench_openai.py::test_happy_path_extracts_ttft_and_usage` | done |
+| D2 | `completion_time` fallback (30 tok / 0.75 s = 40 t/s) when per-sec absent | `tests/test_bench_openai.py::test_completion_time_fallback_without_per_sec` | done |
+| D3 | Reasoning-only stream (zero content chunks) still yields server decode — run-17 point-2 class (missing 128k value) | `tests/test_bench_openai.py::test_reasoning_only_stream_gets_server_decode` | done |
+| D4 | Burst-flushed span (<0.25 s) rejected: no client rate, no artifact — run-17 point-1 class (15054 t/s) | `tests/test_bench_openai.py::test_burst_span_rejected_without_server_timing` | done |
+| D5 | Real client span (>0.25 s) with no server timing still computes chunk rate | `tests/test_bench_openai.py::test_client_rate_used_when_span_real_and_no_server_timing` | done |
+| D6 | Dispatch stores the resolved decode rate | `tests/test_ops_dispatch.py::test_dispatch_bench_openai_happy_stores_points_no_power` | done |
+
 ## 3. Fixture suites (`qa/suites/`)
 
 Seeded demo data + reference eval suites, format documented in each file's
