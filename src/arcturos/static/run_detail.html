@@ -170,6 +170,27 @@
         };
         acts.appendChild(b2);
 
+        // Visibility toggle (append-only soft hide): hidden runs drop out
+        // of list/compare views but stay addressable + unhideable.
+        const b3 = document.createElement('button');
+        b3.textContent = 'Hide run';
+        b3.onclick = async () => {
+          const hiding = b3.textContent !== 'Unhide run';
+          if (hiding && !window.confirm('Hide run #' + run.id + ' from list views? (append-only flag — nothing is deleted, unhide any time)')) return;
+          b3.disabled = true;
+          try {
+            const r = await fetch('/api/runs/' + run.id + '/visibility', {
+              method: 'PUT', headers: {'Content-Type': 'application/json'},
+              body: JSON.stringify({hidden: hiding})});
+            if (!r.ok) { window.alert('Visibility change failed: HTTP ' + r.status); return; }
+            b3.textContent = hiding ? 'Unhide run' : 'Hide run';
+          } finally { b3.disabled = false; }
+        };
+        acts.appendChild(b3);
+        fetch('/api/runs/' + run.id + '/visibility').then(r => r.json())
+          .then(v => { if (v.hidden) b3.textContent = 'Unhide run'; })
+          .catch(() => {});
+
         // Engine environment block when present in the stored run payload.
         const env = run.engine_metadata || run.engine_meta || null;
         if (env) {
