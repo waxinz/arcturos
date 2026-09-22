@@ -110,6 +110,20 @@ arcturos/
 
 ### Log (newest first)
 
+- 2026-09-22 — Deploy fix: stale append-only trigger upgrade (a6c2862).
+  The live restart exposed that CREATE TRIGGER IF NOT EXISTS never
+  replaces an existing trigger — taupo's pre-naming database kept the
+  old blanket trg_runs_no_update ('any UPDATE aborts') even after the
+  runs.name migration, so renames 500'd forever. init_db now compares
+  stored trigger SQL against the shipped definition for label-bearing
+  triggers (runs, eval_runs) and drops + re-creates on mismatch
+  (DDL-only, data untouched, idempotent). Regression test seeds a
+  legacy blanket-trigger DB: rename works, measurement UPDATE still
+  aborts, second init_db is a no-op. Live-verified on taupo: rename
+  API 200, two real dispatches (named + default-name
+  '10.10.10.222 · GLM-5.3-Flash · 512/1k') stored correctly against
+  pakuranga. 204 passed.
+
 - 2026-09-22 — Run naming + eval-run entity (ADR 003): every benchmark
   run and eval run carries an optional human `name`. Default when
   unnamed: `host · model · targets` computed at dispatch from engine
