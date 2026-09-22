@@ -130,7 +130,8 @@ def dispatch_bench(
     else:
         points = _run_openai_bench_points(
             server_url, model, targets, n_predict,
-            timeout=timeout, on_point=on_point, api_key=api_key)
+            timeout=timeout, on_point=on_point, api_key=api_key,
+            streams=streams)
         engine_meta = _openai_engine_meta(model)
     run_id = bench.store_benchmark_run(db_path, server_url, engine_meta, points,
                                        engine="openai"
@@ -215,29 +216,40 @@ def _run_openai_bench_points(
     timeout: float = 3600.0,
     on_point=None,
     api_key: str | None = None,
+    streams: int = 1,
 ) -> list[bench.BenchPoint]:
     """Sweep one OpenAI-compatible target over the given context lengths.
 
     Per target: build the same cold UUID-prefixed prompt the native bench
-    builds, stream it via ``bench_openai.run_openai_stream_point`` (SSE,
-    client-side metrics), and map the result into a BenchPoint. A stream
-    point that reports an error (server dropped the connection, HTTP
-    failure inside the stream) fails the sweep — dispatch surfaces it as
-    DispatchFailure, same as the native path.
+    builds, run ``streams`` identical concurrent SSE workstreams via
+    ``bench_openai.run_openai_stream_point`` (client-side metrics), and
+    aggregate them into one BenchPoint (mean rates/TTFT, max wall, combined
+    = sum across streams). A stream point that reports an error (server
+    dropped the connection, HTTP failure inside the stream) fails the
+    sweep — dispatch surfaces it as DispatchFailure, same as the native
+    path.
     """
     points: list[bench.BenchPoint] = []
     for plan in _plan_openai_points(targets):
         prompt = bench.build_cold_prompt(plan)
-        op = bench_openai.run_openai_stream_point(
-            server_url, model,
-            [{"role": "user", "content": prompt}],
-            api_key=api_key, max_tokens=n_predict,
-            timeout_s=timeout,
-        )
-        if op.error:
-            raise RuntimeError(f"openai bench point failed at "
-                               f"{plan.target_tokens} tokens: {op.error}")
-        point = _openai_point_to_bench_point(op, plan.target_tokens)
+
+        def _one_stream():
+            op = bench_openai.run_openai_stream_point(
+                server_url, model,
+                [{"role": "user", "content": prompt}],
+                api_key=api_key, max_tokens=n_predict,
+                timeout_s=timeout,
+            )
+            if op.error:
+                raise RuntimeError(f"openai bench point failed at "
+                                   f"{plan.target_tokens} tokens: {op.error}")
+            return op
+
+        def _one_mapped_stream():
+            return _openai_point_to_bench_point(_one_stream(),
+                                                plan.target_tokens)
+
+        point = bench.run_point_streams(_one_mapped_stream, streams)
         points.append(point)
         if on_point is not None:
             on_point(point)
