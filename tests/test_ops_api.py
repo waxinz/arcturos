@@ -23,6 +23,27 @@ def test_create_view_served(client):
     assert "text/html" in r.headers.get("content-type", "")
 
 
+def test_create_view_live_table_single_stream_stays_compact(client):
+    """Default (single-stream) live table keeps the compact 7-column head —
+    Σ columns only appear when a job actually runs parallel streams."""
+    html = client.get("/create").text
+    assert "<th>ttft</th><th>wall</th><th>streams</th>" in html
+    # the static default head (server-rendered) has no Σ columns
+    assert "Σ prefill" not in html.split('id="bp-head"')[1].split("</tr>")[0]
+
+
+def test_create_view_live_table_adapts_for_multi_stream_jobs(client):
+    """The adaptive-column logic exists: kick-off reads the streams field,
+    bpColumns rewrites the head with Σ prefill/decode for streams > 1, and
+    bpRow renders the combined cells for multi-stream jobs."""
+    html = client.get("/create").text
+    assert "bpColumns" in html
+    assert "Σ prefill</th><th>Σ decode</th>" in html
+    assert "bpPoll.streams = parseInt($('bench-streams').value, 10) || 1" in html
+    assert "p.prefill_tps_combined" in html
+    assert "p.decode_tps_combined" in html
+
+
 def test_run_detail_view_served(client):
     r = client.get("/runs/1")
     assert r.status_code == 200
