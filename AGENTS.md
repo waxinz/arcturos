@@ -110,6 +110,18 @@ arcturos/
 
 ### Log (newest first)
 
+- 2026-09-22 — Combined throughput surfaces in the UI: run detail's
+  benchmark table gains Σ prefill/decode t/s columns (values shown only
+  for multi-stream points, honest `—` + reason tooltip otherwise —
+  setCell gained a per-cell reason override); /compare gains
+  decode_tps_combined / prefill_tps_combined as their own checkboxes
+  (labels 'Σ decode tok/s (combined)' / 'Σ prefill tok/s (combined)')
+  so combined throughput is plottable like any other metric; compare
+  baseline-delta coloring treats combined as higher-is-better; diff.html
+  legend text names combined t/s. +5 tests (compare series, honest-null
+  single-stream class, run-diff direction + deltas, page assertions for
+  /compare checkboxes and run-detail columns) — 169 passed.
+
 - 2026-09-22 — Parallel streams: bench dispatch accepts `streams`
   (default 1, max 16, bools rejected); each context length runs that many
   identical concurrent workstreams (ThreadPoolExecutor per target, targets
