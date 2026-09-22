@@ -110,6 +110,17 @@ arcturos/
 
 ### Log (newest first)
 
+- 2026-09-21 — Suite definition snapshots + per-category report breakdown
+  (1d0b37e + 34fa9c4): the DB stores item_id only, so /reports showed
+  everything as "uncategorized" despite the ux-design category-breakdown
+  spec. New append-only suite_definitions table (snapshot per PUT, newest
+  wins) + PUT/GET /api/eval-suites/{id}/definition; reports.category_map_for()
+  rebuilds the item->category map at report time and suite_report joins it.
+  PUT allowlist contract test updated (one allowed PUT surface: definition
+  snapshots). Live on taupo: /api/reports/suite/1 now reports 6 categories
+  (logic 0/4/0, writing 0/4/0, counting 0/1/3, coding 1/2/1, reasoning 1/0/0,
+  instruction-following 1/0/0 — a/b/tie/total). 136 tests green.
+
 - 2026-09-21 — M9 hardening remainder closed (288b1ed + 1b847ee):
   seed demo benches carry power_host/gpu_index per ADR 002
   (demo-seed.json); tabbyAPI returns usage:null — resp.get('usage',
