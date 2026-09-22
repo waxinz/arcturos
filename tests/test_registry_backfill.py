@@ -108,3 +108,59 @@ def test_backfill_rejects_update_via_trigger(tmp_path):
     ).fetchone()
     assert row["first_seen"] == "2026-09-10T00:00:00.000"
     conn.close()
+
+
+def test_stale_label_trigger_upgrades_on_legacy_db(tmp_path):
+    """A database created before the naming feature carries the OLD blanket
+    trg_runs_no_update (any UPDATE aborts). CREATE TRIGGER IF NOT EXISTS is
+    a no-op when the name is taken, so init_db must detect the stale
+    definition and replace it — otherwise renames 500 forever on live DBs
+    (observed on taupo 2026-09-22). Measurement columns must stay locked."""
+    import sqlite3
+    from arcturos.db import connect, init_db
+
+    db_path = tmp_path / "legacy.db"
+    conn = sqlite3.connect(db_path)
+    conn.executescript("""
+        CREATE TABLE runs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            server_url TEXT NOT NULL,
+            model_fingerprint TEXT NOT NULL,
+            engine TEXT,
+            context_size INTEGER,
+            status TEXT NOT NULL DEFAULT 'complete',
+            created_at TEXT NOT NULL
+        );
+        CREATE TRIGGER trg_runs_no_update BEFORE UPDATE ON runs BEGIN
+            SELECT RAISE(ABORT, 'append-only: UPDATE forbidden on runs');
+        END;
+        INSERT INTO runs (server_url, model_fingerprint, engine,
+                          context_size, created_at)
+        VALUES ('http://x', 'm', 'llama.cpp', 4096, '2026-09-22');
+    """)
+    conn.commit()
+    conn.close()
+
+    conn = connect(db_path)
+    init_db(conn)
+
+    # rename now allowed (label whitelisted by the upgraded trigger)
+    conn.execute("UPDATE runs SET name = ? WHERE id = ?", ("renamed", 1))
+    conn.commit()
+    name = conn.execute("SELECT name FROM runs WHERE id = 1").fetchone()[0]
+    assert name == "renamed"
+
+    # measurement columns still immutable
+    try:
+        conn.execute("UPDATE runs SET context_size = 1 WHERE id = 1")
+        raise AssertionError("measurement UPDATE should have aborted")
+    except sqlite3.IntegrityError:
+        pass
+
+    # idempotent: a second init_db neither fails nor downgrades
+    init_db(conn)
+    sql = conn.execute(
+        "SELECT sql FROM sqlite_master WHERE name = 'trg_runs_no_update'"
+    ).fetchone()[0]
+    assert "only the name" in sql
+    conn.close()

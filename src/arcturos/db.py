@@ -327,3 +327,54 @@ def _migrate(conn: sqlite3.Connection) -> None:
             except sqlite3.OperationalError as exc:
                 if "duplicate column" not in str(exc).lower():
                     raise
+    _upgrade_label_triggers(conn)
+
+
+# Trigger definitions that changed after v0.1: a label column was added to
+# a table whose blanket no-update trigger already exists on older databases.
+# "CREATE TRIGGER IF NOT EXISTS" is a no-op when the name is taken, so the
+# upgraded definition would never land — renames would 500 forever. Each
+# entry names a trigger whose stored SQL must match the shipped definition;
+# on mismatch the old trigger is dropped and re-created (DDL, not data).
+_LABEL_TRIGGER_UPGRADES = ("trg_runs_no_update", "trg_eval_runs_no_update")
+
+
+def _upgrade_label_triggers(conn: sqlite3.Connection) -> None:
+    """Replace stale append-only triggers whose definition changed.
+
+    A trigger is stale when its stored sqlite_master SQL differs from the
+    shipped TRIGGERS definition (modulo whitespace). Dropping + re-creating
+    a trigger is schema DDL — no row data is read or written, so
+    append-only semantics are untouched.
+    """
+    shipped = _shipped_trigger_sql()
+    for name in _LABEL_TRIGGER_UPGRADES:
+        definition = shipped.get(name)
+        if definition is None:
+            continue
+        row = conn.execute(
+            "SELECT sql FROM sqlite_master WHERE type = 'trigger' AND name = ?",
+            (name,)).fetchone()
+        if row is None:
+            continue  # fresh database: CREATE IF NOT EXISTS will make it
+        if _norm(row[0]) == _norm(definition):
+            continue  # already current
+        conn.execute(f"DROP TRIGGER {name}")
+        conn.execute(definition)
+
+
+def _shipped_trigger_sql() -> dict[str, str]:
+    """Parse CREATE TRIGGER statements out of the TRIGGERS script."""
+    import re
+    statements = {}
+    for match in re.finditer(
+            r"CREATE TRIGGER (?:IF NOT EXISTS )?(\w+)(.*?)(?=\nCREATE TRIGGER |\Z)",
+            TRIGGERS, re.DOTALL):
+        name, body = match.group(1), match.group(2)
+        statements[name] = f"CREATE TRIGGER {name}{body}".strip()
+    return statements
+
+
+def _norm(sql: str) -> str:
+    """Whitespace-insensitive comparison key for trigger SQL."""
+    return " ".join(sql.split())
