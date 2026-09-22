@@ -110,6 +110,13 @@ arcturos/
 
 ### Log (newest first)
 
+- 2026-09-21 — Fix: bench job status 500 on RUNNING jobs (a7cba82) —
+  the elapsed computation called time.monotonic() but main.py never
+  imported time; finished-job polls skipped that branch, so the bug only
+  bit live sweeps (500 -> UI 'Unexpected token I' JSON parse error).
+  Import added; poller now retries transient poll failures (2s backoff,
+  20 tries) instead of killing the indicator. 140 tests green.
+
 - 2026-09-21 — Async bench jobs + live progress indicator (803ae7b):
   POST /api/ops/bench/jobs validates synchronously then runs the sweep in
   a daemon thread (in-process job registry, TTL-pruned; storage still
