@@ -329,6 +329,12 @@ hatch.
 
 - **Nulls:** `—` in tables, never `0`; reason string always one hover or
   column away.
+- **Numeric precision (added 2026-09-22):** floats render at 2dp in every
+  view — tables, live job tables, chart tooltips, delta columns
+  (30.105000000000004 → `30.11`). Integers (ctx, streams, token counts)
+  and strings pass through untouched. Display rounding is
+  presentation-only: storage, the API, and CSV exports keep full
+  fidelity.
 - **Deltas:** always paired absolute + %; colored; a delta without its base
   run ID in the tooltip is a bug.
 - **IDs everywhere:** run IDs, result-set IDs, judgment-set IDs are shown,

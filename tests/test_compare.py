@@ -321,6 +321,29 @@ def test_compare_page_lists_combined_metric_checkboxes(client):
     assert "Σ prefill tok/s (combined)" in html
 
 
+# ------------------------------------------------- display precision -------
+
+
+def test_ui_floats_render_at_2dp(client):
+    """All numeric rendering paths round floats to 2dp (2026-09-22: run 30
+    showed 30.105000000000004). Presentation-only — storage/CSV keep full
+    fidelity; integers and strings pass through untouched."""
+    # run_detail: cellText rounds floats, keeps '—' for nulls
+    detail = client.get("/runs/1").text
+    assert "v.toFixed(2)" in detail
+    assert "Number.isInteger(v)" in detail
+    # compare: fmtNum + chart tooltip callbacks
+    compare = client.get("/compare").text
+    assert compare.count("toFixed(2)") >= 2  # fmtNum + tooltip label
+    assert "ctx.parsed.y" in compare
+    # create: live-table cell() rounds floats too
+    create = client.get("/create").text
+    assert "v.toFixed(2)" in create
+    # diff already rounded via fmt(); it must stay that way
+    diff = client.get("/diff").text
+    assert "toFixed(2)" in diff
+
+
 # ------------------------------------------------------------ views ---------
 
 
