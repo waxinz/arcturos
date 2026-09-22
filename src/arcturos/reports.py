@@ -7,12 +7,43 @@ breakdown, and exportable dicts. Read-only over the append-only store.
 
 from __future__ import annotations
 
+import json
 import sqlite3
 from typing import Any
 
 
 def _fetch(db: sqlite3.Connection, sql: str, params: tuple = ()) -> list[sqlite3.Row]:
     return db.execute(sql, params).fetchall()
+
+
+def category_map_for(db: sqlite3.Connection, suite_id: int) -> dict[str, str]:
+    """Rebuild the item_id -> category map for one suite.
+
+    Categories live in the suite definition JSON (the append-only DB stores
+    item_id only), so the report-time join reads the latest definition
+    snapshot from suite_definitions. Absent metadata -> empty map (every
+    item lands under "uncategorized" — honest, never fabricated).
+    """
+    try:
+        row = db.execute(
+            "SELECT payload FROM suite_definitions WHERE suite_id = ? "
+            "ORDER BY id DESC LIMIT 1",
+            (suite_id,),
+        ).fetchone()
+    except sqlite3.OperationalError:
+        return {}
+    if row is None or not row["payload"]:
+        return {}
+    try:
+        suite = json.loads(row["payload"])
+    except (TypeError, ValueError):
+        return {}
+    items = suite.get("items") or []
+    return {
+        item["id"]: item["category"]
+        for item in items
+        if isinstance(item, dict) and item.get("id") and item.get("category")
+    }
 
 
 def suite_report(db: sqlite3.Connection, suite_id: int,
