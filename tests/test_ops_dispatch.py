@@ -291,7 +291,9 @@ def _sse_text(content_chunks=4, prompt=500, completion=30, stop="stop"):
     lines.append("data: " + _json.dumps(
         {"choices": [{"delta": {}, "finish_reason": stop}],
          "usage": {"prompt_tokens": prompt,
-                   "completion_tokens": completion}}))
+                   "completion_tokens": completion,
+                   "completion_time": 0.5,
+                   "completion_tokens_per_sec": completion / 0.5}}))
     lines.append("data: [DONE]")
     return "\n\n".join(lines) + "\n\n"
 
@@ -358,11 +360,12 @@ def test_dispatch_bench_openai_happy_stores_points_no_power(db_path):
     assert calls["model_names"] == ["GLM-5.3-Flash", "GLM-5.3-Flash"]
     # n_predict maps onto the stream max_tokens
     assert calls["max_tokens"] == [30, 30]
-    # metrics preserved from the openai point: client-side decode, ttft,
-    # prefill estimate; prompt_tokens from usage, not the sizing estimate
+    # metrics preserved from the openai point: server-authoritative
+    # decode (usage timing), ttft, prefill estimate; prompt_tokens from
+    # usage, not the sizing estimate
     p0 = result["points"][0]
     assert p0["context_tokens"] == 128
-    assert p0["decode_tps"] is not None
+    assert p0["decode_tps"] == 60.0  # 30 tokens / 0.5 s, server-rate
     assert p0["ttft_ms"] is not None
     assert p0["prefill_tps"] is not None
     assert p0["prompt_tokens"] == 500

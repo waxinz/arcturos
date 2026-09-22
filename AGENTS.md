@@ -110,8 +110,20 @@ arcturos/
 
 ### Log (newest first)
 
+- 2026-09-22 — Run-17 decode fix (burst-flush artifact). User reported run 17
+  (ruapehu, openai transport) showing 15054.43 t/s decode at 64k and no decode
+  at 128k. Root cause verified live: tabbyAPI burst-flushes SSE chunks under
+  long-prefill load, collapsing the client-side content-chunk span (point 1:
+  256 chunks / 17 ms -> 15054 t/s; point 2: span 0 -> None). The final usage
+  chunk carries server-accounted completion_time / completion_tokens_per_sec
+  (~72 t/s live) which the bench ignored. bench_openai now resolves decode as
+  server per-sec > server tokens/time > client chunk-rate, and the client
+  fallback rejects spans below a 0.25 s burst floor (socket drain, not decode).
+  ops maps the resolved rate into BenchPoint.decode_tps. 4 new tests: server
+  rate wins, completion_time fallback, reasoning-only stream (run-17 point-2
+  class), burst span rejected (run-17 point-1 class). 153 passed.
+
 - 2026-09-22 — full-project review round (docs, code, tests): fixed export CSVs shipping empty id columns (eval-results asked `result_id` from `er.*`, judgments asked `judgment_id` from `j.*` — both SELECTs now alias `id AS result_id` / `id AS judgment_id`); made bench-job status snapshots thread-safe (`bench_job_status` copies `points` + rows under `_JOBS_LOCK` so a poll can never serialize a torn row or corrupt the live record); create.html poller now retries network-level poll failures with the same bounded budget as HTTP failures and resets its retry counter per job; root-caused the intermittent `test_second_run_updates_last_seen_not_first` flake — `first_seen` came from a second `_utcnow()` read that could cross a millisecond boundary vs the run's `created_at`; `register_model`/`store_benchmark_run`/`_store_eval_result` now pin registry provenance to the triggering row's own timestamp (one clock read); hidden-run gating unified into `require_visible_run` and applied to `/api/compare/baseline-deltas` + the `baseline=` reference param (previously only series + run-diff checked); diff.html dynamic cells DOM-built (string-concat XSS sink removed, parity with run_detail.html); dead code removed (reports.py placeholder line, ab_judge.py unused contested-set/id vars, mid-file import moved to top); falsy-zero TTFT guards replaced with `is not None` in bench_openai/bench_stream (honest-nulls); compare.html no longer colors power_watts deltas (API direction map says neutral); create.html stale "dispatches are synchronous" hint corrected; test_api EXPECTED_COLUMNS now covers run_visibility; +5 regression tests (export id columns, snapshot isolation, hidden-run baseline-deltas/baseline-ref 404s) — 149 passed.
-### Log (newest first)
 
 - 2026-09-21 — Run visibility (soft hide) + docs pass: append-only
   run_visibility flag table (newest-wins, triggers enforced); PUT/GET

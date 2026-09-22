@@ -4,8 +4,18 @@ Unlike llama.cpp native /completion, these servers emit no inline timings —
 all metrics are computed CLIENT-SIDE from SSE chunk arrival times, with
 `stream_options: {"include_usage": true}` for authoritative token counts.
 
-TTFT  = wall time to the first chunk with content.
-Decode tps = (completion_tokens - 1) / (t_last - t_first).
+TTFT  = wall time to the first chunk of any stream payload (reasoning
+models emit reasoning_content first; that latency is real user-facing
+latency).
+
+Decode tps resolution — most-authoritative source wins:
+  1. usage.completion_tokens_per_sec  (server-accounted generation rate)
+  2. usage.completion_tokens / usage.completion_time
+  3. client-side content-chunk rate, only when the content span is at
+     least _MIN_CLIENT_SPAN_S. Below that the server burst-flushed the
+     stream (SSE coalescing): chunk arrival measures socket drain, not
+     decode (this produced a 15054 t/s artifact on run 17).
+
 Prefill tps ≈ prompt_tokens / ttft (an estimate; flagged as such).
 """
 
@@ -18,13 +28,21 @@ import urllib.error as uerr
 
 from dataclasses import dataclass
 
+# Client-side chunk timing below this span means the server burst-flushed
+# the stream (SSE coalescing): chunk arrival measures socket drain, not
+# decode. Run 17 recorded 15054 t/s from a 17 ms span this way.
+_MIN_CLIENT_SPAN_S = 0.25
+
 
 @dataclass
 class OpenAIBenchPoint:
     target_tokens: int
     model: str
     ttft_ms: float | None
-    decode_tps_client: float | None
+    decode_tps: float | None  # resolved: server-authoritative > client
+    decode_tps_client: float | None  # raw client chunk rate (content chunks / span)
+    decode_tps_server: float | None  # usage.completion_tokens_per_sec
+    completion_time_s: float | None  # usage.completion_time
     prefill_tps_estimate: float | None  # derived, not server-authoritative
     wall_s: float
     prompt_tokens: int | None
@@ -57,6 +75,8 @@ def run_openai_stream_point(base_url: str, model: str, messages: list,
     ttft_ms = None
     first_content_t = None
     last_content_t = None
+    decode_tps_server = None
+    completion_time_s = None
     completion_tokens = None
     prompt_tokens = None
     stop_reason = None
@@ -101,28 +121,48 @@ def run_openai_stream_point(base_url: str, model: str, messages: list,
                     completion_tokens = usage.get("completion_tokens",
                                                   completion_tokens)
                     prompt_tokens = usage.get("prompt_tokens", prompt_tokens)
+                    cps = usage.get("completion_tokens_per_sec")
+                    if cps:
+                        decode_tps_server = round(float(cps), 2)
+                    ctime = usage.get("completion_time")
+                    if ctime is not None:
+                        completion_time_s = float(ctime)
     except (uerr.URLError, OSError) as e:
         return OpenAIBenchPoint(
             target_tokens=0, model=model, ttft_ms=None,
-            decode_tps_client=None, prefill_tps_estimate=None,
+            decode_tps=None, decode_tps_client=None,
+            decode_tps_server=None, completion_time_s=None,
+            prefill_tps_estimate=None,
             wall_s=time.monotonic() - t_start,
             prompt_tokens=None, completion_tokens=None,
             stop_reason=None, error=str(e))
     wall_s = time.monotonic() - t_start
     decode_tps_client = None
-    if first_content_t and last_content_t and last_content_t > first_content_t:
+    if (first_content_t is not None and last_content_t is not None
+            and last_content_t > first_content_t):
         gen_span = last_content_t - first_content_t
-        if gen_span > 0:
-            # client-side count of content chunks is honest for reasoning
-            # models whose completion_tokens include reasoning tokens
+        # The client-side content-chunk rate is a token-rate PROXY only
+        # while the server flushes roughly one chunk per token. Reject
+        # degenerate spans (burst flush) — see _MIN_CLIENT_SPAN_S.
+        if gen_span >= _MIN_CLIENT_SPAN_S:
             decode_tps_client = round(content_chunk_count / gen_span, 2)
+    # Resolution order: server per-sec > server tokens/time > client rate.
+    decode_tps = decode_tps_server
+    if (decode_tps is None and completion_time_s is not None
+            and completion_time_s > 0 and completion_tokens):
+        decode_tps = round(completion_tokens / completion_time_s, 2)
+    if decode_tps is None:
+        decode_tps = decode_tps_client
     prefill_est = None
     if ttft_ms is not None and prompt_tokens is not None:
         prefill_est = round(prompt_tokens / (ttft_ms / 1000.0), 1)
     return OpenAIBenchPoint(
         target_tokens=0, model=model,
         ttft_ms=round(ttft_ms, 1) if ttft_ms is not None else None,
+        decode_tps=decode_tps,
         decode_tps_client=decode_tps_client,
+        decode_tps_server=decode_tps_server,
+        completion_time_s=completion_time_s,
         prefill_tps_estimate=prefill_est,
         wall_s=round(wall_s, 3),
         prompt_tokens=prompt_tokens,
