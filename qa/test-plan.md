@@ -119,6 +119,10 @@ Rules:
 | S15 | live job table stays compact (7 columns) for single-stream jobs | `tests/test_ops_api.py::test_create_view_live_table_single_stream_stays_compact` | done |
 | S16 | live job table adapts: Σ prefill/decode pair for multi-stream jobs | `tests/test_ops_api.py::test_create_view_live_table_adapts_for_multi_stream_jobs` | done |
 | S17 | UI floats render at 2dp across all views (presentation-only) | `tests/test_compare.py::test_ui_floats_render_at_2dp` | done |
+| S18 | openai transport captures MTP acceptance from usage details | `tests/test_bench_openai.py::test_mtp_acceptance_extracted_from_usage_details`, `tests/test_ops_dispatch.py::test_dispatch_bench_openai_mtp_captured_from_usage_details` | done |
+| S19 | MTP honest-null when usage carries no details | `tests/test_bench_openai.py::test_mtp_fields_null_when_usage_details_absent` | done |
+| S20 | power sampling opt-in per dispatch: sampled + stored with provenance | `tests/test_ops_dispatch.py::test_dispatch_bench_power_host_opt_in_samples_and_stores` | done |
+| S21 | power_host validation (blank/non-string rejected) | `tests/test_ops_dispatch.py::test_dispatch_bench_power_host_validation` | done |
 
 ## 3. Fixture suites (`qa/suites/`)
 
