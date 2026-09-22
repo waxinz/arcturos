@@ -90,7 +90,9 @@
     ];
     const METRIC_LABELS = {
       decode_tps: 'decode tok/s', prefill_tps: 'prefill tok/s',
-      ttft_ms: 'TTFT (ms)', wall_s: 'wall time (s)',
+      // Time metrics in SECONDS (2026-09-22 UX rule): ttft_ms stored in ms
+      // is labelled in seconds — chart values are converted at render time.
+      ttft_ms: 'TTFT (s)', wall_s: 'wall time (s)',
       output_tokens: 'output tokens', mtp_acceptance: 'MTP acceptance',
       power_watts: 'power (W)',
       decode_tps_combined: 'Σ decode tok/s (combined)',
@@ -226,7 +228,10 @@
           const datasets = data.runs.map((r, i) => ({
             label: legendName(r),
             data: (data.series[metric][r.id] || []).map(p =>
-              ({ x: p.context_tokens, y: p.value })),
+              ({ x: p.context_tokens,
+                 // ttft_ms stored in ms -> display in seconds (UX rule)
+                 y: metric === 'ttft_ms' && p.value != null
+                    ? p.value / 1000 : p.value })),
             borderColor: PALETTE[i % PALETTE.length],
             backgroundColor: PALETTE[i % PALETTE.length],
             pointRadius: 4, tension: 0
@@ -236,10 +241,13 @@
           // from the run legend colour wheel.
           if (data.series.baseline && data.series.baseline[metric]) {
             datasets.push({
-              label: '📌 baseline: ' + data.baseline.model_fingerprint_short +
+              label: '📌 baseline: ' + (data.baseline.name ||
+                     data.baseline.model_fingerprint_short) +
                      ' (run ' + data.baseline.run_id + ')',
               data: data.series.baseline[metric].map(p =>
-                ({ x: p.context_tokens, y: p.value })),
+                ({ x: p.context_tokens,
+                   y: metric === 'ttft_ms' && p.value != null
+                      ? p.value / 1000 : p.value })),
               borderColor: '#555',
               backgroundColor: '#555',
               borderDash: [6, 4],
@@ -288,8 +296,10 @@
     }
 
     function legendName(r) {
-      // Fingerprints over labels (principle 3) but readable: 'alias
-      // (short-fp)' so two 'same' models stay distinguishable (UX review).
+      // Run name first (2026-09-22 naming feature): a custom/default run
+      // name is the primary legend label. Falls back to the model label
+      // ('alias (short-fp)') for runs stored before naming existed.
+      if (r.name) return r.name;
       const alias = ALIASES[r.model_fingerprint];
       return alias ? alias + ' (' + r.model_fingerprint_short + ')'
                    : r.model_fingerprint_short;

@@ -360,3 +360,23 @@ def test_vendored_chartjs_served(client):
     assert res.status_code == 200
     assert len(res.content) > 100_000  # real library, not a stub
     assert "Chart" in res.text[:2000] or b"Chart" in res.content[:2000]
+
+
+def test_compare_payload_carries_run_names(client):
+    """Compare + diff payloads expose each run's name (2026-09-22 naming
+    feature) so legends and headers can prefer it over the fingerprint."""
+    import sqlite3
+    a, b = _seed_two_runs(client)
+    # seed names directly (label column is trigger-whitelisted)
+    for run_id, name in [(a, "alpha sweep"), (b, "beta sweep")]:
+        conn = sqlite3.connect(client.app.state.db_path)
+        conn.execute("UPDATE runs SET name = ? WHERE id = ?", (name, run_id))
+        conn.commit()
+        conn.close()
+    payload = client.get(f"/api/compare/benchmarks?runs={a},{b}").json()
+    names = {r["id"]: r["name"] for r in payload["runs"]}
+    assert names.get(a) == "alpha sweep", (a, b, names)
+    assert names.get(b) == "beta sweep", (a, b, names)
+    diff = client.get(f"/api/compare/run-diff/{a}/{b}").json()
+    assert diff["run_a"]["name"] == "alpha sweep"
+    assert diff["run_b"]["name"] == "beta sweep"

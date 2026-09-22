@@ -110,6 +110,29 @@ arcturos/
 
 ### Log (newest first)
 
+- 2026-09-22 — Run naming + eval-run entity (ADR 003): every benchmark
+  run and eval run carries an optional human `name`. Default when
+  unnamed: `host · model · targets` computed at dispatch from engine
+  metadata (32768 → `32k`, non-kibibyte stays raw), written at store so
+  /runs shows real labels. The name is a LABEL, not measurement data:
+  `runs.name` is trigger-whitelisted as the ONLY mutable column
+  (mirrors models.alias; every other UPDATE aborts) — renames via
+  `PATCH /api/runs/{id}/name` (set + clear-to-null + 422/404 contract).
+  Eval runs gain a real entity: `eval_runs` table (one replay = one
+  row) + `eval_results.eval_run_id` stamping (idempotent migration,
+  historical rows NULL) — replay batches are now addressable and
+  nameable. Surfaces: /runs second column (honest `—` fallback),
+  run-detail meta + rename control, /create name field, compare
+  legends + 📌 baseline label, diff headers, CSV exports (runs list +
+  compare payload). Docs: PRD J7 run-naming block, ux-design §7
+  time-units + wide-tables rules, test-plan S28–S36, ADR 003
+  (labels-vs-measurements + eval-run entity). Also: TTFT now DISPLAYS
+  in seconds (ms÷1000 at render; storage keeps ms) across run detail,
+  live job table, compare charts — labels say `TTFT (s)` / `ttft (s)`;
+  and the live-job detail table scrolls horizontally instead of
+  clipping under the next card (.table-scroll wrapper). +16 tests —
+  203 passed.
+
 - 2026-09-22 — Partial-run preservation: a bench sweep that fails
   mid-way no longer discards the points it completed. New append-only
   `runs.status` column ('complete' | 'partial', NOT NULL DEFAULT
