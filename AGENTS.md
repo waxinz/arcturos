@@ -118,9 +118,13 @@ arcturos/
   (labels 'Σ decode tok/s (combined)' / 'Σ prefill tok/s (combined)')
   so combined throughput is plottable like any other metric; compare
   baseline-delta coloring treats combined as higher-is-better; diff.html
-  legend text names combined t/s. +5 tests (compare series, honest-null
-  single-stream class, run-diff direction + deltas, page assertions for
-  /compare checkboxes and run-detail columns) — 169 passed.
+  legend text names combined t/s; /create's live job detail table adapts
+  to the job — single-stream jobs keep the compact 7-column table,
+  multi-stream jobs add a Σ prefill/decode pair (decided at kick-off
+  from the streams field so columns never flicker mid-run). +7 tests
+  (compare series, honest-null single-stream class, run-diff direction +
+  deltas, page assertions for /compare checkboxes, run-detail columns,
+  and the adaptive live table) — 171 passed.
 
 - 2026-09-22 — Parallel streams: bench dispatch accepts `streams`
   (default 1, max 16, bools rejected); each context length runs that many
