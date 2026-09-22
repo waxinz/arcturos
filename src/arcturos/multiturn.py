@@ -72,7 +72,10 @@ def extract_output(resp: dict) -> tuple[str, int, int]:
         reasoning = (msg.get("reasoning_content") or "").strip()
         if reasoning:
             content = f"[reasoning] {reasoning}"
-    usage = resp.get("usage", {})
+    # `or {}` not `.get("usage", {})`: servers that OMIT the key need the
+    # default, but tabbyAPI returns the key with a null value — get()'s
+    # default never fires for an explicit None and .get() on None explodes.
+    usage = resp.get("usage") or {}
     return content, usage.get("prompt_tokens", 0), usage.get("completion_tokens", 0)
 
 

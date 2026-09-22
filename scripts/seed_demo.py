@@ -101,8 +101,10 @@ def replay_live(api: str, suite_id: int, items: list[dict], target: str) -> int:
             "model_fingerprint": resp.get("model", "unknown"),
             "item_id": item["id"],
             "output": content,
-            "prompt_tokens": resp.get("usage", {}).get("prompt_tokens", 0),
-            "completion_tokens": resp.get("usage", {}).get("completion_tokens", 0),
+            # `or {}` — tabbyAPI returns usage: null (key present, value
+            # None); get()'s default never fires for an explicit None.
+            "prompt_tokens": (resp.get("usage") or {}).get("prompt_tokens", 0),
+            "completion_tokens": (resp.get("usage") or {}).get("completion_tokens", 0),
             "latency_ms": round(latency_ms, 1),
         })
         n += 1
