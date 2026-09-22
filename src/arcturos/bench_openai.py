@@ -5,7 +5,8 @@ all metrics are computed CLIENT-SIDE from SSE chunk arrival times, with
 `stream_options: {"include_usage": true}` for authoritative token counts.
 
 TTFT  = wall time to the first chunk of any stream payload (reasoning
-models emit reasoning_content first; that latency is real user-facing
+models emit reasoning first — delta key `reasoning` on vLLM,
+`reasoning_content` on tabbyAPI; that latency is real user-facing
 latency).
 
 Decode tps resolution — most-authoritative source wins:
@@ -73,8 +74,8 @@ def run_openai_stream_point(base_url: str, model: str, messages: list,
         data=json.dumps(body).encode(), headers=headers)
     t_start = time.monotonic()
     ttft_ms = None
-    first_content_t = None
-    last_content_t = None
+    first_payload_t = None
+    last_payload_t = None
     decode_tps_server = None
     completion_time_s = None
     completion_tokens = None
@@ -82,7 +83,7 @@ def run_openai_stream_point(base_url: str, model: str, messages: list,
     stop_reason = None
     err = None
     reasoning_seen = False
-    content_chunk_count = 0
+    payload_chunk_count = 0
     try:
         with urlreq.urlopen(req, timeout=timeout_s) as resp:
             for line in resp:
@@ -101,18 +102,21 @@ def run_openai_stream_point(base_url: str, model: str, messages: list,
                     delta = choices[0].get("delta", {})
                     now = time.monotonic()
                     # TTFT = first chunk of ANY stream payload — reasoning
-                    # models emit reasoning_content before content, and that
-                    # latency is real user-facing latency
-                    if ttft_ms is None and (delta.get("reasoning_content")
-                                            or delta.get("content")):
+                    # models emit reasoning before content, and that latency
+                    # is real user-facing latency. The reasoning delta key
+                    # varies by server: `reasoning` (vLLM) vs
+                    # `reasoning_content` (tabbyAPI).
+                    reasoning = (delta.get("reasoning")
+                                 or delta.get("reasoning_content"))
+                    if ttft_ms is None and (reasoning or delta.get("content")):
                         ttft_ms = (now - t_start) * 1000.0
-                    if delta.get("reasoning_content"):
+                    if reasoning:
                         reasoning_seen = True
-                    if delta.get("content"):
-                        content_chunk_count += 1
-                        if first_content_t is None:
-                            first_content_t = now
-                        last_content_t = now
+                    if reasoning or delta.get("content"):
+                        payload_chunk_count += 1
+                        if first_payload_t is None:
+                            first_payload_t = now
+                        last_payload_t = now
                     fr = choices[0].get("finish_reason")
                     if fr:
                         stop_reason = fr
@@ -138,14 +142,14 @@ def run_openai_stream_point(base_url: str, model: str, messages: list,
             stop_reason=None, error=str(e))
     wall_s = time.monotonic() - t_start
     decode_tps_client = None
-    if (first_content_t is not None and last_content_t is not None
-            and last_content_t > first_content_t):
-        gen_span = last_content_t - first_content_t
-        # The client-side content-chunk rate is a token-rate PROXY only
+    if (first_payload_t is not None and last_payload_t is not None
+            and last_payload_t > first_payload_t):
+        gen_span = last_payload_t - first_payload_t
+        # The client-side payload-chunk rate is a token-rate PROXY only
         # while the server flushes roughly one chunk per token. Reject
         # degenerate spans (burst flush) — see _MIN_CLIENT_SPAN_S.
         if gen_span >= _MIN_CLIENT_SPAN_S:
-            decode_tps_client = round(content_chunk_count / gen_span, 2)
+            decode_tps_client = round(payload_chunk_count / gen_span, 2)
     # Resolution order: server per-sec > server tokens/time > client rate.
     decode_tps = decode_tps_server
     if (decode_tps is None and completion_time_s is not None

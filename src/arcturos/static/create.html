@@ -63,14 +63,14 @@
   <header>
     <h1>Arcturos</h1>
     <div class="sub">Local-first LLM benchmarking &amp; evaluation dashboard</div>
-    <nav>
+        <nav>
+      <a href="/create" class="active">Create &amp; Run</a>
       <a href="/">Runs</a>
       <a href="/compare">Compare</a>
       <a href="/diff">Diff</a>
       <a href="/evals">Evals</a>
       <a href="/judgments">Judgments</a>
       <a href="/reports">Reports</a>
-      <a href="/create" class="active">Create &amp; Run</a>
       <a href="/models">Models</a>
       <a href="/baselines">Baselines</a>
     </nav>
@@ -87,13 +87,13 @@
         <input id="bench-url" value="http://10.10.10.122:8000">
       </label>
       <label>Context targets (tokens, comma-separated)
-        <input id="bench-targets" value="65535, 131072, 196608">
+        <input id="bench-targets" value="32768, 65536, 131072, 196608, 262144">
       </label>
       <div class="row2">
         <div><label>Transport
           <select id="bench-transport">
+            <option value="openai" selected>openai (tabbyAPI / vLLM / litellm)</option>
             <option value="native">native (llama.cpp)</option>
-            <option value="openai">openai (tabbyAPI / vLLM / litellm)</option>
           </select>
         </label></div>
         <div><label>Model (openai transport)
