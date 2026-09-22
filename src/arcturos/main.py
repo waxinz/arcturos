@@ -8,6 +8,8 @@ Routes (all data paths are append-only — no UPDATE/DELETE exists):
   POST /api/runs                        -> create run
   GET  /api/runs                        -> list runs
   GET  /api/runs/{run_id}               -> fetch one run
+  PUT  /api/runs/{run_id}/visibility    -> soft-hide/unhide a run (append-only flag; hidden runs drop out of list views)
+  GET  /api/runs/{run_id}/visibility    -> current visibility flag
   POST /api/runs/{run_id}/benchmarks    -> add benchmark row to a run
   GET  /api/runs/{run_id}/benchmarks    -> list benchmarks for a run
   POST /api/eval-suites                 -> create eval suite
@@ -161,6 +163,51 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
         return {"status": "ok"}
 
     # ------------------------------------------------------------- runs --
+    # Hidden-run filter: a run is hidden when its newest run_visibility flag
+    # says so (append-only soft delete — the rows stay, list views skip it).
+    _HIDDEN_RUN_SQL = (
+        "SELECT 1 FROM run_visibility v WHERE v.run_id = runs.id "
+        "AND v.hidden = 1 AND v.id = (SELECT MAX(id) FROM run_visibility "
+        "WHERE run_id = runs.id)"
+    )
+
+    @app.put("/api/runs/{run_id}/visibility", status_code=204)
+    def put_run_visibility(run_id: int, body: dict, db=Depends(get_db)):
+        """Soft-hide (hidden=true) or unhide (hidden=false) a run.
+
+        Append-only: each call appends a new flag row; the newest flag per
+        run wins. Nothing stored is mutated — hidden runs remain fully
+        addressable (direct fetch, exports, judgments) and can be
+        unhidden at any time.
+        """
+        require_parent(db, "runs", run_id)
+        hidden = body.get("hidden")
+        if not isinstance(hidden, bool):
+            raise HTTPException(status_code=422,
+                                detail="body must be {\"hidden\": true|false}")
+        reason = body.get("reason")
+        if reason is not None and not isinstance(reason, str):
+            raise HTTPException(status_code=422, detail="reason must be a string")
+        db.execute(
+            "INSERT INTO run_visibility (run_id, hidden, reason, created_at) "
+            "VALUES (?, ?, ?, ?)",
+            (run_id, 1 if hidden else 0, reason, _utcnow()),
+        )
+        db.commit()
+        return Response(status_code=204)
+
+    @app.get("/api/runs/{run_id}/visibility")
+    def get_run_visibility(run_id: int, db=Depends(get_db)):
+        require_parent(db, "runs", run_id)
+        row = db.execute(
+            "SELECT hidden, reason, created_at FROM run_visibility "
+            "WHERE run_id = ? ORDER BY id DESC LIMIT 1", (run_id,)).fetchone()
+        if row is None:
+            return {"run_id": run_id, "hidden": False, "reason": None,
+                    "created_at": None}
+        return {"run_id": run_id, "hidden": bool(row["hidden"]),
+                "reason": row["reason"], "created_at": row["created_at"]}
+
     @app.post("/api/runs", status_code=201)
     def create_run(body: RunCreate, db=Depends(get_db)):
         cur = db.execute(
@@ -174,8 +221,10 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
         return fetch_one(db, "SELECT * FROM runs WHERE id = ?", (cur.lastrowid,))
 
     @app.get("/api/runs")
-    def list_runs(db=Depends(get_db)):
-        return fetch_all(db, "SELECT * FROM runs ORDER BY id")
+    def list_runs(db=Depends(get_db), include_hidden: bool = False):
+        if include_hidden:
+            return fetch_all(db, "SELECT * FROM runs ORDER BY id")
+        return fetch_all(db, f"SELECT * FROM runs WHERE NOT EXISTS ({_HIDDEN_RUN_SQL}) ORDER BY id")
 
     @app.get("/api/runs/{run_id}")
     def get_run(run_id: int, db=Depends(get_db)):
@@ -682,6 +731,9 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
         for rid in run_ids:
             if fetch_one(db, "SELECT 1 AS ok FROM runs WHERE id = ?", (rid,)) is None:
                 raise HTTPException(status_code=404, detail=f"run id {rid} not found")
+            if fetch_one(db, f"SELECT 1 AS ok FROM runs WHERE id = ? AND NOT EXISTS ({_HIDDEN_RUN_SQL})", (rid,)) is None:
+                raise HTTPException(status_code=404,
+                                    detail=f"run id {rid} is hidden (unhide via PUT /api/runs/{rid}/visibility)")
         if baseline is not None:
             if fetch_one(db, "SELECT 1 AS ok FROM runs WHERE id = ?", (baseline,)) is None:
                 raise HTTPException(status_code=404,
@@ -833,6 +885,9 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
         for rid in (run_a, run_b):
             if fetch_one(db, "SELECT 1 AS ok FROM runs WHERE id = ?", (rid,)) is None:
                 raise HTTPException(status_code=404, detail=f"run id {rid} not found")
+            if fetch_one(db, f"SELECT 1 AS ok FROM runs WHERE id = ? AND NOT EXISTS ({_HIDDEN_RUN_SQL})", (rid,)) is None:
+                raise HTTPException(status_code=404,
+                                    detail=f"run id {rid} is hidden (unhide via PUT /api/runs/{rid}/visibility)")
         return compare.build_run_diff_payload(db, run_a, run_b)
 
     return app

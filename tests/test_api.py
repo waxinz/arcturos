@@ -171,6 +171,78 @@ def test_eval_result_requires_existing_suite(client):
     assert r.status_code == 404
 
 
+# ------------------------------------------------------- run visibility -----
+
+
+def test_run_visibility_hide_unhide_roundtrip(client):
+    """Soft hide: newest flag wins; hidden runs drop out of list views but
+    stay directly addressable; unhide appends a visible flag."""
+    run = client.post("/api/runs", json=RUN).json()
+    rid = run["id"]
+
+    # default: visible, no flag rows
+    vis = client.get(f"/api/runs/{rid}/visibility")
+    assert vis.status_code == 200
+    assert vis.json() == {"run_id": rid, "hidden": False, "reason": None,
+                          "created_at": None}
+    assert len(client.get("/api/runs").json()) == 1
+
+    # hide -> drops from the list, still directly fetchable
+    put = client.put(f"/api/runs/{rid}/visibility",
+                     json={"hidden": True, "reason": "accidental duplicate"})
+    assert put.status_code == 204
+    assert client.get("/api/runs").json() == []
+    assert client.get(f"/api/runs/{rid}").json()["id"] == rid
+    assert client.get(f"/api/runs/{rid}/visibility").json()["hidden"] is True
+    assert client.get(f"/api/runs/{rid}/visibility").json()["reason"] == "accidental duplicate"
+
+    # include_hidden=true surfaces it again (operator escape hatch)
+    assert len(client.get("/api/runs?include_hidden=true").json()) == 1
+
+    # unhide -> back in the list
+    assert client.put(f"/api/runs/{rid}/visibility",
+                      json={"hidden": False}).status_code == 204
+    assert len(client.get("/api/runs").json()) == 1
+    assert client.get(f"/api/runs/{rid}/visibility").json()["hidden"] is False
+
+
+def test_run_visibility_validation_and_404(client):
+    run = client.post("/api/runs", json=RUN).json()
+    assert client.put(f"/api/runs/{run['id']}/visibility",
+                      json={"hidden": "yes"}).status_code == 422
+    assert client.put(f"/api/runs/{run['id']}/visibility",
+                      json={}).status_code == 422
+    assert client.put("/api/runs/999/visibility",
+                      json={"hidden": True}).status_code == 404
+    assert client.get("/api/runs/999/visibility").status_code == 404
+
+
+def test_run_visibility_survives_append_only_triggers(client):
+    """The flag table is append-only at the storage layer too."""
+    import sqlite3 as _sq
+    run = client.post("/api/runs", json=RUN).json()
+    client.put(f"/api/runs/{run['id']}/visibility", json={"hidden": True})
+    db = _sq.connect(client.app.state.db_path)
+    # The triggers RAISE(ABORT), which surfaces as IntegrityError.
+    with pytest.raises(_sq.DatabaseError):
+        db.execute("UPDATE run_visibility SET hidden = 0").fetchall()
+    with pytest.raises(_sq.DatabaseError):
+        db.execute("DELETE FROM run_visibility").fetchall()
+    db.close()
+
+
+def test_hidden_run_excluded_from_compare(client):
+    """Compare rejects a hidden run with an actionable 404; visible runs pass."""
+    run = client.post("/api/runs", json=RUN).json()
+    client.put(f"/api/runs/{run['id']}/visibility", json={"hidden": True})
+    r = client.get(f"/api/compare/benchmarks?runs={run['id']}&metrics=decode_tps")
+    assert r.status_code == 404
+    assert "hidden" in r.json()["detail"]
+    client.put(f"/api/runs/{run['id']}/visibility", json={"hidden": False})
+    r2 = client.get(f"/api/compare/benchmarks?runs={run['id']}&metrics=decode_tps")
+    assert r2.status_code == 200
+
+
 # ---------------------------------------------- suite definition snapshots --
 
 
@@ -296,11 +368,12 @@ def test_api_has_no_update_or_delete_paths(client):
     # surfaces (§4.6): the model alias (a label) and baseline unpin (a
     # reference pointer). None of these touch stored measurement rows.
     methods = {m for r in client.app.routes for m in getattr(r, "methods", set())}
-    assert "PUT" in methods  # suite definition snapshots only — see below
+    assert "PUT" in methods  # snapshot/flag surfaces only — see below
     put_paths = {
         r.path for r in client.app.routes
         if getattr(r, "methods", set()) & {"PUT"}}
-    assert put_paths == {"/api/eval-suites/{suite_id}/definition"}
+    assert put_paths == {"/api/eval-suites/{suite_id}/definition",
+                         "/api/runs/{run_id}/visibility"}
     editable = {
         r.path for r in client.app.routes
         if getattr(r, "methods", set()) & {"PATCH", "DELETE"}}

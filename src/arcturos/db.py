@@ -92,6 +92,14 @@ CREATE TABLE IF NOT EXISTS judgments (
 -- Metadata, not measurements: per-item categories live here because the
 -- append-only eval_results table stores item_id only. The latest snapshot
 -- per suite wins (report-time join reads it back; reports.category_map_for).
+CREATE TABLE IF NOT EXISTS run_visibility (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    run_id     INTEGER NOT NULL REFERENCES runs(id),
+    hidden     INTEGER NOT NULL CHECK (hidden IN (0, 1)),
+    reason     TEXT,
+    created_at TEXT    NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS suite_definitions (
     id         INTEGER PRIMARY KEY AUTOINCREMENT,
     suite_id   INTEGER NOT NULL REFERENCES eval_suites(id),
@@ -150,6 +158,15 @@ END;
 
 -- suite_definitions is append-only metadata: re-seeding a suite appends a
 -- new snapshot (the newest row per suite is the one reports read).
+CREATE TRIGGER IF NOT EXISTS trg_run_visibility_no_update
+BEFORE UPDATE ON run_visibility BEGIN
+    SELECT RAISE(ABORT, 'append-only: UPDATE forbidden on run_visibility');
+END;
+CREATE TRIGGER IF NOT EXISTS trg_run_visibility_no_delete
+BEFORE DELETE ON run_visibility BEGIN
+    SELECT RAISE(ABORT, 'append-only: DELETE forbidden on run_visibility');
+END;
+
 CREATE TRIGGER IF NOT EXISTS trg_suite_definitions_no_update
 BEFORE UPDATE ON suite_definitions BEGIN
     SELECT RAISE(ABORT, 'append-only: UPDATE forbidden on suite_definitions');

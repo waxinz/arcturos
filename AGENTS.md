@@ -110,6 +110,19 @@ arcturos/
 
 ### Log (newest first)
 
+- 2026-09-21 — Run visibility (soft hide) + docs pass: append-only
+  run_visibility flag table (newest-wins, triggers enforced); PUT/GET
+  /api/runs/{id}/visibility; hidden runs drop out of /api/runs
+  (?include_hidden=true escape hatch) and compare/diff reject them with
+  an actionable 404 naming the unhide call; direct fetch + exports stay
+  addressable. UI: Hide button on /runs rows, Hide/Unhide toggle on the
+  run-detail header (confirm dialog names the append-only semantics).
+  Docs: PRD J7 amended (async jobs, transport choice, visibility) + 3
+  acceptance boxes ticked; ux-design J7 progress-indicator + visibility
+  sections; test-plan J7 async-jobs + visibility sections. Live-validated:
+  hide run 9 -> gone from /api/runs with reason stored, unhide -> back.
+  144 tests green.
+
 - 2026-09-21 — Fix: bench job status 500 on RUNNING jobs (a7cba82) —
   the elapsed computation called time.monotonic() but main.py never
   imported time; finished-job polls skipped that branch, so the bug only
