@@ -169,7 +169,7 @@ the launch surface, not only the reading surface).
 - [x] Dispatch validation: bad target/context/suite shapes rejected with actionable 422 detail.
 - [x] Suite existence checked before replay; eval batch is transactional (failure → nothing stored).
 - [x] Power numbers always carry host + GPU index provenance.
-- [ ] Health preflight before dispatch (J6 item, not yet wired into dispatch).
+- [x] Health preflight before dispatch (J6).
 
 ## 4. Non-goals (v1)
 - Distributed multi-node orchestration; multi-tenant UI; managed cloud.
