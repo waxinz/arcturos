@@ -319,20 +319,30 @@ def test_dispatch_eval_rolls_back_on_failure(db_path, pass_preflight):
 # urlopen is patched (never a real server).
 
 
-def _sse_text(content_chunks=4, prompt=500, completion=30, stop="stop"):
-    """SSE body shaped like an OpenAI chat completion stream with usage."""
+def _sse_text(content_chunks=4, prompt=500, completion=30, stop="stop",
+              mtp=None):
+    """SSE body shaped like an OpenAI chat completion stream with usage.
+
+    ``mtp=(accepted, rejected)`` adds tabbyAPI-style speculative-decoding
+    counters to the final usage chunk's completion_tokens_details."""
     import json as _json
     lines = []
     for i in range(content_chunks):
         lines.append("data: " + _json.dumps(
             {"choices": [{"delta": {"content": f"tok{i}"},
                           "finish_reason": None}]}))
+    usage = {"prompt_tokens": prompt,
+             "completion_tokens": completion,
+             "completion_time": 0.5,
+             "completion_tokens_per_sec": completion / 0.5}
+    if mtp is not None:
+        accepted, rejected = mtp
+        usage["completion_tokens_details"] = {
+            "accepted_prediction_tokens": accepted,
+            "rejected_prediction_tokens": rejected,
+        }
     lines.append("data: " + _json.dumps(
-        {"choices": [{"delta": {}, "finish_reason": stop}],
-         "usage": {"prompt_tokens": prompt,
-                   "completion_tokens": completion,
-                   "completion_time": 0.5,
-                   "completion_tokens_per_sec": completion / 0.5}}))
+        {"choices": [{"delta": {}, "finish_reason": stop}], "usage": usage}))
     lines.append("data: [DONE]")
     return "\n\n".join(lines) + "\n\n"
 
@@ -488,3 +498,83 @@ def test_bench_job_status_snapshot_is_isolated(db_path):
     snap["points"].append({"context_tokens": 999, "injected": True})
     fresh = ops.bench_job_status(job_id)
     assert all(p.get("context_tokens") != 999 for p in fresh["points"])
+
+
+def test_dispatch_bench_openai_mtp_captured_from_usage_details(db_path):
+    """tabbyAPI speculative-decoding counters flow through dispatch into
+    the stored run (2026-09-22: runs 29/30 showed null MTP — the openai
+    transport ignored completion_tokens_details)."""
+    def fake_urlopen(req, timeout=None):
+        return _SSEFakeResp(_sse_text(content_chunks=4, prompt=500,
+                                      completion=30, mtp=(109, 73)))
+
+    with patch("arcturos.bench_openai.urlreq.urlopen",
+               side_effect=fake_urlopen):
+        result = ops.dispatch_bench(
+            db_path, "http://fake:4000/v1", [128], 30,
+            transport_name="openai", model="GLM-5.3-Flash",
+            transport=_openai_preflight_app())
+    p0 = result["points"][0]
+    assert p0["mtp_accepted"] == 109
+    assert p0["mtp_draft_n"] == 182
+
+    from arcturos.bench import export_run_json
+    exported = export_run_json(db_path, 1)
+    assert exported["benchmarks"][0]["mtp_accepted"] == 109
+    assert exported["benchmarks"][0]["mtp_draft_n"] == 182
+
+
+def test_dispatch_bench_power_host_opt_in_samples_and_stores(db_path):
+    """power_host opt-in: the SSH sampler runs per point and its mean W
+    lands in the stored rows with provenance (host + gpu_index)."""
+    class _FakeSampler:
+        def __init__(self, host, gpu_index=0):
+            calls["host"] = host
+            calls["gpu"] = gpu_index
+            calls["samplers"].append({"started": False, "stopped": False})
+
+        def start(self):
+            calls["samplers"][-1]["started"] = True
+
+        def stop(self):
+            calls["samplers"][-1]["stopped"] = True
+            return 149.9
+
+    calls = {"host": None, "gpu": None, "samplers": []}
+    with patch("arcturos.bench_openai.urlreq.urlopen",
+               side_effect=lambda req, timeout=None:
+                   _SSEFakeResp(_sse_text(content_chunks=4, prompt=500,
+                                          completion=30))), \
+         patch("arcturos.ops.power.PowerSampler", _FakeSampler):
+        result = ops.dispatch_bench(
+            db_path, "http://fake:4000/v1", [128, 256], 30,
+            transport_name="openai", model="GLM-5.3-Flash",
+            transport=_openai_preflight_app(),
+            power_host="alexei@10.10.10.222", power_gpu_index=1)
+
+    assert calls["host"] == "alexei@10.10.10.222"
+    assert calls["gpu"] == 1
+    assert len(calls["samplers"]) == 2  # one sampler per point
+    assert all(s["started"] and s["stopped"] for s in calls["samplers"])
+    for p in result["points"]:
+        assert p["power_watts"] == 149.9
+        assert p["power_host"] == "alexei@10.10.10.222"
+        assert p["power_gpu_index"] == 1
+
+    from arcturos.bench import export_run_json
+    exported = export_run_json(db_path, 1)
+    for b in exported["benchmarks"]:
+        assert b["power_watts"] == 149.9
+        assert b["power_host"] == "alexei@10.10.10.222"
+        assert b["power_gpu_index"] == 1
+
+
+def test_dispatch_bench_power_host_validation(db_path):
+    """Empty/blank power_host is rejected before any network call; GPU
+    index must be a non-negative int."""
+    with pytest.raises(ops.DispatchError, match="power_host must be"):
+        ops.dispatch_bench(db_path, "http://fake:8000", [128], 8,
+                           power_host="   ")
+    with pytest.raises(ops.DispatchError, match="power_host must be"):
+        ops.dispatch_bench(db_path, "http://fake:8000", [128], 8,
+                           power_host=123)

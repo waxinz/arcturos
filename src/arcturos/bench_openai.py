@@ -49,6 +49,8 @@ class OpenAIBenchPoint:
     prompt_tokens: int | None
     completion_tokens: int | None
     stop_reason: str | None
+    mtp_draft_n: int | None = None
+    mtp_accepted: int | None = None
     error: str | None = None
 
 
@@ -81,6 +83,8 @@ def run_openai_stream_point(base_url: str, model: str, messages: list,
     completion_tokens = None
     prompt_tokens = None
     stop_reason = None
+    mtp_draft_n = None
+    mtp_accepted = None
     err = None
     reasoning_seen = False
     payload_chunk_count = 0
@@ -131,6 +135,16 @@ def run_openai_stream_point(base_url: str, model: str, messages: list,
                     ctime = usage.get("completion_time")
                     if ctime is not None:
                         completion_time_s = float(ctime)
+                    # MTP / speculative-decoding acceptance (tabbyAPI):
+                    # accepted_prediction_tokens / rejected_prediction_tokens
+                    # in the final usage chunk. draft_n = accepted + rejected;
+                    # absent fields stay None (honest nulls).
+                    acc = usage.get("completion_tokens_details", {}) or {}
+                    accepted = acc.get("accepted_prediction_tokens")
+                    rejected = acc.get("rejected_prediction_tokens")
+                    if accepted is not None and rejected is not None:
+                        mtp_accepted = int(accepted)
+                        mtp_draft_n = int(accepted) + int(rejected)
     except (uerr.URLError, OSError) as e:
         return OpenAIBenchPoint(
             target_tokens=0, model=model, ttft_ms=None,
@@ -171,4 +185,6 @@ def run_openai_stream_point(base_url: str, model: str, messages: list,
         wall_s=round(wall_s, 3),
         prompt_tokens=prompt_tokens,
         completion_tokens=completion_tokens,
+        mtp_draft_n=mtp_draft_n,
+        mtp_accepted=mtp_accepted,
         stop_reason=stop_reason, error=err)

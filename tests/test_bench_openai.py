@@ -294,3 +294,31 @@ def test_reasoning_content_stream_still_measured():
     # (0.15 s per tick) -> 10.0 chunks/s
     assert p.decode_tps_client == 10.0
     assert p.decode_tps == 10.0
+
+
+# ------------------------------------------------------- MTP acceptance ----
+
+
+def test_mtp_acceptance_extracted_from_usage_details():
+    """tabbyAPI-style speculative decoding counters in the final usage
+    chunk map onto mtp_accepted / mtp_draft_n (accepted + rejected)."""
+    fake = _sse(usage={"prompt_tokens": 100, "completion_tokens": 200,
+                       "completion_time": 2.95,
+                       "completion_tokens_details": {
+                           "accepted_prediction_tokens": 109,
+                           "rejected_prediction_tokens": 73}})
+    with patch("arcturos.bench_openai.urlreq.urlopen", return_value=_FakeResp(fake)):
+        p = run_openai_stream_point("http://fake:8000/v1", "m",
+                                    [{"role": "user", "content": "x"}])
+    assert p.mtp_accepted == 109
+    assert p.mtp_draft_n == 182  # 109 accepted + 73 rejected
+
+
+def test_mtp_fields_null_when_usage_details_absent():
+    """No completion_tokens_details -> honest nulls (never zeros)."""
+    fake = _sse()
+    with patch("arcturos.bench_openai.urlreq.urlopen", return_value=_FakeResp(fake)):
+        p = run_openai_stream_point("http://fake:8000/v1", "m",
+                                    [{"role": "user", "content": "x"}])
+    assert p.mtp_draft_n is None
+    assert p.mtp_accepted is None

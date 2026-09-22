@@ -115,6 +115,14 @@
         <input id="bench-streams" value="1">
       </label>
       <div class="row2">
+        <div><label>Power host (optional, dedicated inference host per ADR 002)
+          <input id="bench-power-host" placeholder="alexei@10.10.10.222">
+        </label></div>
+        <div><label>GPU index
+          <input id="bench-power-gpu" value="0">
+        </label></div>
+      </div>
+      <div class="row2">
         <div><button id="bench-btn" style="width:100%">▶ Kick off bench</button></div>
         <div><button id="bench-pf-btn" style="width:100%; background:#555">✔ Check target</button></div>
       </div>
@@ -433,6 +441,8 @@
             targets: targets,
             n_predict: parseInt($('bench-npredict').value, 10) || 256,
             streams: parseInt($('bench-streams').value, 10) || 1,
+            power_host: $('bench-power-host').value.trim() || null,
+            power_gpu_index: parseInt($('bench-power-gpu').value, 10) || 0,
             api_key: $('bench-key').value.trim() || null,
             transport: transport,
             model: $('bench-model').value.trim() || null,

@@ -300,7 +300,10 @@ version, last refresh). No auth. All views URL-addressable.
   amendment: run detail's benchmark table gains Σ prefill/decode t/s
   columns (combined throughput across all parallel streams); they show
   values only for multi-stream points and honest `—` with a reason
-  tooltip otherwise.)
+  tooltip otherwise. 2026-09-22 third amendment: the card gained
+  optional Power host + GPU index fields — when set, dispatch samples
+  GPU power draw over SSH on the named dedicated host for every point
+  and stores it with provenance; empty means no sampling (ADR 002).)
 
 **Bench progress indicator (added 2026-09-21):** kicking off a bench on
 `/create` submits an async job and immediately shows a progress panel:

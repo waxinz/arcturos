@@ -110,6 +110,21 @@ arcturos/
 
 ### Log (newest first)
 
+- 2026-09-22 — MTP acceptance + opt-in power on the openai transport
+  (runs 29/30 investigation): the openai path ignored tabbyAPI's
+  speculative-decoding counters — `completion_tokens_details.
+  accepted_prediction_tokens / rejected_prediction_tokens` in the final
+  usage chunk now map onto mtp_accepted / mtp_draft_n (accepted +
+  rejected; live-verified against pakuranga: 200-token gen → 109/73).
+  Power sampling becomes opt-in per dispatch for BOTH transports:
+  `power_host` (+ optional `power_gpu_index`) on /api/ops/bench,
+  /api/ops/bench/jobs, and dispatch_bench/run_bench_job runs an SSH
+  nvidia-smi sampler alongside each point and stores mean W with
+  provenance; absent = no sampling (ADR 002 unchanged — host must be
+  named explicitly, never inferred). /create bench card gains Power
+  host + GPU index fields. Dispatch payload now carries power fields.
+  +5 tests — 177 passed.
+
 - 2026-09-22 — 2dp display precision everywhere: all numeric rendering
   paths round floats to 2 decimals (run 30 showed
   30.105000000000004 — float-aggregation noise leaking into the DOM).

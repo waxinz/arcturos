@@ -538,6 +538,8 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
         transport = body.get("transport", "native")
         model = body.get("model")
         streams = body.get("streams", 1)
+        power_host = body.get("power_host")
+        power_gpu_index = body.get("power_gpu_index", 0)
         if not isinstance(server_url, str) or not server_url.startswith("http"):
             raise HTTPException(status_code=422, detail="server_url must be an http(s) URL")
         if not isinstance(targets, list) or not all(
@@ -554,11 +556,20 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
                 or not (1 <= streams <= 16):
             raise HTTPException(status_code=422,
                                 detail="streams must be an int between 1 and 16")
+        if power_host is not None and (not isinstance(power_host, str)
+                                       or not power_host.strip()):
+            raise HTTPException(status_code=422,
+                                detail="power_host must be a non-empty string when set")
+        if not isinstance(power_gpu_index, int) or isinstance(power_gpu_index, bool) \
+                or power_gpu_index < 0:
+            raise HTTPException(status_code=422,
+                                detail="power_gpu_index must be an int >= 0")
         try:
             return ops.dispatch_bench(
                 db_path=db_path, server_url=server_url,
                 targets=targets, n_predict=n_predict, api_key=api_key,
-                transport_name=transport, model=model, streams=streams)
+                transport_name=transport, model=model, streams=streams,
+                power_host=power_host, power_gpu_index=power_gpu_index)
         except ops.DispatchError as exc:
             raise HTTPException(status_code=422, detail=str(exc))
         except ops.DispatchFailure as exc:
@@ -583,6 +594,8 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
         transport = body.get("transport", "native")
         model = body.get("model")
         streams = body.get("streams", 1)
+        power_host = body.get("power_host")
+        power_gpu_index = body.get("power_gpu_index", 0)
         if not isinstance(server_url, str) or not server_url.startswith("http"):
             raise HTTPException(status_code=422, detail="server_url must be an http(s) URL")
         if not isinstance(targets, list) or not all(
@@ -599,11 +612,20 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
                 or not (1 <= streams <= 16):
             raise HTTPException(status_code=422,
                                 detail="streams must be an int between 1 and 16")
+        if power_host is not None and (not isinstance(power_host, str)
+                                       or not power_host.strip()):
+            raise HTTPException(status_code=422,
+                                detail="power_host must be a non-empty string when set")
+        if not isinstance(power_gpu_index, int) or isinstance(power_gpu_index, bool) \
+                or power_gpu_index < 0:
+            raise HTTPException(status_code=422,
+                                detail="power_gpu_index must be an int >= 0")
         try:
             job_id = ops.run_bench_job(
                 db_path=db_path, server_url=server_url, targets=targets,
                 n_predict=n_predict, api_key=api_key,
-                transport_name=transport, model=model, streams=streams)
+                transport_name=transport, model=model, streams=streams,
+                power_host=power_host, power_gpu_index=power_gpu_index)
         except ops.DispatchError as exc:
             raise HTTPException(status_code=422, detail=str(exc))
         return {"job_id": job_id}
