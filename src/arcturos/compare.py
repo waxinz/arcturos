@@ -40,6 +40,7 @@ ALLOWED_METRICS = (
     "output_tokens",
     "mtp_acceptance",
     "power_watts",
+    "streams",
 )
 
 # Which direction counts as "better" for delta coloring in the run-diff view.
@@ -53,6 +54,7 @@ METRIC_DIRECTIONS = {
     "output_tokens": "neutral",
     "mtp_acceptance": "higher",
     "power_watts": "neutral",
+    "streams": "neutral",
 }
 
 # Direct benchmark column per metric; None = computed (mtp_acceptance).
@@ -64,6 +66,7 @@ _METRIC_COLUMN = {
     "output_tokens": "output_tokens",
     "mtp_acceptance": None,
     "power_watts": "power_watts",
+    "streams": "streams",
 }
 
 _SHARD_SUFFIX = re.compile(r"-\d+-of-\d+$")

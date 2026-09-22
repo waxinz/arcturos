@@ -106,6 +106,9 @@
       <label>n_predict (tokens per point)
         <input id="bench-npredict" value="256">
       </label>
+      <label>Parallel streams (identical runs per target, 1-16)
+        <input id="bench-streams" value="1">
+      </label>
       <div class="row2">
         <div><button id="bench-btn" style="width:100%">▶ Kick off bench</button></div>
         <div><button id="bench-pf-btn" style="width:100%; background:#555">✔ Check target</button></div>
@@ -119,7 +122,7 @@
         <button id="bp-zoom" class="bp-toggle" type="button">▸ details</button>
         <div id="bp-detail" class="bp-detail">
           <table><thead><tr><th>#</th><th>ctx</th><th>prefill</th><th>decode</th>
-            <th>ttft</th><th>wall</th></tr></thead>
+            <th>ttft</th><th>wall</th><th>streams</th></tr></thead>
             <tbody id="bp-rows"></tbody></table>
           <div id="bp-events"></div>
         </div>
@@ -288,7 +291,8 @@
         '<td>' + cell(p.prefill_tps, ' t/s') + '</td>' +
         '<td>' + cell(p.decode_tps, ' t/s') + '</td>' +
         '<td>' + cell(p.ttft_ms, ' ms') + '</td>' +
-        '<td>' + cell(p.wall_s, ' s') + '</td></tr>';
+        '<td>' + cell(p.wall_s, ' s') + '</td>' +
+        '<td>' + cell(p.streams) + '</td></tr>';
     }
     function bpRender(st) {
       const total = st.targets_total, done = st.points_done;
@@ -387,6 +391,7 @@
             server_url: $('bench-url').value.trim(),
             targets: targets,
             n_predict: parseInt($('bench-npredict').value, 10) || 256,
+            streams: parseInt($('bench-streams').value, 10) || 1,
             api_key: $('bench-key').value.trim() || null,
             transport: transport,
             model: $('bench-model').value.trim() || null,

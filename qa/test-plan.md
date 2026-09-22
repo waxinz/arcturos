@@ -98,6 +98,17 @@ Rules:
 | D5 | Real client span (>0.25 s) with no server timing still computes chunk rate | `tests/test_bench_openai.py::test_client_rate_used_when_span_real_and_no_server_timing` | done |
 | D6 | Dispatch stores the resolved decode rate | `tests/test_ops_dispatch.py::test_dispatch_bench_openai_happy_stores_points_no_power` | done |
 
+## 2c. Parallel streams (2026-09-22)
+
+| # | Test | File | Status |
+|---|------|------|--------|
+| S1 | streams=2 dispatch stores aggregated point with streams=2 (mean rates, deterministic mock) | `tests/test_ops_dispatch.py::test_dispatch_bench_streams_two_stores_stream_count` | done |
+| S2 | streams bounds: 0 and 17 rejected with DispatchError; bool rejected | `tests/test_ops_dispatch.py::test_dispatch_bench_streams_validation` | done |
+| S3 | default streams=1 stored when the field is omitted | `tests/test_ops_dispatch.py::test_dispatch_bench_default_streams_is_one` | done |
+| S4 | API 422 on streams out of bounds (sync endpoint) | `tests/test_ops_api.py::test_ops_bench_streams_out_of_bounds_is_422` | done |
+| S5 | benchmarks.streams column present (schema assertion incl. migration) | `tests/test_api.py` EXPECTED_COLUMNS | done |
+| S6 | compare allowlist exposes streams as a neutral metric | `tests/test_compare.py::test_compare_metrics_default_to_all_when_omitted` | done |
+
 ## 3. Fixture suites (`qa/suites/`)
 
 Seeded demo data + reference eval suites, format documented in each file's

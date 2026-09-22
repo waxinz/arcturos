@@ -170,6 +170,12 @@ the launch surface, not only the reading surface).
   (tabbyAPI, vLLM, litellm) with reachable+chat preflight and streamed
   client-side TTFT/decode. Engine stored as `openai`; power fields stay
   null per ADR 002.
+- **Parallel streams (added 2026-09-22):** bench dispatch accepts
+  `streams` (default 1, max 16) — each context length runs that many
+  identical concurrent workstreams against the target; per-point metrics
+  aggregate across streams (mean rates/TTFT, max wall) and the stored row
+  records the stream count, visible in run detail, compare metrics,
+  exports, and the live job detail table.
 - **Run visibility — soft hide (added 2026-09-21):** `PUT
   /api/runs/{id}/visibility` `{hidden: true|false, reason?}` appends a flag
   row (append-only, newest wins). Hidden runs drop out of `/api/runs` and
