@@ -78,7 +78,7 @@ def run_stream_point(base_url: str, prompt: str, n_predict: int,
                 pass  # some builds emit stop_reason separately
     wall_s = time.monotonic() - t_start
     decode_tps_client = None
-    if (ttft_ms and pred_last is not None and pred_first is not None
+    if (ttft_ms is not None and pred_last is not None and pred_first is not None
             and pred_last > pred_first):
         gen_span_s = wall_s - (ttft_ms / 1000.0)
         n_streamed = pred_last - pred_first
@@ -87,8 +87,8 @@ def run_stream_point(base_url: str, prompt: str, n_predict: int,
     return StreamBenchPoint(
         target_tokens=len(prompt) // 4,  # refined by caller with real token count
         prompt_tokens=tokens_evaluated,
-        ttft_ms=round(ttft_ms, 1) if ttft_ms else None,
-        decode_tps_client=round(decode_tps_client, 2) if decode_tps_client else None,
+        ttft_ms=round(ttft_ms, 1) if ttft_ms is not None else None,
+        decode_tps_client=round(decode_tps_client, 2) if decode_tps_client is not None else None,
         prefill_tps_server=final_timings.get("prompt_per_second"),
         decode_tps_server=final_timings.get("predicted_per_second"),
         mtp_draft_n=final_timings.get("draft_n"),

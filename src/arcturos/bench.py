@@ -400,6 +400,7 @@ def store_benchmark_run(
         fingerprint = engine_metadata.get("model_path") or "unknown"
         n_ctx = engine_metadata.get("n_ctx")
         engine = engine if engine is not None else "llama.cpp"
+        created = _utcnow()
         cur = conn.execute(
             "INSERT INTO runs (server_url, model_fingerprint, engine, context_size, created_at)"
             " VALUES (?, ?, ?, ?, ?)",
@@ -408,20 +409,21 @@ def store_benchmark_run(
                 fingerprint,
                 engine,
                 n_ctx if n_ctx is not None else 0,
-                _utcnow(),
+                created,
             ),
         )
         if cur.lastrowid is None:
             raise RuntimeError("insert into runs did not return a rowid")
         run_id = int(cur.lastrowid)
         # Registry auto-registration on first sighting (§4.6): insert-only,
-        # alias stays NULL until the owner names it on /models.
-        now_seen = _utcnow()
+        # alias stays NULL until the owner names it on /models. first_seen
+        # reuses the run row's own created_at (one clock read) so the
+        # registry provenance matches the run exactly.
         conn.execute(
             "INSERT INTO models (model_fingerprint, alias, engine, "
             "first_seen, last_seen) VALUES (?, NULL, ?, ?, ?) "
             "ON CONFLICT(model_fingerprint) DO UPDATE SET last_seen = ?",
-            (fingerprint, engine, now_seen, now_seen, now_seen),
+            (fingerprint, engine, created, created, created),
         )
 
         now = _utcnow()

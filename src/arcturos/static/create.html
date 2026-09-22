@@ -77,7 +77,7 @@
   </header>
 
   <h2>Create &amp; Run</h2>
-  <p class="hint">Append-only store: creating adds rows; nothing is ever overwritten. Dispatches are synchronous — wait for the result message before re-submitting.</p>
+  <p class="hint">Append-only store: creating adds rows; nothing is ever overwritten. Bench sweeps run as async jobs — the progress bar polls until the run is stored; eval replays stay synchronous.</p>
 
   <div class="grid">
     <div class="card">
@@ -343,7 +343,13 @@
         } else {
           bpPoll.timer = setTimeout(() => bpPollLoop(jobId), 1000);
         }
-      } catch (err) { bpStop(); setMsg($('bench-msg'), 'Job poll failed: ' + err); }
+      } catch (err) {
+        // Network-level failure (restart, proxy blip): same bounded retry
+        // as HTTP failures — the sweep itself runs server-side.
+        bpPoll.retries = (bpPoll.retries || 0) + 1;
+        if (bpPoll.retries > 20) { bpStop(); setMsg($('bench-msg'), 'Job poll failed: ' + err); }
+        else bpPoll.timer = setTimeout(() => bpPollLoop(jobId), 2000);
+      }
     }
     function bpStop() { if (bpPoll.timer) { clearTimeout(bpPoll.timer); bpPoll.timer = null; } }
     $('bp-zoom').onclick = () => {
@@ -395,6 +401,7 @@
         $('bp-status').textContent = 'queued…';
         $('bp-clock').textContent = '';
         setMsg($('bench-msg'), 'Job ' + data.job_id + ' accepted — sweep running', true);
+        bpPoll.retries = 0;  // fresh job: full retry budget for its poller
         bpPollLoop(data.job_id);
       } catch (err) { setMsg($('bench-msg'), 'Kick off failed: ' + err); }
       finally { busy($('bench-btn'), false, 'Kick off bench'); }

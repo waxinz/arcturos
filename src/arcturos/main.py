@@ -22,8 +22,14 @@ Routes (all data paths are append-only — no UPDATE/DELETE exists):
   GET  /api/eval-results                -> list all eval results
   POST /api/judgments                   -> add judgment
   GET  /api/judgments                   -> list judgments
+  GET  /api/models                      -> model registry cards
+  PATCH /api/models/{fingerprint}       -> rename the alias label only
+  GET  /api/baselines                   -> pinned reference runs
+  POST /api/baselines                   -> pin a run as baseline
+  DELETE /api/baselines/{baseline_id}   -> unpin (reference pointer only)
   GET  /api/compare/benchmarks          -> metric series per run (J2)
   GET  /api/compare/run-diff/{a}/{b}    -> per-context deltas between runs (J2)
+  GET  /api/compare/baseline-deltas     -> per-run delta tables vs a baseline reference
   GET  /api/reports/suite/{suite_id}    -> J5 report {report, csv} for one suite
   GET  /compare                         -> compare view HTML
   GET  /diff                            -> run-diff view HTML
@@ -35,6 +41,12 @@ Routes (all data paths are append-only — no UPDATE/DELETE exists):
   GET  /api/ops/bench/jobs/{job_id}     -> job status: phase, per-point results, elapsed + ETA
   POST /api/ops/eval                    -> replay a suite against a target (stores eval_results)
   GET  /api/ops/preflight               -> J6 health checks for a target (kind=bench|eval, model?)
+  GET  /api/export/runs                 -> CSV export: all runs
+  GET  /api/export/runs/{id}/benchmarks -> CSV export: one run's points
+  GET  /api/export/eval-results         -> CSV export: eval results
+  GET  /api/export/judgments            -> CSV export: judgments
+  GET  /models                          -> model registry view HTML
+  GET  /baselines                       -> baselines view HTML
 """
 
 from __future__ import annotations
@@ -96,13 +108,18 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
             raise HTTPException(status_code=404, detail=f"{table} id {pk} not found")
 
     def register_model(db: sqlite3.Connection, fingerprint: str,
-                       engine: str | None = None) -> None:
+                       engine: str | None = None,
+                       seen_at: str | None = None) -> None:
         """Auto-register a model fingerprint on first sighting (§4.6).
 
         Insert-only: the registry grows as runs/eval results arrive; the
-        alias is the only later edit (PATCH /api/models/{fp}).
+        alias is the only later edit (PATCH /api/models/{fp}). ``seen_at``
+        pins first_seen/last_seen to the triggering row's own timestamp —
+        one clock read, so registry provenance matches the run row exactly
+        (a separate _utcnow() read could land a millisecond later and make
+        first_seen != created_at).
         """
-        now = _utcnow()
+        now = seen_at or _utcnow()
         db.execute(
             "INSERT INTO models (model_fingerprint, alias, engine, "
             "first_seen, last_seen) VALUES (?, NULL, ?, ?, ?) "
@@ -216,7 +233,8 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
             (body.server_url, body.model_fingerprint, body.engine,
              body.context_size, body.created_at),
         )
-        register_model(db, body.model_fingerprint, body.engine)
+        register_model(db, body.model_fingerprint, body.engine,
+                       seen_at=body.created_at)
         db.commit()  # durable before the response is sent (teardown runs after send)
         return fetch_one(db, "SELECT * FROM runs WHERE id = ?", (cur.lastrowid,))
 
@@ -672,6 +690,21 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
             raise HTTPException(status_code=502, detail=f"preflight failed: {exc}")
 
     # ------------------------------------------------------------ compare ----
+    def require_visible_run(db: sqlite3.Connection, run_id: int,
+                            label: str = "run id") -> None:
+        """404 unless the run exists AND is not hidden.
+
+        One shared gate for every compare surface (series, run-diff,
+        baseline-deltas, the baseline= reference param): the append-only
+        soft hide removes runs from list/compare views, and every
+        rejection names the unhide call so the 404 is actionable.
+        """
+        if fetch_one(db, "SELECT 1 AS ok FROM runs WHERE id = ?", (run_id,)) is None:
+            raise HTTPException(status_code=404, detail=f"{label} {run_id} not found")
+        if fetch_one(db, f"SELECT 1 AS ok FROM runs WHERE id = ? AND NOT EXISTS ({_HIDDEN_RUN_SQL})", (run_id,)) is None:
+            raise HTTPException(status_code=404,
+                                detail=f"{label} {run_id} is hidden (unhide via PUT /api/runs/{run_id}/visibility)")
+
     def parse_run_ids(raw: str) -> list[int]:
         """Comma-separated run ids -> ints, deduped, input order preserved."""
         ids: list[int] = []
@@ -729,15 +762,9 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
         run_ids = parse_run_ids(runs)
         metric_list = parse_metrics(metrics)
         for rid in run_ids:
-            if fetch_one(db, "SELECT 1 AS ok FROM runs WHERE id = ?", (rid,)) is None:
-                raise HTTPException(status_code=404, detail=f"run id {rid} not found")
-            if fetch_one(db, f"SELECT 1 AS ok FROM runs WHERE id = ? AND NOT EXISTS ({_HIDDEN_RUN_SQL})", (rid,)) is None:
-                raise HTTPException(status_code=404,
-                                    detail=f"run id {rid} is hidden (unhide via PUT /api/runs/{rid}/visibility)")
+            require_visible_run(db, rid)
         if baseline is not None:
-            if fetch_one(db, "SELECT 1 AS ok FROM runs WHERE id = ?", (baseline,)) is None:
-                raise HTTPException(status_code=404,
-                                    detail=f"baseline run id {baseline} not found")
+            require_visible_run(db, baseline, label="baseline run id")
         payload = compare.build_benchmarks_payload(db, run_ids, metric_list,
                                                    baseline_run_id=baseline)
         if format == "csv":
@@ -771,7 +798,10 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
             raise HTTPException(status_code=422,
                                 detail=f"run {run} must be one of the compared runs")
         metric_list = parse_metrics(metrics)
+        for rid in run_ids:
+            require_visible_run(db, rid)
         base = baseline if baseline is not None else run
+        require_visible_run(db, base)
         payload = compare.build_benchmarks_payload(
             db, run_ids, metric_list, baseline_run_id=base)
         result = {str(rid): compare.baseline_deltas(payload, rid)
@@ -840,7 +870,7 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
             require_parent(db, "eval_suites", suite_id)
             rows = fetch_all(
                 db,
-                "SELECT er.*, s.name AS suite_name, s.version AS suite_version "
+                "SELECT er.id AS result_id, er.*, s.name AS suite_name, s.version AS suite_version "
                 "FROM eval_results er JOIN eval_suites s ON s.id = er.suite_id "
                 "WHERE er.suite_id = ? ORDER BY er.id",
                 (suite_id,),
@@ -848,7 +878,7 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
         else:
             rows = fetch_all(
                 db,
-                "SELECT er.*, s.name AS suite_name, s.version AS suite_version "
+                "SELECT er.id AS result_id, er.*, s.name AS suite_name, s.version AS suite_version "
                 "FROM eval_results er JOIN eval_suites s ON s.id = er.suite_id "
                 "ORDER BY er.id",
             )
@@ -865,7 +895,7 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
         """CSV of judgments with both models' fingerprints resolved (§4.6)."""
         rows = fetch_all(
             db,
-            "SELECT j.*, ra.model_fingerprint AS fp_a, "
+            "SELECT j.id AS judgment_id, j.*, ra.model_fingerprint AS fp_a, "
             "rb.model_fingerprint AS fp_b FROM judgments j "
             "JOIN eval_results ra ON ra.id = j.eval_result_a "
             "JOIN eval_results rb ON rb.id = j.eval_result_b "
@@ -883,11 +913,7 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
     def run_diff(run_a: int, run_b: int, db=Depends(get_db)):
         """Per-context delta table between two runs + engine metadata diff."""
         for rid in (run_a, run_b):
-            if fetch_one(db, "SELECT 1 AS ok FROM runs WHERE id = ?", (rid,)) is None:
-                raise HTTPException(status_code=404, detail=f"run id {rid} not found")
-            if fetch_one(db, f"SELECT 1 AS ok FROM runs WHERE id = ? AND NOT EXISTS ({_HIDDEN_RUN_SQL})", (rid,)) is None:
-                raise HTTPException(status_code=404,
-                                    detail=f"run id {rid} is hidden (unhide via PUT /api/runs/{rid}/visibility)")
+            require_visible_run(db, rid)
         return compare.build_run_diff_payload(db, run_a, run_b)
 
     return app

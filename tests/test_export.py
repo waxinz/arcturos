@@ -97,3 +97,40 @@ def test_export_judgments_csv_resolves_fingerprints(client):
     assert rows[0]["fp_a"] == "/m/model-0.gguf"
     assert rows[0]["fp_b"] == "/m/model-1.gguf"
     assert rows[0]["winner"] == "a"
+
+
+# ------------------------------------------ REVIEW-FIX-ROUND regressions ----
+# The export writers asked for result_id / judgment_id while the SELECTs
+# shipped er.* / j.* (column `id`) — every row exported an empty id cell.
+
+
+def test_export_eval_results_ids_populated(client):
+    """result_id must be non-empty on every row (REVIEW-FIX-ROUND)."""
+    suite = client.post("/api/eval-suites",
+                        json={"name": "s", "version": "1"}).json()
+    r = client.post(f"/api/eval-suites/{suite['id']}/results", json={
+        "model_fingerprint": "/m/x.gguf", "item_id": "q1", "output": "o",
+        "prompt_tokens": 1, "completion_tokens": 1, "latency_ms": 1.0})
+    assert r.status_code == 201
+    rows = _rows(client.get("/api/export/eval-results").text)
+    assert rows
+    assert all(row["result_id"] for row in rows)
+
+
+def test_export_judgments_ids_populated(client):
+    """judgment_id must be non-empty on every row (REVIEW-FIX-ROUND)."""
+    suite = client.post("/api/eval-suites",
+                        json={"name": "s", "version": "1"}).json()
+    ids = []
+    for i in range(2):
+        r = client.post(f"/api/eval-suites/{suite['id']}/results", json={
+            "model_fingerprint": f"/m/m{i}.gguf", "item_id": "q1",
+            "output": "x", "prompt_tokens": 1, "completion_tokens": 1,
+            "latency_ms": 1.0})
+        ids.append(r.json()["id"])
+    client.post("/api/judgments", json={
+        "eval_result_a": ids[0], "eval_result_b": ids[1],
+        "judge_model": "j", "judge_template_version": "v1", "winner": "a"})
+    rows = _rows(client.get("/api/export/judgments").text)
+    assert rows
+    assert all(row["judgment_id"] for row in rows)
