@@ -182,6 +182,39 @@ def test_dispatch_bench_validation(db_path):
         ops.dispatch_bench(db_path, "http://fake:8000", [0], 8)
 
 
+def test_dispatch_bench_streams_validation(db_path):
+    """streams must be an int in [1, 16]; bools are rejected explicitly."""
+    with pytest.raises(ops.DispatchError, match="streams must be an int"):
+        ops.dispatch_bench(db_path, "http://fake:8000", [128], 8, streams=0)
+    with pytest.raises(ops.DispatchError, match="streams must be an int"):
+        ops.dispatch_bench(db_path, "http://fake:8000", [128], 8, streams=17)
+    with pytest.raises(ops.DispatchError, match="streams must be an int"):
+        ops.dispatch_bench(db_path, "http://fake:8000", [128], 8, streams=True)
+
+
+def test_dispatch_bench_streams_two_stores_stream_count(db_path):
+    """streams=2: both workstreams run, aggregate stored with streams=2."""
+    transport = _bench_app(authed=False)
+    result = ops.dispatch_bench(
+        db_path, "http://fake:8000", [128], 8, transport=transport, streams=2)
+    assert result["run_id"] == 1
+    p0 = result["points"][0]
+    assert p0["streams"] == 2
+    # the mock timings are deterministic, so the mean equals the single value
+    assert p0["decode_tps"] == 50.0
+    assert p0["prefill_tps"] == 400.0
+    from arcturos.bench import export_run_json
+    exported = export_run_json(db_path, 1)
+    assert exported["benchmarks"][0]["streams"] == 2
+
+
+def test_dispatch_bench_default_streams_is_one(db_path):
+    transport = _bench_app(authed=False)
+    result = ops.dispatch_bench(
+        db_path, "http://fake:8000", [128], 8, transport=transport)
+    assert result["points"][0]["streams"] == 1
+
+
 def test_dispatch_eval_single_turn(db_path, pass_preflight):
     _mk_suite(db_path)
     suite = {"items": [

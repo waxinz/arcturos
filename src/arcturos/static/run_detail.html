@@ -66,7 +66,7 @@
       <thead>
         <tr>
           <th>ctx tokens</th><th>prefill tok/s</th><th>decode tok/s</th>
-          <th>TTFT ms</th><th>wall s</th><th>out tok</th>
+          <th>TTFT ms</th><th>wall s</th><th>out tok</th><th>streams</th>
           <th>MTP accept</th><th>power</th><th>created</th>
         </tr>
       </thead>
@@ -216,7 +216,8 @@
           const power = (p.power_watts === null) ? null
             : p.power_watts + ' W' + (p.power_host ? ' @ ' + p.power_host : '');
           const cells = [p.context_tokens, p.prefill_tps, p.decode_tps,
-            p.ttft_ms, p.wall_s, p.output_tokens, mtp, power, p.created_at];
+            p.ttft_ms, p.wall_s, p.output_tokens, p.streams, mtp, power,
+            p.created_at];
           for (const c of cells) {
             const td = document.createElement('td');
             setCell(td, c);

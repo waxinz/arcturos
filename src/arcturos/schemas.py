@@ -37,6 +37,7 @@ class BenchmarkCreate(BaseModel):
     power_watts: Optional[float] = Field(None, ge=0)
     power_host: Optional[str] = Field(None, min_length=1)
     power_gpu_index: Optional[int] = Field(None, ge=0)
+    streams: Optional[int] = Field(1, ge=1, le=16)
     created_at: str = Field(default_factory=_utcnow)
 
     @model_validator(mode="after")

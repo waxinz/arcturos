@@ -29,6 +29,18 @@ def test_run_detail_view_served(client):
     assert "text/html" in r.headers.get("content-type", "")
 
 
+def test_ops_bench_streams_out_of_bounds_is_422(client):
+    r = client.post("/api/ops/bench", json={
+        "server_url": "http://fake:8000", "targets": [32],
+        "n_predict": 4, "streams": 17})
+    assert r.status_code == 422
+    assert "streams" in r.json()["detail"]
+    r0 = client.post("/api/ops/bench", json={
+        "server_url": "http://fake:8000", "targets": [32],
+        "n_predict": 4, "streams": 0})
+    assert r0.status_code == 422
+
+
 def test_ops_bench_validation(client):
     assert client.post("/api/ops/bench", json={"server_url": "ftp://x", "targets": [1]}).status_code == 422
     assert client.post("/api/ops/bench", json={"server_url": "http://x:8000", "targets": ["a"]}).status_code == 422

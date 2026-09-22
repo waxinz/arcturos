@@ -37,6 +37,7 @@ CREATE TABLE IF NOT EXISTS benchmarks (
     power_watts     REAL,
     power_host      TEXT,
     power_gpu_index INTEGER,
+    streams         INTEGER,
     created_at      TEXT    NOT NULL
 );
 
@@ -260,6 +261,7 @@ def _backfill_registry(conn: sqlite3.Connection) -> None:
 _MIGRATIONS = (
     ("benchmarks", "power_host", "TEXT"),
     ("benchmarks", "power_gpu_index", "INTEGER"),
+    ("benchmarks", "streams", "INTEGER"),
 )
 
 

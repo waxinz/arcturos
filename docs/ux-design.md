@@ -290,7 +290,10 @@ version, last refresh). No auth. All views URL-addressable.
   (2026-09-21 amendments: bench card gained a transport select
   native|openai + model field, Check target follows the selected
   transport, default targets 65535/131072/196608; kick-off is async —
-  see the progress indicator below.)
+  see the progress indicator below. 2026-09-22 amendment: the card
+  gained a parallel-streams field (default 1, max 16) — each context
+  length runs that many identical concurrent workstreams; the live
+  detail table shows the stream count per point.)
 
 **Bench progress indicator (added 2026-09-21):** kicking off a bench on
 `/create` submits an async job and immediately shows a progress panel:
