@@ -175,7 +175,11 @@ the launch surface, not only the reading surface).
   identical concurrent workstreams against the target; per-point metrics
   aggregate across streams (mean rates/TTFT, max wall) and the stored row
   records the stream count, visible in run detail, compare metrics,
-  exports, and the live job detail table.
+  exports, and the live job detail table. Combined throughput
+  (`decode_tps_combined` / `prefill_tps_combined` — the SUM across all
+  parallel streams, i.e. true server capacity under concurrency) is
+  stored per point and tracked in compare reports alongside the
+  per-stream means.
 - **Run visibility — soft hide (added 2026-09-21):** `PUT
   /api/runs/{id}/visibility` `{hidden: true|false, reason?}` appends a flag
   row (append-only, newest wins). Hidden runs drop out of `/api/runs` and

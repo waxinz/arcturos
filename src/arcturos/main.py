@@ -258,11 +258,12 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
         cur = db.execute(
             "INSERT INTO benchmarks (run_id, context_tokens, prefill_tps, decode_tps, ttft_ms, "
             "wall_s, output_tokens, mtp_draft_n, mtp_accepted, power_watts, power_host, "
-            "power_gpu_index, streams, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "power_gpu_index, streams, decode_tps_combined, prefill_tps_combined, created_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (run_id, body.context_tokens, body.prefill_tps, body.decode_tps, body.ttft_ms,
              body.wall_s, body.output_tokens, body.mtp_draft_n, body.mtp_accepted,
              body.power_watts, body.power_host, body.power_gpu_index, body.streams,
-             body.created_at),
+             body.decode_tps_combined, body.prefill_tps_combined, body.created_at),
         )
         db.commit()  # durable before the response is sent (teardown runs after send)
         return fetch_one(db, "SELECT rowid AS id, * FROM benchmarks WHERE rowid = ?",
@@ -867,9 +868,11 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
         return _csv_response(
             rows,
             ["run_id", "model_fingerprint", "engine", "server_url",
-             "context_tokens", "prefill_tps", "decode_tps", "ttft_ms",
+             "context_tokens", "prefill_tps", "decode_tps",
+             "prefill_tps_combined", "decode_tps_combined", "ttft_ms",
              "wall_s", "output_tokens", "mtp_draft_n", "mtp_accepted",
-             "power_watts", "power_host", "power_gpu_index", "created_at"],
+             "power_watts", "power_host", "power_gpu_index", "streams",
+             "created_at"],
             f"arcturos-run-{run_id}-benchmarks.csv",
         )
 

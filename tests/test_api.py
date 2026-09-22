@@ -15,7 +15,8 @@ EXPECTED_COLUMNS = {
     "benchmarks": {
         "run_id", "context_tokens", "prefill_tps", "decode_tps", "ttft_ms",
         "wall_s", "output_tokens", "mtp_draft_n", "mtp_accepted", "power_watts",
-        "power_host", "power_gpu_index", "streams", "created_at",
+        "power_host", "power_gpu_index", "streams", "decode_tps_combined",
+        "prefill_tps_combined", "created_at",
     },
     "eval_suites": {"id", "name", "version"},
     "eval_results": {

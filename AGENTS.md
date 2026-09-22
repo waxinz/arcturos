@@ -118,6 +118,12 @@ arcturos/
   idempotent migration), surfaced in the dispatch payload, job status
   rows, run-detail table, live job detail table, compare metrics
   (neutral), and CSV exports. +4 tests — 160 passed.
+- 2026-09-22 — Combined throughput: `decode_tps_combined` /
+  `prefill_tps_combined` stored per benchmark row (SUM across all parallel
+  streams = true server capacity under concurrency; per-stream means stay
+  alongside). Schema + migration, manual-point API, dispatch payload, job
+  rows, run-detail + live-job tables, compare metrics (higher-is-better),
+  per-run CSV export columns. +3 tests — 163 passed.
 
 - 2026-09-22 — Run-17 decode fix (burst-flush artifact). User reported run 17
   (ruapehu, openai transport) showing 15054.43 t/s decode at 64k and no decode

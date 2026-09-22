@@ -391,3 +391,44 @@ def test_export_run_json_404_style_error(tmp_path):
         assert exc.status_code == 404
     else:
         pytest.fail("expected RunNotFoundError")
+
+
+# ------------------------------------------------- combined throughput ----
+
+def _mk_point(target=128, prefill=400.0, decode=50.0, wall=1.0, out=8):
+    from arcturos.bench import BenchPoint
+    return BenchPoint(target_tokens=target, prefill_tps=prefill,
+                      decode_tps=decode, wall_s=wall, output_tokens=out)
+
+
+def test_aggregate_combined_is_sum_of_stream_rates():
+    """Combined = SUM across streams (true server capacity), not mean."""
+    from arcturos.bench import _aggregate_stream_points
+    pts = [_mk_point(prefill=400.0, decode=50.0),
+           _mk_point(prefill=380.0, decode=48.0),
+           _mk_point(prefill=420.0, decode=52.0)]
+    agg = _aggregate_stream_points(pts, 3)
+    assert agg.decode_tps_combined == 150.0    # 50 + 48 + 52
+    assert agg.prefill_tps_combined == 1200.0  # 400 + 380 + 420
+    import pytest as _pytest
+    assert agg.decode_tps == _pytest.approx(50.0)   # mean still tracked
+    assert agg.prefill_tps == _pytest.approx(400.0)
+    assert agg.streams == 3
+
+
+def test_aggregate_combined_skips_null_streams():
+    """A stream reporting None for a rate does not zero the combined sum."""
+    from arcturos.bench import _aggregate_stream_points
+    pts = [_mk_point(decode=50.0), _mk_point(decode=None),
+           _mk_point(decode=46.0)]
+    agg = _aggregate_stream_points(pts, 3)
+    assert agg.decode_tps_combined == 96.0
+    assert agg.decode_tps == 48.0
+
+
+def test_aggregate_single_stream_combined_equals_rate():
+    """streams=1 aggregation: combined == the single stream's rate."""
+    from arcturos.bench import _aggregate_stream_points
+    agg = _aggregate_stream_points([_mk_point(decode=50.0, prefill=400.0)], 1)
+    assert agg.decode_tps_combined == 50.0
+    assert agg.prefill_tps_combined == 400.0

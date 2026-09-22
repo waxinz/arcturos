@@ -140,6 +140,7 @@ def test_compare_metrics_default_to_all_when_omitted(client):
     assert set(res.json()["metrics"]) == {
         "decode_tps", "prefill_tps", "ttft_ms", "wall_s", "output_tokens",
         "mtp_acceptance", "power_watts", "streams",
+        "decode_tps_combined", "prefill_tps_combined",
     }
 
 

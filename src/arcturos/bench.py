@@ -93,6 +93,8 @@ class BenchPoint:
     power_host: Optional[str] = None
     power_gpu_index: Optional[int] = None
     streams: int = 1
+    decode_tps_combined: Optional[float] = None
+    prefill_tps_combined: Optional[float] = None
 
 
 class RunNotFoundError(ValueError):
@@ -293,6 +295,10 @@ def _aggregate_stream_points(points: list[BenchPoint], streams: int) -> BenchPoi
         vals = [v for v in values if v is not None]
         return sum(vals) / len(vals) if vals else None
 
+    def _sum(values):
+        vals = [v for v in values if v is not None]
+        return sum(vals) if vals else None
+
     def _mean_int(values):
         m = _mean(values)
         return int(round(m)) if m is not None else None
@@ -302,6 +308,10 @@ def _aggregate_stream_points(points: list[BenchPoint], streams: int) -> BenchPoi
         target_tokens=first.target_tokens,
         prefill_tps=_mean([p.prefill_tps for p in points]),
         decode_tps=_mean([p.decode_tps for p in points]),
+        # Combined throughput across all parallel streams — true server
+        # capacity under concurrency (per-stream rates would understate it).
+        prefill_tps_combined=_sum([p.prefill_tps for p in points]),
+        decode_tps_combined=_sum([p.decode_tps for p in points]),
         ttft_ms=_mean([p.ttft_ms for p in points]),
         wall_s=max((p.wall_s for p in points if p.wall_s is not None),
                    default=None),
@@ -490,8 +500,9 @@ def store_benchmark_run(
             conn.execute(
                 "INSERT INTO benchmarks (run_id, context_tokens, prefill_tps, decode_tps,"
                 " ttft_ms, wall_s, output_tokens, mtp_draft_n, mtp_accepted, power_watts,"
-                " power_host, power_gpu_index, streams, created_at)"
-                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                " power_host, power_gpu_index, streams, decode_tps_combined,"
+                " prefill_tps_combined, created_at)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     run_id,
                     point.target_tokens,
@@ -506,6 +517,8 @@ def store_benchmark_run(
                     point.power_host,
                     point.power_gpu_index,
                     point.streams,
+                    point.decode_tps_combined,
+                    point.prefill_tps_combined,
                     now,
                 ),
             )

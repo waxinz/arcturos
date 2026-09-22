@@ -38,6 +38,8 @@ CREATE TABLE IF NOT EXISTS benchmarks (
     power_host      TEXT,
     power_gpu_index INTEGER,
     streams         INTEGER,
+    decode_tps_combined  REAL,
+    prefill_tps_combined REAL,
     created_at      TEXT    NOT NULL
 );
 
@@ -262,6 +264,8 @@ _MIGRATIONS = (
     ("benchmarks", "power_host", "TEXT"),
     ("benchmarks", "power_gpu_index", "INTEGER"),
     ("benchmarks", "streams", "INTEGER"),
+    ("benchmarks", "decode_tps_combined", "REAL"),
+    ("benchmarks", "prefill_tps_combined", "REAL"),
 )
 
 
