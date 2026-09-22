@@ -29,6 +29,34 @@
     .msg.ok { color: #0a7d2c; }
     .hint { color: #777; font-size: .78rem; margin: .3rem 0; }
     .row2 { display: flex; gap: .6rem; } .row2 > div { flex: 1; }
+    .benchprog { margin-top: .7rem; display: none; }
+    .benchprog.active { display: block; }
+    .bp-barwrap { position: relative; height: 18px; background: #e8e8e8;
+                  border-radius: 9px; overflow: hidden; }
+    .bp-bar { height: 100%; width: 0%; background: linear-gradient(90deg,#2e7d32,#66bb6a);
+              transition: width .6s ease; }
+    .bp-bar.indeterminate { width: 100% !important;
+      background: repeating-linear-gradient(45deg,#90a4ae,#90a4ae 12px,#b0bec5 12px,#b0bec5 24px);
+      animation: bp-slide 1.2s linear infinite; }
+    @keyframes bp-slide { from { background-position: 0 0; } to { background-position: 34px 0; } }
+    .bp-pct { position: absolute; inset: 0; display: flex; align-items: center;
+              justify-content: center; font-size: .72rem; font-weight: 700;
+              color: #102a10; text-shadow: 0 0 3px rgba(255,255,255,.7); }
+    .bp-status { font-size: .82rem; margin-top: .35rem; }
+    .bp-clock { font-size: .78rem; color: #555; margin-top: .1rem;
+                font-variant-numeric: tabular-nums; }
+    .bp-toggle { background: none; border: none; color: #1a56a0; font-size: .78rem;
+                 padding: 0; margin-top: .3rem; cursor: pointer; text-decoration: underline; }
+    .bp-detail { display: none; margin-top: .4rem; font-size: .78rem;
+                 border-top: 1px dashed #ccc; padding-top: .4rem; }
+    .bp-detail.open { display: block; }
+    .bp-detail table { width: 100%; border-collapse: collapse; }
+    .bp-detail th, .bp-detail td { text-align: left; padding: 2px 4px;
+                                   border-bottom: 1px solid #eee; }
+    .bp-detail th { color: #666; font-weight: 600; }
+    .bp-ev { color: #444; font-family: ui-monospace, monospace; font-size: .72rem;
+             margin: 2px 0; white-space: nowrap; overflow: hidden;
+             text-overflow: ellipsis; }
   </style>
 </head>
 <body>
@@ -83,6 +111,19 @@
         <div><button id="bench-pf-btn" style="width:100%; background:#555">✔ Check target</button></div>
       </div>
       <div id="bench-msg" class="msg"></div>
+      <div id="bench-progress" class="benchprog">
+        <div class="bp-barwrap"><div id="bp-bar" class="bp-bar"></div>
+          <div id="bp-pct" class="bp-pct"></div></div>
+        <div id="bp-status" class="bp-status"></div>
+        <div id="bp-clock" class="bp-clock"></div>
+        <button id="bp-zoom" class="bp-toggle" type="button">▸ details</button>
+        <div id="bp-detail" class="bp-detail">
+          <table><thead><tr><th>#</th><th>ctx</th><th>prefill</th><th>decode</th>
+            <th>ttft</th><th>wall</th></tr></thead>
+            <tbody id="bp-rows"></tbody></table>
+          <div id="bp-events"></div>
+        </div>
+      </div>
     </div>
 
     <div class="card">
@@ -233,6 +274,75 @@
     $('bench-pf-btn').onclick = () => checkPreflight($('bench-pf-btn'), $('bench-url'), $('bench-msg'), $('bench-transport').value === 'openai' ? 'eval' : 'bench');
     $('eval-pf-btn').onclick = () => checkPreflight($('eval-pf-btn'), $('eval-target'), $('eval-msg'), 'eval');
 
+    // ---- async bench job + progress indicator ---------------------------
+    const bpPoll = { timer: null, zoom: false };
+
+    function bpFmtSecs(s) {
+      if (s == null) return '—';
+      const m = Math.floor(s / 60), r = Math.round(s % 60);
+      return m ? (m + 'm ' + String(r).padStart(2, '0') + 's') : (r + 's');
+    }
+    function bpRow(p, i) {
+      const cell = (v, suffix) => (v == null ? '—' : v + (suffix || ''));
+      return '<tr><td>' + (i + 1) + '</td><td>' + p.context_tokens + '</td>' +
+        '<td>' + cell(p.prefill_tps, ' t/s') + '</td>' +
+        '<td>' + cell(p.decode_tps, ' t/s') + '</td>' +
+        '<td>' + cell(p.ttft_ms, ' ms') + '</td>' +
+        '<td>' + cell(p.wall_s, ' s') + '</td></tr>';
+    }
+    function bpRender(st) {
+      const total = st.targets_total, done = st.points_done;
+      const frac = total ? done / total : 0;
+      const bar = $('bp-bar'), pct = $('bp-pct');
+      if (st.status === 'preflight') {
+        bar.classList.add('indeterminate'); pct.textContent = '…';
+      } else {
+        bar.classList.remove('indeterminate');
+        bar.style.width = (frac * 100).toFixed(1) + '%';
+        pct.textContent = Math.round(frac * 100) + '%';
+      }
+      $('bp-status').textContent = st.status_line || st.status;
+      $('bp-clock').textContent =
+        'elapsed ' + bpFmtSecs(st.elapsed_s) +
+        ' · remaining ~' + bpFmtSecs(st.eta_s);
+      const rows = $('bp-rows');
+      (st.points || []).forEach((p, i) => {
+        if (!rows.rows[i]) rows.insertRow(i).innerHTML = bpRow(p, i);
+        else rows.rows[i].innerHTML = bpRow(p, i);
+      });
+      if (st.zoom_events && st.zoom_events.length)
+        $('bp-events').innerHTML = st.zoom_events.map(e => '<div class="bp-ev">' + e + '</div>').join('');
+    }
+    async function bpPollLoop(jobId) {
+      try {
+        const res = await fetch('/api/ops/bench/jobs/' + jobId);
+        const st = await res.json();
+        if (!res.ok) { bpStop(); setMsg($('bench-msg'), 'Job poll failed: ' + (st.detail || res.status)); return; }
+        bpRender(st);
+        if (st.status === 'done') {
+          bpStop();
+          setMsg($('bench-msg'), '✔ Run #' + st.run_id + ' stored — ' + st.points_done + ' point(s)', true);
+          $('bp-bar').classList.remove('indeterminate');
+          $('bp-bar').style.width = '100%';
+          $('bp-pct').textContent = '100%';
+          $('bp-status').textContent = 'Complete — run #' + st.run_id;
+          $('bp-clock').textContent = 'elapsed ' + bpFmtSecs(st.elapsed_s);
+        } else if (st.status === 'error') {
+          bpStop();
+          setMsg($('bench-msg'), '✘ Bench failed: ' + (st.error || 'unknown'), false);
+          $('bp-status').textContent = 'Failed';
+        } else {
+          bpPoll.timer = setTimeout(() => bpPollLoop(jobId), 1000);
+        }
+      } catch (err) { bpStop(); setMsg($('bench-msg'), 'Job poll failed: ' + err); }
+    }
+    function bpStop() { if (bpPoll.timer) { clearTimeout(bpPoll.timer); bpPoll.timer = null; } }
+    $('bp-zoom').onclick = () => {
+      bpPoll.zoom = !bpPoll.zoom;
+      $('bp-detail').classList.toggle('open', bpPoll.zoom);
+      $('bp-zoom').textContent = bpPoll.zoom ? '▾ details' : '▸ details';
+    };
+
     $('bench-btn').onclick = async () => {
       // Flag dropped non-numeric targets instead of silently mangling input.
       const targets = [];
@@ -248,19 +358,37 @@
       }
       if (dropped.length) setMsg($('bench-msg'),
         'Ignored non-numeric target(s): ' + dropped.join(', '));
-      const data = await post('/api/ops/bench', {
-        server_url: $('bench-url').value.trim(),
-        targets: targets,
-        n_predict: parseInt($('bench-npredict').value, 10) || 256,
-        api_key: $('bench-key').value.trim() || null,
-        transport: $('bench-transport').value,
-        model: $('bench-model').value.trim() || null,
-      }, $('bench-btn'), $('bench-msg'), 'Kick off bench');
-      if (data) setMsg($('bench-msg'),
-        'Run #' + data.run_id + ' stored: ' +
-        data.points.map(p => p.context_tokens + '→' +
-          (p.decode_tps === null ? 'null' : p.decode_tps) + ' tok/s').join(', '),
-        true);
+      const transport = $('bench-transport').value;
+      if (transport === 'openai' && !$('bench-model').value.trim()) {
+        setMsg($('bench-msg'), 'The openai transport needs a model name (e.g. GLM-5.3-Flash)');
+        return;
+      }
+      busy($('bench-btn'), true, 'Kick off bench');
+      setMsg($('bench-msg'), 'Submitting…');
+      try {
+        const res = await fetch('/api/ops/bench/jobs', {method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({
+            server_url: $('bench-url').value.trim(),
+            targets: targets,
+            n_predict: parseInt($('bench-npredict').value, 10) || 256,
+            api_key: $('bench-key').value.trim() || null,
+            transport: transport,
+            model: $('bench-model').value.trim() || null,
+          })});
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) { setMsg($('bench-msg'), 'Kick off failed: ' + fmtDetail(data.detail, res.status)); return; }
+        // job accepted — hand over to the progress indicator
+        $('bench-progress').classList.add('active');
+        $('bp-rows').innerHTML = '';
+        $('bp-events').innerHTML = '';
+        $('bp-bar').style.width = '0%';
+        $('bp-status').textContent = 'queued…';
+        $('bp-clock').textContent = '';
+        setMsg($('bench-msg'), 'Job ' + data.job_id + ' accepted — sweep running', true);
+        bpPollLoop(data.job_id);
+      } catch (err) { setMsg($('bench-msg'), 'Kick off failed: ' + err); }
+      finally { busy($('bench-btn'), false, 'Kick off bench'); }
     };
 
     $('suite-validate-btn').onclick = () => {
