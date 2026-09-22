@@ -29,6 +29,8 @@ Routes (all data paths are append-only — no UPDATE/DELETE exists):
   GET  /judgments                       -> judgment list view HTML
   GET  /reports                         -> suite report view HTML
   POST /api/ops/bench                   -> kick off a bench sweep against a server (stores run+points; transport native|openai, model?)
+  POST /api/ops/bench/jobs              -> async bench job: returns {job_id} immediately, sweep runs in background
+  GET  /api/ops/bench/jobs/{job_id}     -> job status: phase, per-point results, elapsed + ETA
   POST /api/ops/eval                    -> replay a suite against a target (stores eval_results)
   GET  /api/ops/preflight               -> J6 health checks for a target (kind=bench|eval, model?)
 """
@@ -488,6 +490,56 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
             raise HTTPException(status_code=502, detail=str(exc))
         except (RuntimeError, ValueError) as exc:
             raise HTTPException(status_code=502, detail=f"bench failed: {exc}")
+
+    @app.post("/api/ops/bench/jobs")
+    def ops_bench_job(body: dict):
+        """Async bench sweep: same body as POST /api/ops/bench.
+
+        Returns {job_id} immediately after synchronous validation +
+        preflight-free snapshot; the sweep (preflight, points, storage)
+        runs in a background thread. Poll GET /api/ops/bench/jobs/{id}.
+        Input errors are 422 here; everything inside the thread lands in
+        the job record instead.
+        """
+        server_url = body.get("server_url")
+        targets = body.get("targets")
+        n_predict = body.get("n_predict", 256)
+        api_key = body.get("api_key")
+        transport = body.get("transport", "native")
+        model = body.get("model")
+        if not isinstance(server_url, str) or not server_url.startswith("http"):
+            raise HTTPException(status_code=422, detail="server_url must be an http(s) URL")
+        if not isinstance(targets, list) or not all(
+                isinstance(t, int) and t >= 1 for t in targets):
+            raise HTTPException(status_code=422, detail="targets must be a list of ints >= 1")
+        if not isinstance(n_predict, int) or n_predict < 1:
+            raise HTTPException(status_code=422, detail="n_predict must be an int >= 1")
+        if not isinstance(transport, str) or transport not in ("native", "openai"):
+            raise HTTPException(status_code=422,
+                                detail="transport must be 'native' or 'openai'")
+        if model is not None and not isinstance(model, str):
+            raise HTTPException(status_code=422, detail="model must be a string")
+        try:
+            job_id = ops.run_bench_job(
+                db_path=db_path, server_url=server_url, targets=targets,
+                n_predict=n_predict, api_key=api_key,
+                transport_name=transport, model=model)
+        except ops.DispatchError as exc:
+            raise HTTPException(status_code=422, detail=str(exc))
+        return {"job_id": job_id}
+
+    @app.get("/api/ops/bench/jobs/{job_id}")
+    def ops_bench_job_status(job_id: str):
+        rec = ops.bench_job_status(job_id)
+        if rec is None:
+            raise HTTPException(status_code=404, detail=f"bench job {job_id} not found")
+        if rec["finished_at"] is None:
+            rec["elapsed_s"] = round(time.monotonic() - rec["started_at"], 1)
+        else:
+            rec["elapsed_s"] = round(rec["finished_at"] - rec["started_at"], 1)
+        rec.pop("started_at", None)
+        rec.pop("finished_at", None)
+        return rec
 
     @app.post("/api/ops/eval")
     def ops_eval(body: dict):
