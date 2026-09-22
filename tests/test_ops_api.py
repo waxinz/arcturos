@@ -133,3 +133,44 @@ def test_power_provenance_validation(client):
         "power_host": "alexei@10.10.10.122", "power_gpu_index": 0})
     assert ok.status_code == 201
     assert ok.json()["power_host"] == "alexei@10.10.10.122"
+
+
+
+# ------------------------------------------ REVIEW-FIX-ROUND regressions ----
+
+
+def test_hidden_run_rejected_by_baseline_deltas(client):
+    """Soft-hide gates every compare surface: a hidden run is 404 as the
+    delta target (parity with run-diff and the series endpoint)."""
+    run = client.post("/api/runs", json={
+        "server_url": "http://10.10.10.122:8000",
+        "model_fingerprint": "/m/h.gguf", "engine": "llama.cpp",
+        "context_size": 4096}).json()
+    client.post(f"/api/runs/{run['id']}/benchmarks",
+                json={"context_tokens": 4096, "decode_tps": 30.0})
+    client.put(f"/api/runs/{run['id']}/visibility", json={"hidden": True})
+    r = client.get(
+        f"/api/compare/baseline-deltas?runs={run['id']}&run={run['id']}"
+        f"&metrics=decode_tps&baseline={run['id']}")
+    assert r.status_code == 404
+    assert "hidden" in r.json()["detail"]
+
+
+def test_hidden_run_rejected_as_baseline_reference(client):
+    """A hidden run cannot serve as the baseline= reference either."""
+    a = client.post("/api/runs", json={
+        "server_url": "http://10.10.10.122:8000",
+        "model_fingerprint": "/m/a.gguf", "engine": "llama.cpp",
+        "context_size": 4096}).json()
+    b = client.post("/api/runs", json={
+        "server_url": "http://10.10.10.122:8000",
+        "model_fingerprint": "/m/b.gguf", "engine": "llama.cpp",
+        "context_size": 4096}).json()
+    client.post(f"/api/runs/{a['id']}/benchmarks",
+                json={"context_tokens": 4096, "decode_tps": 30.0})
+    client.put(f"/api/runs/{b['id']}/visibility", json={"hidden": True})
+    r = client.get(
+        f"/api/compare/benchmarks?runs={a['id']}&metrics=decode_tps"
+        f"&baseline={b['id']}")
+    assert r.status_code == 404
+    assert "hidden" in r.json()["detail"]

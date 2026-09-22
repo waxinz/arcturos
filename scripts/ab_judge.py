@@ -17,6 +17,7 @@ import argparse
 import json
 import os
 import random
+import re
 import sys
 from pathlib import Path
 from urllib import request as urlreq
@@ -79,8 +80,6 @@ def _normalize_base(url: str) -> str:
     url = url.rstrip("/")
     return url[:-3] if url.endswith("/v1") else url
 
-
-import re
 
 def normalize_fingerprint(fp: str) -> str:
     """Collapse server-suffix variants: 'Model (host)' / 'Model' -> 'Model'.
@@ -147,13 +146,6 @@ def main() -> None:
     for (_item_id, _model), r in latest_by_model.items():
         by_item.setdefault(r["item_id"], []).append(r)
 
-    contested = set()
-    for item_id, pair in by_item.items():
-        if len(pair) != 2:
-            continue
-        contested.add(pair[0]["model_fingerprint"])
-        contested.add(pair[1]["model_fingerprint"])
-
     model_names = set()
     for r in results:
         model_names.add(r["model_fingerprint"])
@@ -191,8 +183,6 @@ def main() -> None:
             continue
         m_keys = sorted(group)
         model_a_fp, model_b_fp = m_keys
-        id_a = group[model_a_fp][0]["id"]          # representative result ids
-        id_b = group[model_b_fp][0]["id"]
         if is_multiturn:
             o_a = [r["output"] for r in sorted(group[model_a_fp], key=lambda x: x["id"])]
             o_b = [r["output"] for r in sorted(group[model_b_fp], key=lambda x: x["id"])]
@@ -234,7 +224,6 @@ def main() -> None:
             judged_base_ids.add(base_id)
         else:
             ra, rb = group[model_a_fp][0], group[model_b_fp][0]
-            id_a, id_b = ra["id"], rb["id"]
             order = random.random() < 0.5
             first_was_a = order
             resp1, resp2 = (ra["output"], rb["output"]) if order else \

@@ -110,7 +110,6 @@ def suite_report(db: sqlite3.Connection, suite_id: int,
             entry["tie"] += 1
         overall[winner] += 1
 
-        item = dict(ra["item_id"] and {})  # placeholder to keep shape simple
         item = {
             "item_id": ra["item_id"],
             "judgment_id": j["id"],

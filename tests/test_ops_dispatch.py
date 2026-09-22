@@ -428,3 +428,21 @@ def test_dispatch_bench_invalid_transport_name(db_path):
         ops.dispatch_bench(
             db_path, "http://fake:4000/v1", [128], 30,
             transport_name="vllm", model="m")
+
+
+
+# ------------------------------------------ REVIEW-FIX-ROUND regressions ----
+
+
+def test_bench_job_status_snapshot_is_isolated(db_path):
+    """The status snapshot must be a deep-enough copy: the worker thread
+    keeps appending to job['points'] while pollers serialize the record,
+    so mutating the returned snapshot must not corrupt the live job."""
+    job_id = ops.run_bench_job(
+        db_path, "http://127.0.0.1:1", [128], 8,
+        api_key=None, transport_name="native", model=None)
+    snap = ops.bench_job_status(job_id)
+    assert snap is not None
+    snap["points"].append({"context_tokens": 999, "injected": True})
+    fresh = ops.bench_job_status(job_id)
+    assert all(p.get("context_tokens") != 999 for p in fresh["points"])

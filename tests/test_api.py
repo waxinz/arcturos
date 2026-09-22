@@ -27,6 +27,7 @@ EXPECTED_COLUMNS = {
         "winner", "confidence", "rationale", "created_at",
     },
     "suite_definitions": {"id", "suite_id", "payload", "created_at"},
+    "run_visibility": {"id", "run_id", "hidden", "reason", "created_at"},
 }
 
 RUN = {
