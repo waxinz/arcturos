@@ -25,6 +25,8 @@
              background: #222; color: #fff; border: 0; border-radius: 4px; cursor: pointer; }
     button:disabled { background: #999; cursor: wait; }
     .msg { margin-top: .5rem; font-size: .85rem; min-height: 1.1em; }
+    .bp-status a, .msg a { color: inherit; text-decoration: underline;
+                           font-weight: 600; }
     .msg.err { color: #b00020; }
     .msg.ok { color: #0a7d2c; }
     .hint { color: #777; font-size: .78rem; margin: .3rem 0; }
@@ -334,11 +336,15 @@
         bpRender(st);
         if (st.status === 'done') {
           bpStop();
-          setMsg($('bench-msg'), '✔ Run #' + st.run_id + ' stored — ' + st.points_done + ' point(s)', true);
+          const okEl = $('bench-msg');
+          okEl.innerHTML = '✔ <a href="/runs/' + st.run_id + '">Run #' +
+            st.run_id + '</a> stored — ' + st.points_done + ' point(s)';
+          okEl.className = 'msg ok';
           $('bp-bar').classList.remove('indeterminate');
           $('bp-bar').style.width = '100%';
           $('bp-pct').textContent = '100%';
-          $('bp-status').textContent = 'Complete — run #' + st.run_id;
+          $('bp-status').innerHTML = 'Complete — <a href="/runs/' +
+            st.run_id + '">run #' + st.run_id + '</a>';
           $('bp-clock').textContent = 'elapsed ' + bpFmtSecs(st.elapsed_s);
         } else if (st.status === 'error') {
           bpStop();
