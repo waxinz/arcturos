@@ -13,6 +13,8 @@ Routes (all data paths are append-only — no UPDATE/DELETE exists):
   POST /api/eval-suites                 -> create eval suite
   GET  /api/eval-suites                 -> list eval suites
   GET  /api/eval-suites/{suite_id}      -> fetch one suite
+  PUT  /api/eval-suites/{suite_id}/definition -> snapshot suite definition JSON
+  GET  /api/eval-suites/{suite_id}/definition -> latest definition snapshot
   POST /api/eval-suites/{suite_id}/results -> add eval result
   GET  /api/eval-suites/{suite_id}/results -> list results for a suite
   GET  /api/eval-results                -> list all eval results
@@ -33,6 +35,7 @@ Routes (all data paths are append-only — no UPDATE/DELETE exists):
 
 from __future__ import annotations
 
+import json
 import sqlite3
 from pathlib import Path
 
@@ -224,6 +227,40 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
             raise HTTPException(status_code=404, detail=f"eval suite id {suite_id} not found")
         return suite
 
+    @app.put("/api/eval-suites/{suite_id}/definition", status_code=204)
+    def put_suite_definition(suite_id: int, body: dict, db=Depends(get_db)):
+        """Snapshot a suite definition (items, categories, prompts).
+
+        Append-only snapshots: each PUT appends a new row; report-time
+        category joins read the latest one. Re-seeding a suite is a new
+        snapshot, never an in-place edit.
+        """
+        require_parent(db, "eval_suites", suite_id)
+        if not isinstance(body, dict) or not body.get("items"):
+            raise HTTPException(status_code=422,
+                                detail="definition must be an object with a non-empty 'items' array")
+        db.execute(
+            "INSERT INTO suite_definitions (suite_id, payload, created_at) "
+            "VALUES (?, ?, ?)",
+            (suite_id, json.dumps(body), _utcnow()),
+        )
+        db.commit()
+        return Response(status_code=204)
+
+    @app.get("/api/eval-suites/{suite_id}/definition")
+    def get_suite_definition(suite_id: int, db=Depends(get_db)):
+        """Latest definition snapshot for a suite (404 if never snapshotted)."""
+        require_parent(db, "eval_suites", suite_id)
+        row = db.execute(
+            "SELECT payload FROM suite_definitions WHERE suite_id = ? "
+            "ORDER BY id DESC LIMIT 1",
+            (suite_id,),
+        ).fetchone()
+        if row is None:
+            raise HTTPException(status_code=404,
+                                detail=f"no definition snapshot for suite {suite_id}")
+        return json.loads(row["payload"])
+
     # ------------------------------------------------------- eval results --
     @app.post("/api/eval-suites/{suite_id}/results", status_code=201)
     def add_eval_result(suite_id: int, body: EvalResultCreate, db=Depends(get_db)):
@@ -275,9 +312,13 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
 
         Thin wrapper over reports.suite_report / export_report_csv; unknown
         suite ids surface as 404 (ValueError from the aggregator).
+        Categories: the DB stores item_id only, so the map is rebuilt from
+        the suite definition JSON the operator seeded (if present).
         """
         try:
-            report = reports.suite_report(db, suite_id)
+            report = reports.suite_report(
+                db, suite_id,
+                category_map=reports.category_map_for(db, suite_id))
         except ValueError as exc:
             raise HTTPException(status_code=404, detail=str(exc))
         return {"report": report, "csv": reports.export_report_csv(report)}

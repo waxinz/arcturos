@@ -87,6 +87,17 @@ CREATE TABLE IF NOT EXISTS judgments (
     created_at             TEXT    NOT NULL,
     CHECK (eval_result_a <> eval_result_b)
 );
+
+-- Suite definition snapshots (the JSON the operator seeded / replayed from).
+-- Metadata, not measurements: per-item categories live here because the
+-- append-only eval_results table stores item_id only. The latest snapshot
+-- per suite wins (report-time join reads it back; reports.category_map_for).
+CREATE TABLE IF NOT EXISTS suite_definitions (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    suite_id   INTEGER NOT NULL REFERENCES eval_suites(id),
+    payload    TEXT    NOT NULL,
+    created_at TEXT    NOT NULL
+);
 """
 
 # Hard append-only enforcement at the storage layer: any UPDATE or DELETE on a
@@ -135,6 +146,17 @@ END;
 CREATE TRIGGER IF NOT EXISTS trg_judgments_no_delete
 BEFORE DELETE ON judgments BEGIN
     SELECT RAISE(ABORT, 'append-only: DELETE forbidden on judgments');
+END;
+
+-- suite_definitions is append-only metadata: re-seeding a suite appends a
+-- new snapshot (the newest row per suite is the one reports read).
+CREATE TRIGGER IF NOT EXISTS trg_suite_definitions_no_update
+BEFORE UPDATE ON suite_definitions BEGIN
+    SELECT RAISE(ABORT, 'append-only: UPDATE forbidden on suite_definitions');
+END;
+CREATE TRIGGER IF NOT EXISTS trg_suite_definitions_no_delete
+BEFORE DELETE ON suite_definitions BEGIN
+    SELECT RAISE(ABORT, 'append-only: DELETE forbidden on suite_definitions');
 END;
 
 -- models: the fingerprint, engine, and seen timestamps are immutable once
