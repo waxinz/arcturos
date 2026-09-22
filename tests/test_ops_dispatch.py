@@ -621,3 +621,110 @@ def test_dispatch_bench_native_power_host_opt_in_samples_and_stores(db_path):
         assert b["power_watts"] == 129.4
         assert b["power_host"] == "alexei@10.10.10.122"
         assert b["power_gpu_index"] == 2
+
+
+# ------------------------------------------------- partial-run storage -----
+
+
+def _dying_after_n_points_app(good_points: int, total_requests: int):
+    """MockTransport that serves `good_points` successful /completion
+    requests then fails the next one (connection error) — models a sweep
+    that dies mid-way with completed points already collected."""
+
+    state = {"completions": 0}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        path = request.url.path
+        if path == "/health":
+            return httpx.Response(200, json={"status": "ok"})
+        if path == "/tokenize":
+            return httpx.Response(200, json=_tokenize_resp(2))
+        if path == "/completion":
+            state["completions"] += 1
+            if state["completions"] > good_points:
+                raise httpx.ConnectError("connection reset by peer")
+            return httpx.Response(200, json={
+                "tokens_predicted": 8,
+                "tokens_evaluated": 27,
+                "stop_reason": "eos",
+                "timings": {"prompt_per_second": 400.0,
+                            "predicted_per_second": 50.0},
+            })
+        if path == "/props":
+            return httpx.Response(200, json={
+                "n_ctx": 4096, "model_path": "/models/test.gguf",
+                "build": "1234", "engine": "llama.cpp"})
+        return httpx.Response(404)
+
+    return httpx.MockTransport(handler)
+
+
+def test_dispatch_bench_mid_sweep_failure_stores_partial_run(db_path):
+    """2026-09-22 feature: a sweep that fails after completing some points
+    still stores the completed points as a partial run — nothing measured
+    is discarded. The result reports status='partial' + the error."""
+    transport = _dying_after_n_points_app(good_points=1, total_requests=2)
+
+    result = ops.dispatch_bench(db_path, "http://fake:8000", [128, 256], 8,
+                                transport=transport)
+    assert result["status"] == "partial"
+    assert "connection reset" in result["error"]
+    assert result["run_id"] == 1
+    assert len(result["points"]) == 1
+    assert result["points"][0]["context_tokens"] == 128
+
+    from arcturos.bench import export_run_json
+    exported = export_run_json(db_path, 1)
+    assert exported["run"]["status"] == "partial"
+    assert len(exported["benchmarks"]) == 1  # the completed point survived
+    assert exported["benchmarks"][0]["context_tokens"] == 128
+
+
+def test_dispatch_bench_failure_with_zero_points_still_502(db_path):
+    """Failure before any point completes: no run is created (nothing to
+    preserve) and the 502 contract is unchanged."""
+    import sqlite3
+    transport = _dying_after_n_points_app(good_points=0, total_requests=1)
+    with pytest.raises(ops.DispatchFailure):
+        ops.dispatch_bench(db_path, "http://fake:8000", [128], 8,
+                           transport=transport)
+    db = sqlite3.connect(db_path)
+    assert db.execute("SELECT COUNT(*) FROM runs").fetchone()[0] == 0
+    db.close()
+
+
+def test_dispatch_bench_success_reports_complete_status(db_path):
+    """The success payload now carries status='complete' explicitly."""
+    transport = _bench_app()
+    result = ops.dispatch_bench(db_path, "http://fake:8000", [128], 8,
+                                transport=transport)
+    assert result["status"] == "complete"
+    from arcturos.bench import export_run_json
+    assert export_run_json(db_path, 1)["run"]["status"] == "complete"
+
+
+def test_dispatch_bench_openai_mid_sweep_failure_stores_partial_run(db_path):
+    """Partial preservation works on the openai transport too."""
+    calls = {"n": 0}
+
+    def fake_urlopen(req, timeout=None):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            return _SSEFakeResp(_sse_text(content_chunks=4, prompt=500,
+                                          completion=30))
+        raise RuntimeError("connection reset mid-sweep")
+
+    with patch("arcturos.bench_openai.urlreq.urlopen",
+               side_effect=fake_urlopen):
+        result = ops.dispatch_bench(
+            db_path, "http://fake:4000/v1", [128, 256], 30,
+            transport_name="openai", model="GLM-5.3-Flash",
+            transport=_openai_preflight_app())
+    assert result["status"] == "partial"
+    assert "connection reset" in result["error"]
+
+    from arcturos.bench import export_run_json
+    exported = export_run_json(db_path, 1)
+    assert exported["run"]["status"] == "partial"
+    assert exported["run"]["engine"] == "openai"
+    assert len(exported["benchmarks"]) == 1

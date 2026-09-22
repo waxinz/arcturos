@@ -11,7 +11,7 @@ import sqlite3
 import pytest
 
 EXPECTED_COLUMNS = {
-    "runs": {"id", "server_url", "model_fingerprint", "engine", "context_size", "created_at"},
+    "runs": {"id", "server_url", "model_fingerprint", "engine", "context_size", "status", "created_at"},
     "benchmarks": {
         "run_id", "context_tokens", "prefill_tps", "decode_tps", "ttft_ms",
         "wall_s", "output_tokens", "mtp_draft_n", "mtp_accepted", "power_watts",
@@ -462,3 +462,57 @@ def test_run_detail_page_has_combined_throughput_columns(client):
     assert "prefill_tps_combined" in html
     assert "decode_tps_combined" in html
     assert "multi-stream points only" in html
+
+
+# ----------------------------------------------------- partial runs --------
+
+
+def test_runs_status_filter_partial_and_complete(client):
+    """2026-09-22 partial-run support: /api/runs?status= filters by run
+    outcome; omitted returns everything (hidden still filtered)."""
+    import sqlite3
+    db = sqlite3.connect(client.app.state.db_path)
+    db.execute(
+        "INSERT INTO runs (server_url, model_fingerprint, engine, "
+        "context_size, status, created_at) VALUES (?, ?, ?, ?, 'partial', ?)",
+        ("http://fake:8000", "/models/partial.gguf", "llama.cpp", 4096,
+         "2026-09-22T00:00:00Z"))
+    db.commit()
+    db.close()
+
+    all_runs = client.get("/api/runs").json()
+    assert any(r["status"] == "partial" for r in all_runs)
+
+    partial = client.get("/api/runs?status=partial").json()
+    assert len(partial) == 1
+    assert partial[0]["status"] == "partial"
+
+    complete = client.get("/api/runs?status=complete").json()
+    assert all(r["status"] == "complete" for r in complete)
+    assert len(complete) == len(all_runs) - 1
+
+
+def test_runs_status_filter_validation(client):
+    res = client.get("/api/runs?status=bogus")
+    assert res.status_code == 422
+    assert "complete" in res.json()["detail"]
+
+
+def test_runs_list_page_shows_partial_badge(client):
+    """/runs marks partial runs with a visible badge — never hidden."""
+    html = client.get("/runs").text
+    assert "⚠ partial" in html
+    assert "completed points preserved" in html
+
+
+def test_run_detail_page_shows_partial_marker(client):
+    html = client.get("/runs/1").text
+    assert "partial — sweep failed mid-way" in html
+
+
+def test_create_page_links_partial_run_on_failure(client):
+    """The live job panel links to the partial run when a sweep fails
+    mid-way instead of dead-ending."""
+    html = client.get("/create").text
+    assert "(partial)" in html
+    assert "completed point(s) kept" in html

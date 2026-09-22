@@ -74,6 +74,15 @@
           link.href = '/runs/' + r.id;
           link.textContent = r.id;
           first.appendChild(link);
+          // Partial runs (2026-09-22): visible marker, never hidden — a
+          // failed sweep's completed points are still real data.
+          if (r.status === 'partial') {
+            const badge = document.createElement('span');
+            badge.textContent = ' ⚠ partial';
+            badge.title = 'Sweep failed mid-way — completed points preserved';
+            badge.style.color = '#b45309';
+            first.appendChild(badge);
+          }
           tr.appendChild(first);
           for (let i = 1; i < cells.length; i++) {
             const td = document.createElement('td');

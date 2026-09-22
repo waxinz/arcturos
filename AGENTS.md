@@ -110,6 +110,26 @@ arcturos/
 
 ### Log (newest first)
 
+- 2026-09-22 — Partial-run preservation: a bench sweep that fails
+  mid-way no longer discards the points it completed. New append-only
+  `runs.status` column ('complete' | 'partial', NOT NULL DEFAULT
+  'complete', CHECK-constrained, idempotent migration — historical rows
+  grandfathered as complete). dispatch_bench collects completed points
+  via the on_point hook; on mid-sweep failure it stores them as a
+  partial run and returns {status: 'partial', run_id, error, points}
+  instead of raising — a failure with zero completed points still
+  raises DispatchFailure (502 contract unchanged, no empty run rows).
+  Also fixed a pre-existing bug the work surfaced: connection-level
+  failures (httpx.HTTPError) mid-sweep escaped dispatch's exception net
+  as unhandled 500s — now mapped to DispatchFailure/502 like other
+  runtime failures. Async jobs surface partial runs in the job record
+  (status 'partial', run_id set, actionable status_line); /create's
+  live panel links '⚠ run #N (partial) — K completed point(s) kept'.
+  /runs badges partial runs ⚠, run-detail marks the title line,
+  /api/runs?status=partial|complete filters (422 on other values).
+  Docs: PRD J7 amendment, ux-design partial-runs section, test-plan
+  S22-S27. +9 tests — 187 passed.
+
 - 2026-09-22 — MTP acceptance + opt-in power on the openai transport
   (runs 29/30 investigation): the openai path ignored tabbyAPI's
   speculative-decoding counters — `completion_tokens_details.

@@ -393,6 +393,19 @@
           bpStop();
           setMsg($('bench-msg'), '✘ Bench failed: ' + (st.error || 'unknown'), false);
           $('bp-status').textContent = 'Failed';
+          // Partial-run preservation (2026-09-22): completed points were
+          // stored as a partial run — link to them instead of a dead end.
+          if (st.run_id) {
+            const partial = document.createElement('div');
+            const link = document.createElement('a');
+            link.href = '/runs/' + st.run_id;
+            link.textContent = '⚠ run #' + st.run_id + ' (partial)';
+            link.title = 'Completed points were preserved before the failure';
+            partial.appendChild(link);
+            partial.appendChild(document.createTextNode(
+              ' — ' + (st.points_done || 0) + ' completed point(s) kept'));
+            $('bp-status').appendChild(partial);
+          }
         } else {
           bpPoll.timer = setTimeout(() => bpPollLoop(jobId), 1000);
         }

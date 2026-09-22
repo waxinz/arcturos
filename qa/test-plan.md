@@ -123,6 +123,12 @@ Rules:
 | S19 | MTP honest-null when usage carries no details | `tests/test_bench_openai.py::test_mtp_fields_null_when_usage_details_absent` | done |
 | S20 | power sampling opt-in per dispatch: sampled + stored with provenance | `tests/test_ops_dispatch.py::test_dispatch_bench_power_host_opt_in_samples_and_stores` | done |
 | S21 | power_host validation (blank/non-string rejected) | `tests/test_ops_dispatch.py::test_dispatch_bench_power_host_validation` | done |
+| S22 | mid-sweep failure stores completed points as a partial run | `tests/test_ops_dispatch.py::test_dispatch_bench_mid_sweep_failure_stores_partial_run` | done |
+| S23 | failure with zero completed points: no run, 502 unchanged | `tests/test_ops_dispatch.py::test_dispatch_bench_failure_with_zero_points_still_502` | done |
+| S24 | success payload carries status='complete' | `tests/test_ops_dispatch.py::test_dispatch_bench_success_reports_complete_status` | done |
+| S25 | partial preservation on the openai transport | `tests/test_ops_dispatch.py::test_dispatch_bench_openai_mid_sweep_failure_stores_partial_run` | done |
+| S26 | /api/runs?status= filter (partial/complete/validation) | `tests/test_api.py::test_runs_status_filter_partial_and_complete`, `tests/test_api.py::test_runs_status_filter_validation` | done |
+| S27 | partial-run UI: /runs badge, run-detail marker, live-job link | `tests/test_api.py::test_runs_list_page_shows_partial_badge`, `tests/test_api.py::test_run_detail_page_shows_partial_marker`, `tests/test_api.py::test_create_page_links_partial_run_on_failure` | done |
 
 ## 3. Fixture suites (`qa/suites/`)
 
