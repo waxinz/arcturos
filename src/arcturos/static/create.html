@@ -54,13 +54,24 @@
   <div class="grid">
     <div class="card">
       <h3>1 · Benchmark run — kick off</h3>
-      <p class="hint">Runs a cold-cache sweep against a llama.cpp server (native /completion). Stores a run + one benchmark row per context target.</p>
+      <p class="hint">Runs a cold-cache sweep. Transport <b>native</b> targets a llama.cpp server (/completion); <b>openai</b> targets any OpenAI-compatible chat server (tabbyAPI, vLLM, litellm — needs a model name). Stores a run + one benchmark row per context target.</p>
       <label>Server URL
         <input id="bench-url" value="http://10.10.10.122:8000">
       </label>
       <label>Context targets (tokens, comma-separated)
-        <input id="bench-targets" value="2048, 8192">
+        <input id="bench-targets" value="65535, 131072, 196608">
       </label>
+      <div class="row2">
+        <div><label>Transport
+          <select id="bench-transport">
+            <option value="native">native (llama.cpp)</option>
+            <option value="openai">openai (tabbyAPI / vLLM / litellm)</option>
+          </select>
+        </label></div>
+        <div><label>Model (openai transport)
+          <input id="bench-model" placeholder="GLM-5.3-Flash">
+        </label></div>
+      </div>
       <label>API key (optional, for auth-protected servers)
         <input id="bench-key" type="password" placeholder="sk-…">
       </label>
@@ -219,7 +230,7 @@
       } catch (err) { setMsg(msgEl, 'Preflight failed: ' + err); }
       finally { kindBtn.disabled = false; kindBtn.textContent = '✔ Check target'; }
     }
-    $('bench-pf-btn').onclick = () => checkPreflight($('bench-pf-btn'), $('bench-url'), $('bench-msg'), 'bench');
+    $('bench-pf-btn').onclick = () => checkPreflight($('bench-pf-btn'), $('bench-url'), $('bench-msg'), $('bench-transport').value === 'openai' ? 'eval' : 'bench');
     $('eval-pf-btn').onclick = () => checkPreflight($('eval-pf-btn'), $('eval-target'), $('eval-msg'), 'eval');
 
     $('bench-btn').onclick = async () => {
@@ -242,6 +253,8 @@
         targets: targets,
         n_predict: parseInt($('bench-npredict').value, 10) || 256,
         api_key: $('bench-key').value.trim() || null,
+        transport: $('bench-transport').value,
+        model: $('bench-model').value.trim() || null,
       }, $('bench-btn'), $('bench-msg'), 'Kick off bench');
       if (data) setMsg($('bench-msg'),
         'Run #' + data.run_id + ' stored: ' +
