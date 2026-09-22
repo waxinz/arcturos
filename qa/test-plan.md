@@ -140,3 +140,12 @@ eval payloads for J3/J4 implementation.
 
 A milestone is "done" when: all mapped tests pass on taupo, the live smoke
 layer exercises the feature against :24816, and AGENTS.md §6 records it.
+| S28 | default run name is humanized `host · model · targets` | `tests/test_ops_dispatch.py::test_default_run_name_humanized` | done |
+| S29 | custom name flows through dispatch (native + openai) into the stored run | `tests/test_ops_dispatch.py::test_dispatch_bench_custom_name_stored`, `tests/test_ops_dispatch.py::test_dispatch_bench_openai_name_stored` | done |
+| S30 | unnamed dispatch stores the computed default name | `tests/test_ops_dispatch.py::test_dispatch_bench_default_name_when_unnamed` | done |
+| S31 | eval replay creates an eval_runs row; items stamp eval_run_id; name stored (or NULL) | `tests/test_ops_dispatch.py::test_dispatch_eval_creates_named_eval_run`, `tests/test_ops_dispatch.py::test_dispatch_eval_unnamed_eval_run_stores_null_name` | done |
+| S32 | name is the only mutable column on runs (trigger-guarded label) | `tests/test_api.py` rename route contract + db trigger checks | done |
+| S33 | /runs second column shows the name (`—` when unset) | `tests/test_api.py::test_runs_list_page_shows_name_column` | done |
+| S34 | compare legends + 📌 baseline label + diff headers prefer the name | `tests/test_compare.py` payload assertions + static-source checks | done |
+| S35 | TTFT renders in seconds (ms÷1000) across run detail, live table, compare | `tests/test_ops_api.py::test_create_view_ttft_column_shows_seconds` + static-source checks | done |
+| S36 | live-job detail table scrolls horizontally instead of clipping | `tests/test_ops_api.py::test_create_view_detail_table_scroll_container` | done |

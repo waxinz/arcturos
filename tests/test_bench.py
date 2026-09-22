@@ -272,6 +272,7 @@ def test_capture_engine_metadata_missing_endpoint_tolerated():
     assert meta == {
         "n_ctx": None, "model_path": None, "build": None,
         "engine": None, "system_info": None,
+        "model_fingerprint": None,
     }
 
 

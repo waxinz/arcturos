@@ -347,6 +347,15 @@ never hidden by default, never silently dropped.
   and strings pass through untouched. Display rounding is
   presentation-only: storage, the API, and CSV exports keep full
   fidelity.
+- **Time units (added 2026-09-22):** every duration renders in SECONDS
+  at 2dp — TTFT (`ttft_ms`, stored in ms) is divided by 1000 at render
+  time and labelled `TTFT (s)` / `ttft (s)`; wall time is already
+  seconds. Storage, the API, and CSV exports keep raw milliseconds.
+  Applies to run detail, the live job table, compare charts, and diff.
+- **Wide tables (added 2026-09-22):** detail tables that exceed their
+  panel scroll horizontally inside it (`.table-scroll` wrapper,
+  `min-width` + `nowrap` cells) — the panel grows with content and
+  never clips or overlays the next card.
 - **Deltas:** always paired absolute + %; colored; a delta without its base
   run ID in the tooltip is a bug.
 - **IDs everywhere:** run IDs, result-set IDs, judgment-set IDs are shown,

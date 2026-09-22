@@ -192,6 +192,22 @@ the launch surface, not only the reading surface).
   list and run-detail pages badge partial runs; the live job panel links
   to the partial run instead of dead-ending. Nothing measured is ever
   discarded; failed points are simply absent.
+- **Run naming (added 2026-09-22):** every benchmark run and eval run
+  carries an optional human `name`. Default (unset): `host · model ·
+  targets` computed at dispatch time from engine metadata, context
+  targets humanized (32768 → `32k`; non-kibibyte values stay raw). The
+  name is a LABEL, not measurement data: stored on the run row
+  (`runs.name`, trigger-guarded so ONLY this column is mutable),
+  editable before kick-off (`name` field on /create + dispatch APIs) or
+  afterwards on the run-detail page (`PATCH /api/runs/{id}/name`),
+  rename history is not kept — the column holds the current label, the
+  measurements around it stay immutable. Eval runs gain a real entity:
+  `eval_runs` (one replay = one row) and `eval_results.eval_run_id`
+  stamping, so a replay batch is addressable and nameable. Surfaces:
+  /runs second column, run-detail meta, compare chart legends +
+  📌 baseline label, diff headers, CSV exports. Honest fallback: unset
+  names render `—` in tables; legends/headers fall back to the model
+  fingerprint.
 - **Append-only preserved:** dispatch only ever INSERTs. Re-runs supersede.
   There is no edit/delete of stored data anywhere in the UI or API.
 - **Power provenance (ADR 002):** `benchmarks.power_host` /

@@ -46,7 +46,7 @@
   <table>
     <thead>
       <tr>
-        <th>ID</th><th>Server</th><th>Model fingerprint</th>
+        <th>ID</th><th>Name</th><th>Server</th><th>Model fingerprint</th>
         <th>Engine</th><th>Context size</th><th>Created (UTC)</th><th></th>
       </tr>
     </thead>
@@ -66,7 +66,8 @@
         for (const r of runs) {
           const tr = document.createElement('tr');
           const cells = [
-            r.id, r.server_url, r.model_fingerprint,
+            r.name || '—',           // Name: second column (2026-09-22)
+            r.server_url, r.model_fingerprint,
             r.engine, r.context_size, r.created_at
           ];
           const first = document.createElement('td');

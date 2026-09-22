@@ -27,7 +27,7 @@ def test_create_view_live_table_single_stream_stays_compact(client):
     """Default (single-stream) live table keeps the compact 7-column head —
     Σ columns only appear when a job actually runs parallel streams."""
     html = client.get("/create").text
-    assert "<th>ttft</th><th>wall</th><th>streams</th>" in html
+    assert "<th>ttft (s)</th><th>wall</th><th>streams</th>" in html
     # the static default head (server-rendered) has no Σ columns
     assert "Σ prefill" not in html.split('id="bp-head"')[1].split("</tr>")[0]
 
@@ -207,3 +207,42 @@ def test_hidden_run_rejected_as_baseline_reference(client):
         f"&baseline={b['id']}")
     assert r.status_code == 404
     assert "hidden" in r.json()["detail"]
+
+
+def test_create_view_ttft_column_shows_seconds(client):
+    """TTFT displays in seconds (2026-09-22 UX rule): live-table headers
+    say 'ttft (s)' and the row renderer divides stored ms by 1000."""
+    html = client.get("/create").text
+    assert "<th>ttft (s)</th>" in html
+    assert "secs(p.ttft_ms)" in html          # ms -> s at render time
+    assert "cell(p.ttft_ms, ' ms')" not in html
+
+
+def test_create_view_detail_table_scroll_container(client):
+    """The live-job detail table lives in a horizontal-scroll wrapper so
+    wide tables grow the panel instead of clipping under the next card."""
+    html = client.get("/create").text
+    assert 'class="table-scroll"' in html
+    assert ".bp-detail .table-scroll { overflow-x: auto; }" in html
+    assert "min-width: 480px" in html
+
+
+def test_runs_view_name_column(client):
+    """/runs page renders the Name column header (second column) and the
+    row template reads r.name with an honest '—' fallback."""
+    html = client.get("/runs").text
+    assert "<th>Name</th>" in html
+    assert "r.name || '—'" in html
+
+
+def test_compare_view_legend_prefers_run_name(client):
+    """compare.html legendName() prefers r.name over the model label."""
+    html = client.get("/compare").text
+    assert "function legendName" in html
+    assert "r.name" in html.split("function legendName")[1].split("}")[0]
+
+
+def test_diff_view_headers_use_run_name(client):
+    """diff.html 'Metrics — A vs B' headers prefer run names."""
+    html = client.get("/diff").text
+    assert "data.run_a.name || data.run_a.model_fingerprint_short" in html
