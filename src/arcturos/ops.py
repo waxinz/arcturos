@@ -20,6 +20,7 @@ from typing import Any
 
 from arcturos import bench
 from arcturos import bench_openai
+from arcturos import power
 from arcturos import multiturn as mt
 from arcturos import preflight
 
@@ -61,6 +62,8 @@ def dispatch_bench(
     transport_name: str | None = None,
     model: str | None = None,
     streams: int = 1,
+    power_host: str | None = None,
+    power_gpu_index: int = 0,
 ) -> dict:
     """Run a cold-cache bench sweep; store run + points; return run payload.
 
@@ -80,9 +83,11 @@ def dispatch_bench(
       reports client-side TTFT + decode with the prefill estimate.
       ``model`` (the chat model name) is required for this transport.
 
-      Power stays None for the openai transport: ADR 002 forbids watts
-      without a dedicated-host sampler, and an OpenAI endpoint may sit
-      behind a proxy with no knowable serving host.
+      Power is opt-in for every transport: pass ``power_host`` (a
+      dedicated inference host per ADR 002) to run an SSH nvidia-smi
+      sampler alongside each point; without it watts stay None. An
+      OpenAI endpoint may sit behind a proxy with no knowable serving
+      host, so the host must be named explicitly — never inferred.
 
     ``transport`` (the ``transport=None`` kwarg) is the injectable httpx
     transport used by the native path's preflight/completion/props and by
@@ -108,6 +113,9 @@ def dispatch_bench(
     if not isinstance(streams, int) or isinstance(streams, bool) \
             or not (1 <= streams <= 16):
         raise DispatchError("streams must be an int between 1 and 16")
+    if power_host is not None and (not isinstance(power_host, str)
+                                   or not power_host.strip()):
+        raise DispatchError("power_host must be a non-empty string when set")
     pf = preflight.preflight(
         server_url,
         kind="bench" if transport_name == "native" else "eval",
@@ -131,7 +139,8 @@ def dispatch_bench(
         points = _run_openai_bench_points(
             server_url, model, targets, n_predict,
             timeout=timeout, on_point=on_point, api_key=api_key,
-            streams=streams)
+            streams=streams, power_host=power_host,
+            power_gpu_index=power_gpu_index)
         engine_meta = _openai_engine_meta(model)
     run_id = bench.store_benchmark_run(db_path, server_url, engine_meta, points,
                                        engine="openai"
@@ -151,6 +160,9 @@ def dispatch_bench(
                 "mtp_accepted": p.mtp_accepted,
                 "prompt_tokens": p.prompt_tokens,
                 "stop_reason": p.stop_reason,
+                "power_watts": p.power_watts,
+                "power_host": p.power_host,
+                "power_gpu_index": p.power_gpu_index,
                 "streams": p.streams,
                 "decode_tps_combined": p.decode_tps_combined,
                 "prefill_tps_combined": p.prefill_tps_combined,
@@ -179,7 +191,8 @@ def _plan_openai_points(targets: list[int],
 
 
 def _openai_point_to_bench_point(
-    op: "bench_openai.OpenAIBenchPoint", target_tokens: int
+    op: "bench_openai.OpenAIBenchPoint", target_tokens: int,
+    power: dict | None = None,
 ) -> bench.BenchPoint:
     """Map one OpenAI stream point into the native BenchPoint shape.
 
@@ -187,10 +200,14 @@ def _openai_point_to_bench_point(
     decode = resolved rate (server-authoritative usage timing when the
     final chunk carries it, client chunk-rate fallback otherwise — the
     fallback rejects burst-flushed spans), prefill = prompt_tokens/ttft
-    (an estimate, not server-authoritative). MTP fields stay None —
-    OpenAI responses carry no draft acceptance. Power stays None — ADR 002
-    (no watts without a dedicated-host sampler).
+    (an estimate, not server-authoritative). MTP fields map from the
+    server's speculative-decoding counters when the final usage chunk
+    carries them (tabbyAPI: accepted/rejected_prediction_tokens);
+    absent counters stay None — honest nulls. Power comes only from an
+    explicit opt-in sampler (ADR 002: no watts without a dedicated-host
+    sampler); None otherwise.
     """
+    power = power or {}
     return bench.BenchPoint(
         target_tokens=target_tokens,
         prefill_tps=op.prefill_tps_estimate,
@@ -198,13 +215,13 @@ def _openai_point_to_bench_point(
         ttft_ms=op.ttft_ms,
         wall_s=op.wall_s,
         output_tokens=op.completion_tokens,
-        mtp_draft_n=None,
-        mtp_accepted=None,
+        mtp_draft_n=op.mtp_draft_n,
+        mtp_accepted=op.mtp_accepted,
         stop_reason=op.stop_reason,
         prompt_tokens=op.prompt_tokens,
-        power_watts=None,
-        power_host=None,
-        power_gpu_index=None,
+        power_watts=power.get("watts"),
+        power_host=power.get("host"),
+        power_gpu_index=power.get("gpu_index"),
     )
 
 
@@ -217,6 +234,8 @@ def _run_openai_bench_points(
     on_point=None,
     api_key: str | None = None,
     streams: int = 1,
+    power_host: str | None = None,
+    power_gpu_index: int = 0,
 ) -> list[bench.BenchPoint]:
     """Sweep one OpenAI-compatible target over the given context lengths.
 
@@ -249,7 +268,26 @@ def _run_openai_bench_points(
             return _openai_point_to_bench_point(_one_stream(),
                                                 plan.target_tokens)
 
-        point = bench.run_point_streams(_one_mapped_stream, streams)
+        # Opt-in power sampling (ADR 002): when the dispatcher names a
+        # dedicated host, one SSH sampler runs alongside the point and its
+        # mean W annotates every stream in the aggregate. (The local is
+        # power_info, NOT power — that name is the module import here.)
+        power_info = None
+        sampler = None
+        if power_host:
+            sampler = power.PowerSampler(power_host, gpu_index=power_gpu_index)
+            sampler.start()
+        try:
+            point = bench.run_point_streams(_one_mapped_stream, streams)
+        finally:
+            if sampler is not None:
+                watts = sampler.stop()
+                power_info = {"watts": watts, "host": power_host,
+                              "gpu_index": power_gpu_index}
+        if power_info:
+            point.power_watts = power_info["watts"]
+            point.power_host = power_info["host"]
+            point.power_gpu_index = power_info["gpu_index"]
         points.append(point)
         if on_point is not None:
             on_point(point)
@@ -343,6 +381,8 @@ def run_bench_job(
     transport_name: str,
     model: str | None,
     streams: int = 1,
+    power_host: str | None = None,
+    power_gpu_index: int = 0,
 ) -> str:
     """Validate + snapshot a job, spawn the sweep in a daemon thread.
 
@@ -404,7 +444,8 @@ def run_bench_job(
                 db_path=db_path, server_url=server_url, targets=targets,
                 n_predict=n_predict, api_key=api_key,
                 transport_name=transport_name, model=model,
-                on_point=on_point, streams=streams)
+                on_point=on_point, streams=streams,
+                power_host=power_host, power_gpu_index=power_gpu_index)
             with _JOBS_LOCK:
                 job["status"] = "done"
                 job["run_id"] = result["run_id"]
