@@ -199,3 +199,98 @@ def test_client_rate_used_when_span_real_and_no_server_timing():
     # 5 content chunks over a 0.4 s span (0.1 s per tick) -> 12.5 chunks/s
     assert p.decode_tps_client == 12.5
     assert p.decode_tps == 12.5
+
+
+def test_vllm_reasoning_key_ttft_and_client_rate():
+    # Run-19 class: vLLM emits reasoning under delta key `reasoning`
+    # (NOT `reasoning_content`) and its usage carries no timing fields.
+    # TTFT must fire on the first reasoning chunk, and the client-rate
+    # fallback must count reasoning chunks so decode populates.
+    import itertools
+    import json as _json
+    from unittest.mock import MagicMock
+    lines = []
+    for rc in ["thin", "king", "hard"]:
+        lines.append("data: " + _json.dumps(
+            {"choices": [{"delta": {"reasoning": rc}, "finish_reason": None}]}))
+    for i in range(2):
+        lines.append("data: " + _json.dumps(
+            {"choices": [{"delta": {"content": f"tok{i}"},
+                          "finish_reason": None}]}))
+    lines.append("data: " + _json.dumps(
+        {"choices": [{"delta": {}, "finish_reason": "stop"}],
+         "usage": {"prompt_tokens": 10, "completion_tokens": 5}}))
+    fake = "\n\n".join(lines) + "\n\n"
+    clock = MagicMock()
+    clock.monotonic.side_effect = itertools.count(0, 0.1)
+    with patch("arcturos.bench_openai.time", clock), \
+         patch("arcturos.bench_openai.urlreq.urlopen", return_value=_FakeResp(fake)):
+        p = run_openai_stream_point("http://fake:8000/v1", "m",
+                                    [{"role": "user", "content": "x"}])
+    assert p.ttft_ms is not None  # first reasoning chunk counts
+    assert p.completion_tokens == 5
+    assert p.prompt_tokens == 10
+    assert p.prefill_tps_estimate is not None
+    # vLLM usage has no completion_tokens_per_sec / completion_time
+    assert p.decode_tps_server is None
+    assert p.completion_time_s is None
+    # 5 payload chunks (3 reasoning + 2 content) over a 0.4 s span
+    assert p.decode_tps_client == 12.5
+    assert p.decode_tps == 12.5
+
+
+def test_vllm_usage_without_timing_fields_stays_null():
+    # vLLM usage chunk: bare token counts only. The decode resolution
+    # chain must keep honest nulls (no fabricated server rate).
+    import json as _json
+    lines = []
+    for i in range(3):
+        lines.append("data: " + _json.dumps(
+            {"choices": [{"delta": {"content": f"t{i}"}, "finish_reason": None}]}))
+    lines.append("data: " + _json.dumps(
+        {"choices": [{"delta": {}, "finish_reason": "stop"}],
+         "usage": {"prompt_tokens": 64, "completion_tokens": 128,
+                   "total_tokens": 192}}))
+    fake = "\n\n".join(lines) + "\n\n"
+    with patch("arcturos.bench_openai.urlreq.urlopen", return_value=_FakeResp(fake)):
+        p = run_openai_stream_point("http://fake:8000/v1", "m",
+                                    [{"role": "user", "content": "x"}])
+    assert p.decode_tps_server is None
+    assert p.completion_time_s is None
+    assert p.completion_tokens == 128
+    assert p.prompt_tokens == 64
+    # instant fake stream -> burst floor rejects the client rate too
+    assert p.decode_tps_client is None
+    assert p.decode_tps is None
+
+
+def test_reasoning_content_stream_still_measured():
+    # Regression: tabbyAPI-style `reasoning_content` streams keep firing
+    # TTFT and counting toward the client-rate fallback.
+    import itertools
+    import json as _json
+    from unittest.mock import MagicMock
+    lines = []
+    for rc in ["We", " need"]:
+        lines.append("data: " + _json.dumps(
+            {"choices": [{"delta": {"reasoning_content": rc},
+                          "finish_reason": None}]}))
+    lines.append("data: " + _json.dumps(
+        {"choices": [{"delta": {"content": "answer"}, "finish_reason": None}]}))
+    lines.append("data: " + _json.dumps(
+        {"choices": [{"delta": {}, "finish_reason": "stop"}],
+         "usage": {"prompt_tokens": 10, "completion_tokens": 3}}))
+    fake = "\n\n".join(lines) + "\n\n"
+    clock = MagicMock()
+    clock.monotonic.side_effect = itertools.count(0, 0.15)
+    with patch("arcturos.bench_openai.time", clock), \
+         patch("arcturos.bench_openai.urlreq.urlopen", return_value=_FakeResp(fake)):
+        p = run_openai_stream_point("http://fake:8000/v1", "m",
+                                    [{"role": "user", "content": "x"}])
+    assert p.ttft_ms is not None
+    assert p.decode_tps_server is None
+    assert p.completion_time_s is None
+    # 3 payload chunks (2 reasoning_content + 1 content) over a 0.3 s span
+    # (0.15 s per tick) -> 10.0 chunks/s
+    assert p.decode_tps_client == 10.0
+    assert p.decode_tps == 10.0
