@@ -85,13 +85,16 @@
   <script>
     const METRICS = [
       'decode_tps', 'prefill_tps', 'ttft_ms', 'wall_s',
-      'output_tokens', 'mtp_acceptance', 'power_watts'
+      'output_tokens', 'mtp_acceptance', 'power_watts',
+      'decode_tps_combined', 'prefill_tps_combined'
     ];
     const METRIC_LABELS = {
       decode_tps: 'decode tok/s', prefill_tps: 'prefill tok/s',
       ttft_ms: 'TTFT (ms)', wall_s: 'wall time (s)',
       output_tokens: 'output tokens', mtp_acceptance: 'MTP acceptance',
-      power_watts: 'power (W)'
+      power_watts: 'power (W)',
+      decode_tps_combined: 'Σ decode tok/s (combined)',
+      prefill_tps_combined: 'Σ prefill tok/s (combined)'
     };
     const PALETTE = ['#0b6bcb', '#e07b39', '#2fa36b', '#9b59b6', '#c0392b', '#16a085'];
     const charts = {};
@@ -350,7 +353,8 @@
                 // power_watts stays uncolored: the API direction map marks
                 // it neutral (informational), so the view must not verdict it.
                 const higherBetter = ['decode_tps', 'prefill_tps',
-                  'output_tokens', 'mtp_acceptance'];
+                  'output_tokens', 'mtp_acceptance',
+                  'decode_tps_combined', 'prefill_tps_combined'];
                 const good = higherBetter.includes(metric)
                   ? row.delta_pct > 0 : row.delta_pct < 0;
                 td.style.color = good ? '#0a7f36' : '#b00020';

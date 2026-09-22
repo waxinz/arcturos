@@ -144,6 +144,47 @@ def test_compare_metrics_default_to_all_when_omitted(client):
     }
 
 
+def test_compare_combined_throughput_series(client):
+    """Combined (Σ across streams) metrics are selectable and plot their
+    stored values (2026-09-22: exposed as compare-page checkboxes)."""
+    a, b = _seed_two_runs(client)
+    # The shared fixtures leave combined columns NULL (single-stream class);
+    # seed explicit multi-stream points so the series has real values.
+    _add_benchmarks(client, a, [
+        {"context_tokens": 4096, "decode_tps": 56.8, "streams": 4,
+         "decode_tps_combined": 227.2, "prefill_tps_combined": 1904.8},
+    ])
+    res = client.get(
+        f"/api/compare/benchmarks?runs={a},{b}"
+        "&metrics=decode_tps_combined,prefill_tps_combined"
+    )
+    assert res.status_code == 200, res.text
+    data = res.json()
+    assert data["metrics"] == ["decode_tps_combined", "prefill_tps_combined"]
+    dec = data["series"]["decode_tps_combined"][str(a)]
+    assert [p["context_tokens"] for p in dec] == [4096, 65536]
+    assert dec[0]["value"] == 227.2
+    assert dec[1]["value"] is None  # 65536 point has no combined value
+    pre = data["series"]["prefill_tps_combined"][str(a)]
+    assert pre[0]["value"] == 1904.8
+
+
+def test_compare_combined_honest_null_when_not_multi_stream(client):
+    """A single-stream point stores NULL for the combined columns — the
+    series keeps the point with value null (never dropped, never zeroed)."""
+    a = _create_run(client, RUN_A)
+    _add_benchmarks(client, a, BENCH_A)  # no streams field -> defaults to 1
+    res = client.get(
+        f"/api/compare/benchmarks?runs={a}&metrics=decode_tps_combined"
+    )
+    assert res.status_code == 200, res.text
+    points = res.json()["series"]["decode_tps_combined"][str(a)]
+    assert points == [
+        {"context_tokens": 4096, "value": None},
+        {"context_tokens": 65536, "value": None},
+    ]
+
+
 def test_mtp_acceptance_null_when_draft_fields_absent(client):
     run_id = _create_run(client, RUN_A)
     # Point with no MTP counters at all -> acceptance must be null, point kept.
@@ -243,6 +284,41 @@ def test_run_diff_404_when_run_missing(client):
     a, _ = _seed_two_runs(client)
     assert client.get(f"/api/compare/run-diff/{a}/9999").status_code == 404
     assert client.get("/api/compare/run-diff/9999/1").status_code == 404
+
+
+def test_run_diff_combined_metrics_direction_and_deltas(client):
+    """Combined (Σ) throughput appears in run diffs as higher-is-better,
+    and stays null when a side has no multi-stream point."""
+    a, b = _seed_two_runs(client)
+    _add_benchmarks(client, a, [
+        {"context_tokens": 4096, "decode_tps": 56.8, "streams": 4,
+         "decode_tps_combined": 227.2},
+    ])
+    _add_benchmarks(client, b, [
+        {"context_tokens": 4096, "decode_tps": 74.3, "streams": 2,
+         "decode_tps_combined": 148.6},
+    ])
+    res = client.get(f"/api/compare/run-diff/{a}/{b}")
+    assert res.status_code == 200, res.text
+    data = res.json()
+    assert data["directions"]["decode_tps_combined"] == "higher"
+    assert data["directions"]["prefill_tps_combined"] == "higher"
+    ctx4096 = data["deltas"][0]
+    dec = ctx4096["metrics"]["decode_tps_combined"]
+    assert dec["a"] == 227.2 and dec["b"] == 148.6
+    assert dec["delta"] == pytest.approx(148.6 - 227.2)
+    assert dec["pct"] == pytest.approx((148.6 - 227.2) / 227.2 * 100)
+
+
+def test_compare_page_lists_combined_metric_checkboxes(client):
+    """/compare exposes the combined metrics as selectable checkboxes so
+    they can be plotted like any other metric (static source: the checkbox
+    values live in the METRICS array literal, labels in METRIC_LABELS)."""
+    html = client.get("/compare").text
+    assert "'decode_tps_combined'" in html
+    assert "'prefill_tps_combined'" in html
+    assert "Σ decode tok/s (combined)" in html
+    assert "Σ prefill tok/s (combined)" in html
 
 
 # ------------------------------------------------------------ views ---------
