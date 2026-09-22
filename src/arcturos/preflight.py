@@ -34,16 +34,33 @@ def _health_url(base_url: str) -> str:
 
 
 def _check_reachable(base_url: str, client: httpx.Client) -> dict:
+    """'Reachable' means: something answered over HTTP.
+
+    A non-200 /health is a WARNING, not a failure: llama.cpp /health
+    reports slot occupancy (503 while slots are busy), and tabbyAPI
+    aggregates unrelated internal issues into its /health status — both
+    serve inference fine while 'unhealthy'. Genuine connectivity errors
+    (connection refused, timeout) still fail the check; the chat/tokenize
+    probes gate the actual endpoints.
+    """
     try:
         resp = client.get(_health_url(base_url))
-        ok = resp.status_code == 200
-        detail = "GET /health -> 200" if ok else f"GET /health -> HTTP {resp.status_code}"
-        if not ok:
-            detail += " (server up but /health unhappy; may still work)"
+        if resp.status_code == 200:
+            return {"name": "reachable", "ok": True,
+                    "detail": "GET /health -> 200"}
+        # Server answered but /health is unhappy — degrade to a warning.
+        body = ""
+        try:
+            body = resp.text[:200]
+        except Exception:  # noqa: BLE001 — body is best-effort context
+            pass
+        return {"name": "reachable", "ok": True,
+                "detail": (f"GET /health -> HTTP {resp.status_code} "
+                           f"(server up; /health unhappy — non-blocking) "
+                           f"{body}")}
     except httpx.HTTPError as exc:
-        ok = False
-        detail = f"GET /health failed: {exc}"
-    return {"name": "reachable", "ok": ok, "detail": detail}
+        return {"name": "reachable", "ok": False,
+                "detail": f"GET /health failed: {exc}"}
 
 
 def _check_tokenize(base_url: str, client: httpx.Client) -> dict:

@@ -116,7 +116,10 @@ def test_dispatch_bench_preflight_failure_is_actionable(db_path):
                            transport=transport)
     except ops.DispatchError as exc:
         msg = str(exc)
-        assert "preflight failed (reachable" in msg
+        # /health 503 is a non-blocking warning now; the gate fires
+        # on the tokenize 401 (auth required) instead.
+        assert "preflight failed (tokenize)" in msg
+        assert "401" in msg
         assert "http://fake:8000" in msg
         assert "Check target" in msg
 
