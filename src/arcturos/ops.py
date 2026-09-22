@@ -325,6 +325,7 @@ def run_bench_job(
     api_key: str | None,
     transport_name: str,
     model: str | None,
+    streams: int = 1,
 ) -> str:
     """Validate + snapshot a job, spawn the sweep in a daemon thread.
 
@@ -358,6 +359,7 @@ def run_bench_job(
         "server_url": server_url,
         "transport": transport_name,
         "model": model,
+        "streams": streams,
         "targets_total": len(targets),
         "points_done": 0,
         "points": [],
