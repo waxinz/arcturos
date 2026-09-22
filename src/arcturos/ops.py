@@ -12,7 +12,9 @@ eval_results). There is no UPDATE/DELETE path anywhere.
 
 from __future__ import annotations
 
+import threading
 import time
+import uuid
 
 from typing import Any
 
@@ -247,6 +249,144 @@ def _openai_engine_meta(model: str) -> dict:
         "engine": "openai",
         "system_info": None,
     }
+
+
+# ----------------------------------------------------- async bench jobs -----
+# In-process job registry for the async bench API. Jobs are metadata only
+# (status/progress/ETA); every measured value still lands in the append-only
+# store via the normal dispatch path, so a dashboard restart loses at most
+# the live progress view — never data. Bounded: finished jobs older than
+# _JOB_TTL are dropped on each new submission.
+_JOBS: dict[str, dict[str, Any]] = {}
+_JOBS_LOCK = threading.Lock()
+_JOB_TTL_S = 3600.0
+
+
+def _prune_jobs() -> None:
+    now = time.monotonic()
+    for job_id in [j for j, rec in _JOBS.items()
+                   if rec["status"] in ("done", "error")
+                   and now - rec["finished_at"] > _JOB_TTL_S]:
+        _JOBS.pop(job_id, None)
+
+
+def bench_job_status(job_id: str) -> dict[str, Any] | None:
+    """Snapshot of one job record (thread-safe shallow copy)."""
+    with _JOBS_LOCK:
+        rec = _JOBS.get(job_id)
+        return dict(rec) if rec is not None else None
+
+
+def _track_point(job: dict[str, Any], point) -> None:
+    """on_point hook: record the finished point and recompute the ETA.
+
+    ETA is self-correcting: remaining = elapsed/points_done * points_left,
+    recomputed from actuals after every point (no wall-clock guessing).
+    """
+    job["points_done"] += 1
+    job["points"].append({
+        "context_tokens": point.target_tokens,
+        "prefill_tps": point.prefill_tps,
+        "decode_tps": point.decode_tps,
+        "ttft_ms": point.ttft_ms,
+        "wall_s": point.wall_s,
+        "output_tokens": point.output_tokens,
+    })
+    done = job["points_done"]
+    elapsed = time.monotonic() - job["started_at"]
+    remaining = job["targets_total"] - done
+    job["eta_s"] = round(elapsed / done * remaining, 1) if remaining and done else None
+    job["status_line"] = (f"point {done}/{job['targets_total']} complete "
+                          f"({point.target_tokens} tokens, {point.wall_s:.1f}s)")
+
+
+def run_bench_job(
+    db_path,
+    server_url: str,
+    targets: list[int],
+    n_predict: int,
+    api_key: str | None,
+    transport_name: str,
+    model: str | None,
+) -> str:
+    """Validate + snapshot a job, spawn the sweep in a daemon thread.
+
+    Returns the job id immediately. Validation errors raise DispatchError
+    synchronously (the HTTP layer maps them to 422 before any thread
+    starts); everything that happens inside the thread is reported via
+    the job record, never raised.
+    """
+    if transport_name is None:
+        transport_name = "native"
+    if transport_name not in _BENCH_TRANSPORTS:
+        raise DispatchError(
+            f"unknown transport {transport_name!r} — expected one of "
+            f"{', '.join(_BENCH_TRANSPORTS)}")
+    if transport_name == "openai" and not (isinstance(model, str) and model):
+        raise DispatchError(
+            "transport 'openai' requires 'model' (the chat model name the "
+            "target serves)")
+    if not targets:
+        raise DispatchError("targets list is empty")
+    if any(t < 1 for t in targets):
+        raise DispatchError("every target must be >= 1 token")
+    if n_predict < 1:
+        raise DispatchError("n_predict must be >= 1")
+
+    _prune_jobs()
+    job_id = uuid.uuid4().hex[:12]
+    job: dict[str, Any] = {
+        "job_id": job_id,
+        "status": "preflight",          # preflight | running | done | error
+        "server_url": server_url,
+        "transport": transport_name,
+        "model": model,
+        "targets_total": len(targets),
+        "points_done": 0,
+        "points": [],
+        "status_line": "validating + preflight…",
+        "eta_s": None,
+        "started_at": time.monotonic(),
+        "finished_at": None,
+        "run_id": None,
+        "error": None,
+    }
+    with _JOBS_LOCK:
+        _JOBS[job_id] = job
+
+    def _worker() -> None:
+        try:
+            def on_point(point) -> None:
+                with _JOBS_LOCK:
+                    job["status"] = "running"
+                    job["status_line"] = (f"point {job['points_done'] + 1}/"
+                                          f"{job['targets_total']} "
+                                          f"({point.target_tokens} tokens) streaming…")
+                _track_point(job, point)
+
+            result = dispatch_bench(
+                db_path=db_path, server_url=server_url, targets=targets,
+                n_predict=n_predict, api_key=api_key,
+                transport_name=transport_name, model=model,
+                on_point=on_point)
+            with _JOBS_LOCK:
+                job["status"] = "done"
+                job["run_id"] = result["run_id"]
+                job["status_line"] = (f"run #{result['run_id']} stored "
+                                      f"({job['targets_total']} points)")
+                job["finished_at"] = time.monotonic()
+                job["eta_s"] = 0.0
+        except Exception as exc:  # noqa: BLE001 — the thread IS the report
+            with _JOBS_LOCK:
+                job["status"] = "error"
+                job["error"] = str(exc)
+                job["status_line"] = f"failed: {exc}"
+                job["finished_at"] = time.monotonic()
+                job["eta_s"] = None
+
+    threading.Thread(target=_worker, name=f"bench-job-{job_id}",
+                     daemon=True).start()
+    return job_id
 
 
 def _preflight_detail(target: str, pf) -> str:
