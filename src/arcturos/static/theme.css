@@ -4,6 +4,7 @@
    text #F8F8F2, muted #6272A4, purple accent, cyan links — a widely
    loved dark palette tuned for long technical sessions. */
 :root {
+  color-scheme: light;
   --bg: #fafafa;
   --text: #1a1a1a;
   --text-muted: #666;
@@ -36,9 +37,11 @@
   --fp-text: #333;
   --win-a-bg: #f0faf2;
   --pf-btn: #555;
+  --btn-bg: #1a1a1a; --btn-text: #fff;
 }
 
 html[data-theme="dark"] {
+  color-scheme: dark;
   --bg: #282A36;            /* Dracula background */
   --text: #F8F8F2;          /* Dracula foreground */
   --text-muted: #9DA5C4;    /* lifted comment grey for AA on #282A36 */
@@ -71,6 +74,7 @@ html[data-theme="dark"] {
   --fp-text: #BD93F9;
   --win-a-bg: #1f3a2e;
   --pf-btn: #44475A;
+  --btn-bg: #BD93F9; --btn-text: #282A36;   /* purple button, dark text */
 }
 
 /* Toggle button — right edge of the nav bar */
@@ -91,3 +95,23 @@ nav .theme-toggle:hover {
   background: var(--neutral-bg);
   border-color: var(--border-strong);
 }
+
+/* Form controls follow the theme (UA defaults paint them white in dark
+   mode otherwise) — the Create & Run complaint. */
+input, textarea, select {
+  background: var(--surface);
+  color: var(--text);
+  border-color: var(--input-border);
+}
+input:focus, textarea:focus, select:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+input::placeholder, textarea::placeholder { color: var(--null); }
+
+/* Links: explicit visited state so the browser-default purple never
+   bleeds through (the second complaint). Visited keeps the same hue —
+   differentiation comes from context, not a jarring purple. */
+a { color: var(--link); }
+a:visited { color: var(--link); }
+a:hover, a:active { color: var(--accent); }

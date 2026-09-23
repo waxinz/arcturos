@@ -671,6 +671,15 @@ def test_theme_assets_served(client):
     assert 'data-theme="dark"' in css.text or "data-theme" in css.text
     assert "America/Los_Angeles" not in js.text  # fallback is LA only in app-time
     assert "Dracula" in css.text                 # palette provenance comment
+    # Dark-mode form controls: explicit surface background + text color
+    # (UA defaults paint inputs white in dark mode otherwise).
+    assert "input, textarea, select {" in css.text
+    assert "background: var(--surface);" in css.text
+    assert "color-scheme: dark" in css.text
+    # Visited links keep the theme hue — no browser-default purple.
+    assert "a:visited { color: var(--link); }" in css.text
+    runs = client.get("/runs").text
+    assert "nav a:visited { color: var(--text); }" in runs
 
 
 def test_theme_toggle_on_every_page(client):
