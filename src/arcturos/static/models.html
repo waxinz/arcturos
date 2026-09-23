@@ -7,32 +7,35 @@
   <link rel="icon" type="image/png" sizes="32x32" href="/static/icons/scorpio-favicon-32.png">
   <link rel="icon" type="image/png" sizes="180x180" href="/static/icons/scorpio-favicon-180.png">
   <title>Arcturos — Models</title>
+  <link rel="stylesheet" href="/static/theme.css">
   <style>
     body { font-family: system-ui, -apple-system, sans-serif; margin: 2rem auto;
-           max-width: 960px; color: #1a1a1a; background: #fafafa; }
-    header { border-bottom: 2px solid #222; padding-bottom: .5rem; margin-bottom: 1.5rem; }
+           max-width: 960px; color: var(--text); background: var(--bg); }
+    header { border-bottom: 2px solid var(--text-heading); padding-bottom: .5rem; margin-bottom: 1.5rem; }
     h1 { font-size: 1.6rem; margin: 0; }
-    .sub { color: #666; margin-top: .25rem; }
-    table { border-collapse: collapse; width: 100%; background: #fff; }
-    th, td { text-align: left; padding: .5rem .75rem; border-bottom: 1px solid #e5e5e5;
+    .sub { color: var(--text-muted); margin-top: .25rem; }
+    table { border-collapse: collapse; width: 100%; background: var(--surface); }
+    th, td { text-align: left; padding: .5rem .75rem; border-bottom: 1px solid var(--border);
              font-size: .9rem; }
-    th { font-weight: 600; color: #444; }
+    th { font-weight: 600; color: var(--text-soft); }
     td.mono { font-family: ui-monospace, monospace; font-size: .82rem; word-break: break-all; }
-    .status { color: #666; font-size: .85rem; margin-top: .75rem; }
-    nav a { margin-right: 1rem; color: #1a1a1a; text-decoration: none; font-weight: 600; }
+    .status { color: var(--text-muted); font-size: .85rem; margin-top: .75rem; }
+    nav a { margin-right: 1rem; color: var(--text); text-decoration: none; font-weight: 600; }
     nav a.active { text-decoration: underline; }
-    .card { background: #fff; border: 1px solid #e5e5e5; padding: 1rem; margin-bottom: 1rem; }
+    .card { background: var(--surface); border: 1px solid var(--border); padding: 1rem; margin-bottom: 1rem; }
     .card h3 { margin: 0 0 .5rem; font-size: 1.05rem; }
-    .card .fp { font-family: ui-monospace, monospace; font-size: .8rem; color: #333;
+    .card .fp { font-family: ui-monospace, monospace; font-size: .8rem; color: var(--fp-text);
                 word-break: break-all; }
-    .card .meta { color: #666; font-size: .85rem; margin-top: .5rem; }
+    .card .meta { color: var(--text-muted); font-size: .85rem; margin-top: .5rem; }
     .card label { display: block; margin-top: .75rem; font-size: .85rem; font-weight: 600; }
     .card input { width: 60%; padding: .35rem; margin-top: .25rem; }
     .card button { margin-top: .5rem; padding: .3rem .8rem; }
     .msg { font-size: .85rem; margin-top: .25rem; }
-    .msg.ok { color: #0a7f36; }
-    .msg.err { color: #b00020; }
+    .msg.ok { color: var(--ok); }
+    .msg.err { color: var(--err); }
   </style>
+  <script src="/static/app-time.js"></script>
+  <script src="/static/theme.js"></script>
 </head>
 <body>
   <header>
@@ -87,8 +90,8 @@
           const parts = [
             'engine: ' + (m.engine || '—'),
             'runs: ' + m.run_count,
-            'first seen: ' + (m.first_seen || '—'),
-            'last seen: ' + (m.last_seen || '—')
+            'first seen: ' + fmtLocalTime(m.first_seen),
+            'last seen: ' + fmtLocalTime(m.last_seen)
           ];
           meta.textContent = parts.join(' · ');
           card.appendChild(meta);

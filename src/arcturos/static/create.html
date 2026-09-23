@@ -7,53 +7,54 @@
   <link rel="icon" type="image/png" sizes="32x32" href="/static/icons/scorpio-favicon-32.png">
   <link rel="icon" type="image/png" sizes="180x180" href="/static/icons/scorpio-favicon-180.png">
   <title>Arcturos — Create &amp; Run</title>
+  <link rel="stylesheet" href="/static/theme.css">
   <style>
     body { font-family: system-ui, -apple-system, sans-serif; margin: 2rem auto;
-           max-width: 1080px; color: #1a1a1a; background: #fafafa; }
-    header { border-bottom: 2px solid #222; padding-bottom: .5rem; margin-bottom: 1.5rem; }
+           max-width: 1080px; color: var(--text); background: var(--bg); }
+    header { border-bottom: 2px solid var(--text-heading); padding-bottom: .5rem; margin-bottom: 1.5rem; }
     h1 { font-size: 1.6rem; margin: 0; }
     h2 { font-size: 1.25rem; margin-top: 2rem; }
-    .sub { color: #666; margin-top: .25rem; }
-    nav a { margin-right: 1rem; color: #1a1a1a; text-decoration: none; font-weight: 600; }
+    .sub { color: var(--text-muted); margin-top: .25rem; }
+    nav a { margin-right: 1rem; color: var(--text); text-decoration: none; font-weight: 600; }
     nav a.active { text-decoration: underline; }
     .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 1rem; }
-    .card { background: #fff; border: 1px solid #e5e5e5; border-radius: 6px; padding: 1rem; }
+    .card { background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 1rem; }
     .card h3 { margin: 0 0 .75rem; font-size: 1rem; }
-    label { display: block; font-size: .85rem; font-weight: 600; color: #444;
+    label { display: block; font-size: .85rem; font-weight: 600; color: var(--text-soft);
             margin: .5rem 0 .2rem; }
     input, textarea, select { width: 100%; box-sizing: border-box; padding: .35rem;
-            font-size: .9rem; border: 1px solid #ccc; border-radius: 4px; }
+            font-size: .9rem; border: 1px solid var(--input-border); border-radius: 4px; }
     textarea { font-family: ui-monospace, monospace; font-size: .8rem; min-height: 90px; }
     button { margin-top: .6rem; padding: .45rem 1rem; font-size: .9rem;
-             background: #222; color: #fff; border: 0; border-radius: 4px; cursor: pointer; }
-    button:disabled { background: #999; cursor: wait; }
+             background: var(--text-heading); color: var(--surface); border: 0; border-radius: 4px; cursor: pointer; }
+    button:disabled { background: var(--disabled); cursor: wait; }
     .msg { margin-top: .5rem; font-size: .85rem; min-height: 1.1em; }
     .bp-status a, .msg a { color: inherit; text-decoration: underline;
                            font-weight: 600; }
-    .msg.err { color: #b00020; }
-    .msg.ok { color: #0a7d2c; }
-    .hint { color: #777; font-size: .78rem; margin: .3rem 0; }
+    .msg.err { color: var(--err); }
+    .msg.ok { color: var(--ok); }
+    .hint { color: var(--hint); font-size: .78rem; margin: .3rem 0; }
     .row2 { display: flex; gap: .6rem; } .row2 > div { flex: 1; }
     .benchprog { margin-top: .7rem; display: none; }
     .benchprog.active { display: block; }
-    .bp-barwrap { position: relative; height: 18px; background: #e8e8e8;
+    .bp-barwrap { position: relative; height: 18px; background: var(--bar-track);
                   border-radius: 9px; overflow: hidden; }
-    .bp-bar { height: 100%; width: 0%; background: linear-gradient(90deg,#2e7d32,#66bb6a);
+    .bp-bar { height: 100%; width: 0%; background: linear-gradient(90deg,var(--bar-fill-a),var(--bar-fill-b));
               transition: width .6s ease; }
     .bp-bar.indeterminate { width: 100% !important;
-      background: repeating-linear-gradient(45deg,#90a4ae,#90a4ae 12px,#b0bec5 12px,#b0bec5 24px);
+      background: repeating-linear-gradient(45deg,var(--bar-stripe-a),var(--bar-stripe-a) 12px,var(--bar-stripe-b) 12px,var(--bar-stripe-b) 24px);
       animation: bp-slide 1.2s linear infinite; }
     @keyframes bp-slide { from { background-position: 0 0; } to { background-position: 34px 0; } }
     .bp-pct { position: absolute; inset: 0; display: flex; align-items: center;
               justify-content: center; font-size: .72rem; font-weight: 700;
-              color: #102a10; text-shadow: 0 0 3px rgba(255,255,255,.7); }
+              color: var(--bar-text); text-shadow: 0 0 3px rgba(255,255,255,.7); }
     .bp-status { font-size: .82rem; margin-top: .35rem; }
-    .bp-clock { font-size: .78rem; color: #555; margin-top: .1rem;
+    .bp-clock { font-size: .78rem; color: var(--clock); margin-top: .1rem;
                 font-variant-numeric: tabular-nums; }
-    .bp-toggle { background: none; border: none; color: #1a56a0; font-size: .78rem;
+    .bp-toggle { background: none; border: none; color: var(--link); font-size: .78rem;
                  padding: 0; margin-top: .3rem; cursor: pointer; text-decoration: underline; }
     .bp-detail { display: none; margin-top: .4rem; font-size: .78rem;
-                 border-top: 1px dashed #ccc; padding-top: .4rem; }
+                 border-top: 1px dashed var(--input-border); padding-top: .4rem; }
     .bp-detail.open { display: block; }
     /* Wide tables must not clip or overlay the next card: the panel grows
        with content and the table scrolls horizontally inside it. */
@@ -61,13 +62,15 @@
                        min-width: 480px; }
     .bp-detail .table-scroll { overflow-x: auto; }
     .bp-detail th, .bp-detail td { text-align: left; padding: 2px 4px;
-                                   border-bottom: 1px solid #eee;
+                                   border-bottom: 1px solid var(--border);
                                    white-space: nowrap; }
-    .bp-detail th { color: #666; font-weight: 600; }
-    .bp-ev { color: #444; font-family: ui-monospace, monospace; font-size: .72rem;
+    .bp-detail th { color: var(--text-muted); font-weight: 600; }
+    .bp-ev { color: var(--text-soft); font-family: ui-monospace, monospace; font-size: .72rem;
              margin: 2px 0; white-space: nowrap; overflow: hidden;
              text-overflow: ellipsis; }
   </style>
+  <script src="/static/app-time.js"></script>
+  <script src="/static/theme.js"></script>
 </head>
 <body>
   <header>
@@ -132,7 +135,7 @@
       </div>
       <div class="row2">
         <div><button id="bench-btn" style="width:100%">▶ Kick off bench</button></div>
-        <div><button id="bench-pf-btn" style="width:100%; background:#555">✔ Check target</button></div>
+        <div><button id="bench-pf-btn" style="width:100%; background:var(--pf-btn)">✔ Check target</button></div>
       </div>
       <div id="bench-msg" class="msg"></div>
       <div id="bench-progress" class="benchprog">
@@ -182,7 +185,7 @@
       </div>
       <div class="row2">
         <div><button id="eval-btn" style="width:100%">▶ Kick off eval replay</button></div>
-        <div><button id="eval-pf-btn" style="width:100%; background:#555">✔ Check target</button></div>
+        <div><button id="eval-pf-btn" style="width:100%; background:var(--pf-btn)">✔ Check target</button></div>
       </div>
       <div id="eval-msg" class="msg"></div>
     </div>

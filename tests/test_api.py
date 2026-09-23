@@ -660,3 +660,40 @@ def test_runs_page_name_column_not_shifted(client):
     assert i_name < i_loop, "name cell must be appended before the data loop"
     # the name expression must feed nameCell, not the skipped cells array
     assert "nameCell.textContent = r.display_name || r.name" in html
+
+
+def test_theme_assets_served(client):
+    """Shared theme stylesheet + toggle script are served."""
+    css = client.get("/static/theme.css")
+    js = client.get("/static/theme.js")
+    assert css.status_code == 200
+    assert js.status_code == 200
+    assert 'data-theme="dark"' in css.text or "data-theme" in css.text
+    assert "America/Los_Angeles" not in js.text  # fallback is LA only in app-time
+    assert "Dracula" in css.text                 # palette provenance comment
+
+
+def test_theme_toggle_on_every_page(client):
+    """Every dashboard page wires theme.js + app-time.js."""
+    for path in ["/runs", "/runs/1", "/compare", "/diff", "/create",
+                 "/evals", "/judgments", "/reports", "/models", "/baselines"]:
+        html = client.get(path).text
+        assert "/static/theme.js" in html, path
+        assert "/static/app-time.js" in html, path
+
+
+def test_datetime_surfaces_use_local_time(client):
+    """Datetime cells render via fmtLocalTime (viewer timezone, Pacific
+    fallback); the '(UTC)' header claim is gone."""
+    runs = client.get("/runs").text
+    assert "fmtLocalTime(r.created_at)" in runs
+    assert "Created (UTC)" not in runs
+    detail = client.get("/runs/1").text
+    assert "fmtLocalTime(run.created_at)" in detail
+    assert "fmtLocalTime(p.created_at)" in detail
+    compare = client.get("/compare").text
+    assert "fmtLocalTime(r[k])" in compare
+    baselines = client.get("/baselines").text
+    assert "fmtLocalTime(b.run_created_at)" in baselines
+    models = client.get("/models").text
+    assert "fmtLocalTime(m.first_seen)" in models

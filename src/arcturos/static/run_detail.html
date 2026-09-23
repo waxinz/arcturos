@@ -7,41 +7,44 @@
   <link rel="icon" type="image/png" sizes="32x32" href="/static/icons/scorpio-favicon-32.png">
   <link rel="icon" type="image/png" sizes="180x180" href="/static/icons/scorpio-favicon-180.png">
   <title>Arcturos — Run detail</title>
+  <link rel="stylesheet" href="/static/theme.css">
   <style>
     body { font-family: system-ui, -apple-system, sans-serif; margin: 2rem auto;
-           max-width: 1080px; color: #1a1a1a; background: #fafafa; }
-    header { border-bottom: 2px solid #222; padding-bottom: .5rem; margin-bottom: 1.5rem; }
+           max-width: 1080px; color: var(--text); background: var(--bg); }
+    header { border-bottom: 2px solid var(--text-heading); padding-bottom: .5rem; margin-bottom: 1.5rem; }
     h1 { font-size: 1.6rem; margin: 0; }
-    .sub { color: #666; margin-top: .25rem; }
-    nav a { margin-right: 1rem; color: #1a1a1a; text-decoration: none; font-weight: 600; }
-    table { border-collapse: collapse; width: 100%; background: #fff; margin-top: 1rem; }
-    th, td { text-align: left; padding: .5rem .75rem; border-bottom: 1px solid #e5e5e5;
+    .sub { color: var(--text-muted); margin-top: .25rem; }
+    nav a { margin-right: 1rem; color: var(--text); text-decoration: none; font-weight: 600; }
+    table { border-collapse: collapse; width: 100%; background: var(--surface); margin-top: 1rem; }
+    th, td { text-align: left; padding: .5rem .75rem; border-bottom: 1px solid var(--border);
              font-size: .9rem; }
-    th { font-weight: 600; color: #444; }
+    th { font-weight: 600; color: var(--text-soft); }
     td.mono { font-family: ui-monospace, monospace; font-size: .82rem; }
-    .meta { background: #fff; border: 1px solid #e5e5e5; border-radius: 6px;
+    .meta { background: var(--surface); border: 1px solid var(--border); border-radius: 6px;
             padding: .8rem 1rem; margin-top: 1rem; }
-    .meta dt { font-weight: 600; font-size: .85rem; color: #444; margin-top: .4rem; }
+    .meta dt { font-weight: 600; font-size: .85rem; color: var(--text-soft); margin-top: .4rem; }
     .meta dd { font-family: ui-monospace, monospace; font-size: .82rem;
                margin: 0 0 .2rem .8rem; word-break: break-all; }
-    .status { color: #666; font-size: .85rem; margin-top: .75rem; }
-    .empty { color: #666; padding: 2rem; text-align: center; }
-    .null { color: #767676; } /* 4.5:1 on white — WCAG AA (UX review) */
+    .status { color: var(--text-muted); font-size: .85rem; margin-top: .75rem; }
+    .empty { color: var(--text-muted); padding: 2rem; text-align: center; }
+    .null { color: var(--null); } /* 4.5:1 on white — WCAG AA (UX review) */
     .run-name-line { margin: .4rem 0 0; font-size: 1.05rem; }
     .run-name-line .name-value { font-weight: 600; }
-    .run-name-line .name-unnamed { color: #767676; font-style: italic; }
+    .run-name-line .name-unnamed { color: var(--null); font-style: italic; }
     .run-name-line input { font-size: 1rem; padding: .25rem .5rem;
-                           border: 1px solid #bbb; border-radius: 4px;
+                           border: 1px solid var(--input-border); border-radius: 4px;
                            width: min(28rem, 90%); }
     .run-name-line .linklike { font-size: .85rem; margin-left: .5rem; }
     .actions { margin-top: 1rem; }
     .actions a, .actions button { margin-right: .75rem; padding: .4rem .8rem;
                                   font-size: .88rem; cursor: pointer; }
     .env-block { margin-top: 1rem; }
-    .env-block pre { background: #fff; border: 1px solid #e5e5e5; padding: .6rem;
+    .env-block pre { background: var(--surface); border: 1px solid var(--border); padding: .6rem;
                      font-size: .8rem; overflow-x: auto; }
     .table-wrap { overflow-x: auto; }
   </style>
+  <script src="/static/app-time.js"></script>
+  <script src="/static/theme.js"></script>
 </head>
 <body>
   <header>
@@ -108,7 +111,7 @@
       const r = reasonOverride || cellReason(v);
       if (r) {
         td.title = r;
-        td.style.color = '#767676';
+        td.style.color = 'var(--null)';
       }
       if (extra) td.textContent = cellText(v) + extra;
     }
@@ -127,7 +130,7 @@
           const warn = document.createElement('span');
           warn.textContent = '  ⚠ partial — sweep failed mid-way';
           warn.title = 'Completed points are preserved; failed points are absent';
-          warn.style.color = '#b45309';
+          warn.style.color = 'var(--warn)';
           document.getElementById('run-title').appendChild(warn);
         }
         // textContent-built meta card: no innerHTML injection from API strings
@@ -135,7 +138,7 @@
         meta.innerHTML = '';  // static empty shell, no data
         for (const [k, v] of [['Server', run.server_url], ['Engine', run.engine],
                               ['Context size', run.context_size],
-                              ['Created', run.created_at]]) {
+                              ['Created', fmtLocalTime(run.created_at)]]) {
           const dt = document.createElement('dt'); dt.textContent = k;
           const dd = document.createElement('dd');
           dd.textContent = (v === null || v === undefined) ? '—' : String(v);
@@ -341,7 +344,7 @@
             // through. Storage/exports keep raw ms.
             (p.ttft_ms == null ? null : p.ttft_ms / 1000), p.wall_s,
             p.output_tokens, p.streams, mtp, power,
-            p.created_at];
+            fmtLocalTime(p.created_at)];
           for (let i = 0; i < cells.length; i++) {
             const c = cells[i];
             const td = document.createElement('td');

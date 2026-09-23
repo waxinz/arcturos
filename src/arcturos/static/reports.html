@@ -7,34 +7,37 @@
   <link rel="icon" type="image/png" sizes="32x32" href="/static/icons/scorpio-favicon-32.png">
   <link rel="icon" type="image/png" sizes="180x180" href="/static/icons/scorpio-favicon-180.png">
   <title>Arcturos — Reports</title>
+  <link rel="stylesheet" href="/static/theme.css">
   <style>
     body { font-family: system-ui, -apple-system, sans-serif; margin: 2rem auto;
-           max-width: 1080px; color: #1a1a1a; background: #fafafa; }
-    header { border-bottom: 2px solid #222; padding-bottom: .5rem; margin-bottom: 1.5rem; }
+           max-width: 1080px; color: var(--text); background: var(--bg); }
+    header { border-bottom: 2px solid var(--text-heading); padding-bottom: .5rem; margin-bottom: 1.5rem; }
     h1 { font-size: 1.6rem; margin: 0; }
     h2 { font-size: 1.3rem; }
-    .sub { color: #666; margin-top: .25rem; }
-    nav a { margin-right: 1rem; color: #1a1a1a; text-decoration: none; font-weight: 600; }
+    .sub { color: var(--text-muted); margin-top: .25rem; }
+    nav a { margin-right: 1rem; color: var(--text); text-decoration: none; font-weight: 600; }
     nav a.active { text-decoration: underline; }
     .controls { margin: 1rem 0; display: flex; gap: 1.5rem; flex-wrap: wrap; align-items: end; }
-    .controls label { font-size: .9rem; font-weight: 600; color: #444; }
+    .controls label { font-size: .9rem; font-weight: 600; color: var(--text-soft); }
     .controls select { margin-left: .4rem; padding: .3rem; font-size: .9rem; min-width: 280px; }
-    .card { background: #fff; border: 1px solid #e5e5e5; border-radius: 6px;
+    .card { background: var(--surface); border: 1px solid var(--border); border-radius: 6px;
             padding: .8rem; margin-bottom: 1.2rem; }
-    .card h3 { margin: 0 0 .5rem; font-size: 1rem; color: #222; }
+    .card h3 { margin: 0 0 .5rem; font-size: 1rem; color: var(--text-heading); }
     table { border-collapse: collapse; width: 100%; }
-    th, td { text-align: left; padding: .4rem .6rem; border-bottom: 1px solid #e5e5e5;
+    th, td { text-align: left; padding: .4rem .6rem; border-bottom: 1px solid var(--border);
              font-size: .88rem; vertical-align: top; }
-    th { font-weight: 600; color: #444; }
+    th { font-weight: 600; color: var(--text-soft); }
     td.mono { font-family: ui-monospace, monospace; font-size: .8rem; }
     td.num { text-align: right; font-family: ui-monospace, monospace; font-size: .8rem; }
-    .pct { color: #555; }
-    pre { background: #fff; border: 1px solid #e5e5e5; border-radius: 6px;
+    .pct { color: var(--clock); }
+    pre { background: var(--surface); border: 1px solid var(--border); border-radius: 6px;
           padding: .8rem; overflow-x: auto; font-size: .8rem; line-height: 1.4; }
-    .status { color: #666; font-size: .85rem; margin-top: .75rem; }
-    .empty { color: #666; padding: 2rem; text-align: center; }
+    .status { color: var(--text-muted); font-size: .85rem; margin-top: .75rem; }
+    .empty { color: var(--text-muted); padding: 2rem; text-align: center; }
     .big { font-size: 1.05rem; font-weight: 600; }
   </style>
+  <script src="/static/app-time.js"></script>
+  <script src="/static/theme.js"></script>
 </head>
 <body>
   <header>

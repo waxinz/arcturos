@@ -7,23 +7,26 @@
   <link rel="icon" type="image/png" sizes="32x32" href="/static/icons/scorpio-favicon-32.png">
   <link rel="icon" type="image/png" sizes="180x180" href="/static/icons/scorpio-favicon-180.png">
   <title>Arcturos</title>
+  <link rel="stylesheet" href="/static/theme.css">
   <style>
     body { font-family: system-ui, -apple-system, sans-serif; margin: 2rem auto;
-           max-width: 960px; color: #1a1a1a; background: #fafafa; }
-    header { border-bottom: 2px solid #222; padding-bottom: .5rem; margin-bottom: 1.5rem; }
+           max-width: 960px; color: var(--text); background: var(--bg); }
+    header { border-bottom: 2px solid var(--text-heading); padding-bottom: .5rem; margin-bottom: 1.5rem; }
     h1 { font-size: 1.6rem; margin: 0; }
-    .sub { color: #666; margin-top: .25rem; }
-    table { border-collapse: collapse; width: 100%; background: #fff; }
-    th, td { text-align: left; padding: .5rem .75rem; border-bottom: 1px solid #e5e5e5;
+    .sub { color: var(--text-muted); margin-top: .25rem; }
+    table { border-collapse: collapse; width: 100%; background: var(--surface); }
+    th, td { text-align: left; padding: .5rem .75rem; border-bottom: 1px solid var(--border);
              font-size: .9rem; }
-    th { font-weight: 600; color: #444; }
+    th { font-weight: 600; color: var(--text-soft); }
     td.mono { font-family: ui-monospace, monospace; font-size: .82rem; }
-    .status { color: #666; font-size: .85rem; margin-top: .75rem; }
-    nav a { margin-right: 1rem; color: #1a1a1a; text-decoration: none; font-weight: 600; }
+    .status { color: var(--text-muted); font-size: .85rem; margin-top: .75rem; }
+    nav a { margin-right: 1rem; color: var(--text); text-decoration: none; font-weight: 600; }
     nav a.active { text-decoration: underline; }
-    .linklike { background: none; border: none; color: #1a56a0; font-size: .8rem;
+    .linklike { background: none; border: none; color: var(--link); font-size: .8rem;
                  padding: 0; cursor: pointer; text-decoration: underline; }
   </style>
+  <script src="/static/app-time.js"></script>
+  <script src="/static/theme.js"></script>
 </head>
 <body>
   <header>
@@ -47,7 +50,7 @@
     <thead>
       <tr>
         <th>ID</th><th>Name</th><th>Server</th><th>Model fingerprint</th>
-        <th>Engine</th><th>Context size</th><th>Created (UTC)</th><th></th>
+        <th>Engine</th><th>Context size</th><th>Created</th><th></th>
       </tr>
     </thead>
     <tbody id="runs-body"></tbody>
@@ -72,7 +75,7 @@
           nameCell.textContent = r.display_name || r.name || '—';
           const cells = [
             r.server_url, r.model_fingerprint,
-            r.engine, r.context_size, r.created_at
+            r.engine, r.context_size, fmtLocalTime(r.created_at)
           ];
           const first = document.createElement('td');
           const link = document.createElement('a');
@@ -85,7 +88,7 @@
             const badge = document.createElement('span');
             badge.textContent = ' ⚠ partial';
             badge.title = 'Sweep failed mid-way — completed points preserved';
-            badge.style.color = '#b45309';
+            badge.style.color = 'var(--warn)';
             first.appendChild(badge);
           }
           tr.appendChild(first);
