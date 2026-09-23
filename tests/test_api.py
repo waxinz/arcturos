@@ -569,3 +569,17 @@ def test_run_detail_page_shows_name_row(client):
     run_id = client.post("/api/runs", json=RUN).json()["id"]
     html = client.get(f"/runs/{run_id}").text
     assert "['Name', run.name || '—']" in html
+
+
+def test_run_detail_page_rename_control(client):
+    """Run-detail page carries the ✎ Rename control wired to the rename
+    API: prompt pre-filled with the current name, empty submit clears
+    back to the default rendering (null), cancel is a no-op."""
+    run_id = client.post("/api/runs", json=RUN).json()["id"]
+    html = client.get(f"/runs/{run_id}").text
+    assert "✎ Rename" in html
+    assert "'/api/runs/' + run.id + '/name'" in html
+    assert "method: 'PATCH'" in html
+    assert "name: next.trim() || null" in html      # empty -> clear (null)
+    assert "next === null" in html                   # cancel is a no-op
+    assert "Run name (empty = clear back to default)" in html
