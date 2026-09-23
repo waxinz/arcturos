@@ -257,7 +257,9 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
         db.execute("UPDATE runs SET name = ? WHERE id = ?",
                    (name.strip() if isinstance(name, str) else None, run_id))
         db.commit()
-        return fetch_one(db, "SELECT * FROM runs WHERE id = ?", (run_id,))
+        run = fetch_one(db, "SELECT * FROM runs WHERE id = ?", (run_id,))
+        run["display_name"] = run.get("name") or _unnamed_run_label(run)
+        return run
 
     @app.get("/api/runs")
     def list_runs(db=Depends(get_db), include_hidden: bool = False,
@@ -280,13 +282,27 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
         where = [w for w in where if not w.startswith("NOT EXISTS")]
         where.insert(0, base)
         sql = "SELECT * FROM runs WHERE " + " AND ".join(where) + " ORDER BY id"
-        return fetch_all(db, sql, tuple(params))
+        rows = fetch_all(db, sql, tuple(params))
+        # Display name (2026-09-22 naming UX round): the Runs page must
+        # show a usable label for EVERY run, including legacy rows that
+        # predate the name column. A stored name is authoritative; an
+        # unnamed run falls back to 'host · model-short' computed at read
+        # time (no data mutation — append-only rows stay untouched).
+        for row in rows:
+            row["display_name"] = row.get("name") or _unnamed_run_label(row)
+        return rows
+
+    def _unnamed_run_label(row: dict) -> str:
+        host = compare.host_label(row["server_url"])
+        model = compare.short_fingerprint(row["model_fingerprint"])
+        return f"{host} · {model}"
 
     @app.get("/api/runs/{run_id}")
     def get_run(run_id: int, db=Depends(get_db)):
         run = fetch_one(db, "SELECT * FROM runs WHERE id = ?", (run_id,))
         if run is None:
             raise HTTPException(status_code=404, detail=f"run id {run_id} not found")
+        run["display_name"] = run.get("name") or _unnamed_run_label(run)
         return run
 
     # -------------------------------------------------------- benchmarks --
