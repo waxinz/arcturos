@@ -7,37 +7,40 @@
   <link rel="icon" type="image/png" sizes="32x32" href="/static/icons/scorpio-favicon-32.png">
   <link rel="icon" type="image/png" sizes="180x180" href="/static/icons/scorpio-favicon-180.png">
   <title>Arcturos — Run Diff</title>
+  <link rel="stylesheet" href="/static/theme.css">
   <style>
     body { font-family: system-ui, -apple-system, sans-serif; margin: 2rem auto;
-           max-width: 1080px; color: #1a1a1a; background: #fafafa; }
-    header { border-bottom: 2px solid #222; padding-bottom: .5rem; margin-bottom: 1.5rem; }
+           max-width: 1080px; color: var(--text); background: var(--bg); }
+    header { border-bottom: 2px solid var(--text-heading); padding-bottom: .5rem; margin-bottom: 1.5rem; }
     h1 { font-size: 1.6rem; margin: 0; }
-    .sub { color: #666; margin-top: .25rem; }
-    nav a { margin-right: 1rem; color: #1a1a1a; text-decoration: none; font-weight: 600; }
+    .sub { color: var(--text-muted); margin-top: .25rem; }
+    nav a { margin-right: 1rem; color: var(--text); text-decoration: none; font-weight: 600; }
     nav a.active { text-decoration: underline; }
     .controls { margin: 1rem 0; display: flex; gap: 1.5rem; align-items: end; flex-wrap: wrap; }
-    .controls label { font-size: .9rem; font-weight: 600; color: #444; }
+    .controls label { font-size: .9rem; font-weight: 600; color: var(--text-soft); }
     .controls select { margin-left: .4rem; padding: .3rem; font-size: .9rem; min-width: 260px; }
     button { padding: .45rem .9rem; font-size: .9rem; cursor: pointer; }
-    table { border-collapse: collapse; width: 100%; background: #fff; margin-bottom: 1.5rem; }
-    th, td { text-align: left; padding: .45rem .6rem; border-bottom: 1px solid #e5e5e5;
+    table { border-collapse: collapse; width: 100%; background: var(--surface); margin-bottom: 1.5rem; }
+    th, td { text-align: left; padding: .45rem .6rem; border-bottom: 1px solid var(--border);
              font-size: .88rem; }
-    th { font-weight: 600; color: #444; }
+    th { font-weight: 600; color: var(--text-soft); }
     th.ctx { width: 90px; }
     td.mono { font-family: ui-monospace, monospace; font-size: .8rem; }
     td.num { text-align: right; font-family: ui-monospace, monospace; font-size: .8rem; }
-    td.good { background: #d9f2e0; color: #14532d; font-weight: 600; }
-    td.bad  { background: #fbe0e0; color: #7f1d1d; font-weight: 600; }
-    td.gray { color: #777; }
-    .meta { background: #fff; border: 1px solid #e5e5e5; border-radius: 6px;
+    td.good { background: var(--good-bg); color: var(--good-text); font-weight: 600; }
+    td.bad  { background: var(--bad-red-bg); color: var(--bad-red-text); font-weight: 600; }
+    td.gray { color: var(--hint); }
+    .meta { background: var(--surface); border: 1px solid var(--border); border-radius: 6px;
             padding: .8rem; margin-bottom: 1.2rem; }
     .meta h3 { margin: 0 0 .5rem; font-size: 1rem; }
-    .legend { color: #666; font-size: .82rem; margin-bottom: .8rem; }
+    .legend { color: var(--text-muted); font-size: .82rem; margin-bottom: .8rem; }
     .legend span { display: inline-block; padding: .1rem .45rem; margin-right: .5rem;
                    border-radius: 4px; }
-    .status { color: #666; font-size: .85rem; margin-top: .75rem; }
-    .empty { color: #666; padding: 2rem; text-align: center; }
+    .status { color: var(--text-muted); font-size: .85rem; margin-top: .75rem; }
+    .empty { color: var(--text-muted); padding: 2rem; text-align: center; }
   </style>
+  <script src="/static/app-time.js"></script>
+  <script src="/static/theme.js"></script>
 </head>
 <body>
   <header>
