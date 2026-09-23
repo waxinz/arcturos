@@ -1,5 +1,7 @@
 """J3 multi-turn replay tests — validation, placeholder filling, reasoning fallback."""
 
+import io
+import json
 import sys
 from pathlib import Path
 from unittest.mock import patch
@@ -9,7 +11,8 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parent / "src"))
 
 from arcturos.multiturn import (  # noqa: E402
-    extract_output, replay_multiturn, validate_multiturn_item,
+    extract_output, post_openai_chat, replay_multiturn,
+    validate_multiturn_item,
 )
 
 
@@ -120,3 +123,59 @@ def test_replay_multi_assistant_placeholder_count():
         recs = replay_multiturn("http://fake:8000", item)
     assert len(recs) == 3
     assert recs[-1]["item_id"] == "mt-1#t3"
+
+
+def test_validate_rejects_bad_roles_and_non_string_user_content():
+    """The remaining validator branches: bad role values and non-string
+    user-turn content are rejected; system/assistant-only shapes without
+    a user turn still need an assistant placeholder."""
+    with pytest.raises(ValueError, match="bad role"):
+        validate_multiturn_item(_item(turns=[
+            {"role": "system", "content": "x"},
+            {"role": "assistant", "content": None}]))
+    with pytest.raises(ValueError, match="string 'content'"):
+        validate_multiturn_item(_item(turns=[
+            {"role": "user", "content": 42},
+            {"role": "assistant", "content": None}]))
+    with pytest.raises(ValueError, match="bad role"):
+        validate_multiturn_item(_item(turns=[
+            {"role": "user", "content": "hi"},
+            {"role": "tool", "content": "x"},
+            {"role": "assistant", "content": None}]))
+
+
+def test_post_openai_chat_strips_v1_suffix_and_sends_bearer():
+    """post_openai_chat: /v1 suffix stripped exactly once, Bearer header
+    only when a key is present, model passed through, stream off."""
+    captured = {}
+
+    class FakeResp(io.BytesIO):
+        def __enter__(self):
+            return self
+
+    payload = json.dumps({"model": "m", "messages": [{"role": "user",
+                          "content": "hi"}], "max_tokens": 512,
+                          "temperature": 0.0, "stream": False}).encode()
+
+    def fake_urlopen(req, timeout=None):
+        captured["url"] = req.full_url
+        captured["headers"] = dict(req.header_items())
+        captured["data"] = req.data
+        return FakeResp(b'{"choices": [{"message": {"content": "ok"}}],'
+                        b' "usage": {"prompt_tokens": 1, "completion_tokens": 1}}')
+
+    with patch("arcturos.multiturn.urlreq.urlopen", side_effect=fake_urlopen):
+        resp = post_openai_chat("http://host:4000/v1/", [{"role": "user",
+                                "content": "hi"}], api_key="sk-test",
+                                model="judge-x")
+    assert captured["url"] == "http://host:4000/v1/chat/completions"
+    assert captured["headers"].get("Authorization") == "Bearer sk-test"
+    assert json.loads(captured["data"])["model"] == "judge-x"
+    assert resp["choices"][0]["message"]["content"] == "ok"
+
+    # No key -> no Authorization header at all.
+    captured.clear()
+    with patch("arcturos.multiturn.urlreq.urlopen", side_effect=fake_urlopen):
+        post_openai_chat("http://host:4000", [{"role": "user",
+                         "content": "hi"}])
+    assert "Authorization" not in captured["headers"]

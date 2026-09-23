@@ -246,3 +246,62 @@ def test_diff_view_headers_use_run_name(client):
     """diff.html 'Metrics — A vs B' headers prefer run names."""
     html = client.get("/diff").text
     assert "data.run_a.name || data.run_a.model_fingerprint_short" in html
+
+
+def test_bench_job_endpoint_validation_errors(client):
+    """POST /api/ops/bench/jobs validates synchronously: bad shapes are
+    422 with actionable detail, before any thread starts."""
+    bad_bodies = [
+        ({}, "server_url"),
+        ({"server_url": "ftp://x"}, "server_url"),
+        ({"server_url": "http://x", "targets": "nope"}, "targets"),
+        ({"server_url": "http://x", "targets": [0]}, "targets"),
+        ({"server_url": "http://x", "targets": [512], "n_predict": 0}, "n_predict"),
+        ({"server_url": "http://x", "targets": [512], "transport": "grpc"}, "transport"),
+        ({"server_url": "http://x", "targets": [512], "streams": 0}, "streams"),
+        ({"server_url": "http://x", "targets": [512], "streams": True}, "streams"),
+        ({"server_url": "http://x", "targets": [512], "power_host": ""}, "power_host"),
+        ({"server_url": "http://x", "targets": [512], "power_gpu_index": -1}, "power_gpu_index"),
+        ({"server_url": "http://x", "targets": [512], "name": ""}, "name"),
+    ]
+    for body, needle in bad_bodies:
+        r = client.post("/api/ops/bench/jobs", json=body)
+        assert r.status_code == 422, (body, r.status_code)
+        assert needle in r.json()["detail"]
+
+
+def test_bench_job_status_unknown_id_404(client):
+    r = client.get("/api/ops/bench/jobs/does-not-exist")
+    assert r.status_code == 404
+    assert "not found" in r.json()["detail"]
+
+
+def test_eval_dispatch_validation_errors(client):
+    """POST /api/ops/eval rejects bad shapes with 422 before touching
+    the target: suite_id, target URL, fingerprint, suite payload, name."""
+    base = {"suite_id": 1, "target": "http://10.10.10.14:8080",
+            "model_fingerprint": "m", "suite": {"items": []}}
+    r = client.post("/api/ops/eval", json={**base, "suite_id": "one"})
+    assert r.status_code == 422 and "suite_id" in r.json()["detail"]
+    r = client.post("/api/ops/eval", json={**base, "target": "ftp://x"})
+    assert r.status_code == 422 and "target" in r.json()["detail"]
+    r = client.post("/api/ops/eval", json={**base, "model_fingerprint": ""})
+    assert r.status_code == 422 and "model_fingerprint" in r.json()["detail"]
+    r = client.post("/api/ops/eval", json={**base, "suite": "nope"})
+    assert r.status_code == 422 and "suite" in r.json()["detail"]
+    r = client.post("/api/ops/eval", json={**base, "name": ""})
+    assert r.status_code == 422 and "name" in r.json()["detail"]
+
+
+def test_preflight_endpoints_validation_errors(client):
+    """Both preflight surfaces reject bad target/kind with 422."""
+    r = client.post("/api/ops/preflight", json={"target": "ftp://x"})
+    assert r.status_code == 422 and "target" in r.json()["detail"]
+    r = client.post("/api/ops/preflight",
+                    json={"target": "http://x", "kind": "nope"})
+    assert r.status_code == 422 and "kind" in r.json()["detail"]
+    r = client.get("/api/ops/preflight", params={"target": "no-scheme"})
+    assert r.status_code == 422 and "target" in r.json()["detail"]
+    r = client.get("/api/ops/preflight",
+                   params={"target": "http://x", "kind": "nope"})
+    assert r.status_code == 422 and "kind" in r.json()["detail"]

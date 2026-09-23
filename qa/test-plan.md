@@ -149,3 +149,31 @@ layer exercises the feature against :24816, and AGENTS.md §6 records it.
 | S34 | compare legends + 📌 baseline label + diff headers prefer the name | `tests/test_compare.py` payload assertions + static-source checks | done |
 | S35 | TTFT renders in seconds (ms÷1000) across run detail, live table, compare | `tests/test_ops_api.py::test_create_view_ttft_column_shows_seconds` + static-source checks | done |
 | S36 | live-job detail table scrolls horizontally instead of clipping | `tests/test_ops_api.py::test_create_view_detail_table_scroll_container` | done |
+
+## Coverage validation (2026-09-22 final check-in)
+
+Measured with pytest-cov (`pytest --cov=src/arcturos`):
+
+| Module | Stmts | Cover |
+|---|---|---|
+| schemas.py | 74 | 99% |
+| multiturn.py | 59 | 98% |
+| bench_openai.py | 110 | 97% |
+| power.py | 45 | 100% |
+| preflight.py | 64 | 94% |
+| bench_stream.py | 65 | 94% |
+| compare.py | 121 | 93% |
+| reports.py | 77 | 92% |
+| bench.py | 226 | 91% |
+| main.py | 493 | 91% |
+| db.py | 63 | 89% |
+| ops.py | 247 | 84% |
+| **TOTAL** | **1645** | **92%** |
+
+232 tests, all passing. The remaining uncovered lines are dominated by
+interactive/live paths that require a real inference server (live bench
+sweeps against dead targets, thread-timing edges in the async job
+registry, preflight network error branches) — these are exercised by
+the live-validation passes recorded in AGENTS.md instead of unit tests.
+Coverage tooling: pytest-cov added to the venv (dev-only, not a runtime
+dependency).

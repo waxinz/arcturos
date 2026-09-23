@@ -83,14 +83,14 @@ arcturos/
 ## 6. Current Status
 
 **Phase:** 2 of 6 — PRD signed off; UX design + implementation underway.
-**Next:** dashboard skeleton live on taupo :24816, then J1 bench core.
+**Next:** J1 bench core hardening + live-sweep soak; coverage 92% (232 tests).
 
 - [x] Repo initialized on taupo (`~/arcturos`, branch `main`)
 - [x] AGENTS.md created (this file)
 - [x] PRD.md drafted from key user journeys
 - [x] PRD reviewed and signed off by Alexei
 - [x] UX design doc (journey walkthroughs, wireframe-level flows)
-- [ ] QA test plan + suites
+- [x] QA test plan + suites (coverage-validated 2026-09-22: 92% total, 232 tests)
 - [x] J1 bench core: bench.py (tokenize sizing, cold UUID prompts, timings parser, storage, export) — commit f7c2fee
 - [x] J1 validated end-to-end: real bench of ruapehu DeepSeek-V4-Flash (512+4096 tok) stored via API, visible at :24816/api/runs/1/benchmarks
 - [x] M3 QA: test plan + fixture eval suites + demo seed script + J3/J4 contract tests — commit 4e0cb3b
@@ -109,6 +109,30 @@ arcturos/
 - [x] First real benchmark captured via /create dispatch (live smoke, quiet window)
 
 ### Log (newest first)
+
+- 2026-09-22 — Final check-in: naming UX round + theme + local-time
+  datetimes + coverage validation. (1) Run-detail: the rename button
+  was appended to #run-actions BEFORE that container was wiped by the
+  header-actions block — the button existed in source but never
+  rendered (cbed345); the name now has its own line under the title
+  with an inline editor (input + Save/Cancel/Escape, empty submit
+  clears to default, in-place update without reload — d64ae8f).
+  (2) Runs page: off-by-one in the row builder dropped the name cell
+  and shifted every column one left (Name column showed server_url —
+  66a03c4); display_name = stored name or computed 'host · model'
+  fallback at read time so legacy unnamed runs show a usable label
+  (d64ae8f). (3) Theme: light/dark toggle (☾/☀︎) on every page —
+  dark palette is Dracula; persisted in localStorage, defaults to the
+  system preference, Chart.js re-themes live (15691f5); dark-mode
+  form controls + visited-link hue + button colors fixed after live
+  feedback (9f79a4b). (4) Datetimes render in the viewer's timezone
+  (Pacific fallback) via app-time.js; '(UTC)' header claims dropped;
+  storage/exports stay UTC ISO (15691f5). (5) Coverage validation:
+  pytest-cov added (dev-only) — 92% total, every module >= 84%;
+  +16 tests around the gaps (ops endpoint validation, eval dispatch
+  validation/rollback, power sampler, multiturn post/validate);
+  qa/test-plan.md gains the coverage table. 232 passed. Live on
+  taupo throughout (service restarted per deploy, verified 200s).
 
 - 2026-09-22 — Deploy fix: stale append-only trigger upgrade (a6c2862).
   The live restart exposed that CREATE TRIGGER IF NOT EXISTS never
