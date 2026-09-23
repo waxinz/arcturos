@@ -7,33 +7,36 @@
   <link rel="icon" type="image/png" sizes="32x32" href="/static/icons/scorpio-favicon-32.png">
   <link rel="icon" type="image/png" sizes="180x180" href="/static/icons/scorpio-favicon-180.png">
   <title>Arcturos — Compare</title>
+  <link rel="stylesheet" href="/static/theme.css">
   <style>
     body { font-family: system-ui, -apple-system, sans-serif; margin: 2rem auto;
-           max-width: 1080px; color: #1a1a1a; background: #fafafa; }
-    header { border-bottom: 2px solid #222; padding-bottom: .5rem; margin-bottom: 1.5rem; }
+           max-width: 1080px; color: var(--text); background: var(--bg); }
+    header { border-bottom: 2px solid var(--text-heading); padding-bottom: .5rem; margin-bottom: 1.5rem; }
     h1 { font-size: 1.6rem; margin: 0; }
-    .sub { color: #666; margin-top: .25rem; }
-    nav a { margin-right: 1rem; color: #1a1a1a; text-decoration: none; font-weight: 600; }
+    .sub { color: var(--text-muted); margin-top: .25rem; }
+    nav a { margin-right: 1rem; color: var(--text); text-decoration: none; font-weight: 600; }
     nav a.active { text-decoration: underline; }
-    table { border-collapse: collapse; width: 100%; background: #fff; }
-    th, td { text-align: left; padding: .4rem .6rem; border-bottom: 1px solid #e5e5e5;
+    table { border-collapse: collapse; width: 100%; background: var(--surface); }
+    th, td { text-align: left; padding: .4rem .6rem; border-bottom: 1px solid var(--border);
              font-size: .88rem; }
-    th { font-weight: 600; color: #444; }
+    th { font-weight: 600; color: var(--text-soft); }
     td.mono { font-family: ui-monospace, monospace; font-size: .8rem; }
     .controls { margin: 1rem 0; display: flex; gap: 2rem; flex-wrap: wrap; align-items: start; }
-    .controls h3 { font-size: .95rem; margin: 0 0 .4rem; color: #444; }
+    .controls h3 { font-size: .95rem; margin: 0 0 .4rem; color: var(--text-soft); }
     .metric-pick label { display: block; font-size: .85rem; margin: .15rem 0; }
     button { padding: .45rem .9rem; font-size: .9rem; cursor: pointer; }
-    .chart-card { background: #fff; border: 1px solid #e5e5e5; border-radius: 6px;
+    .chart-card { background: var(--surface); border: 1px solid var(--border); border-radius: 6px;
                   padding: .8rem; margin-bottom: 1.2rem; }
-    .chart-card h3 { margin: 0 0 .5rem; font-size: 1rem; color: #222; }
+    .chart-card h3 { margin: 0 0 .5rem; font-size: 1rem; color: var(--text-heading); }
     .chart-wrap { position: relative; height: 340px; }
-    .status { color: #666; font-size: .85rem; margin-top: .75rem; }
-    .empty { color: #666; padding: 2rem; text-align: center; }
-    .hint { color: #767676; font-size: .82rem; margin-left: .4rem; }
+    .status { color: var(--text-muted); font-size: .85rem; margin-top: .75rem; }
+    .empty { color: var(--text-muted); padding: 2rem; text-align: center; }
+    .hint { color: var(--null); font-size: .82rem; margin-left: .4rem; }
     th.sel-h { width: 2rem; }
-    code { background: #eee; padding: 0 .35rem; border-radius: 4px; }
+    code { background: var(--code-bg); padding: 0 .35rem; border-radius: 4px; }
   </style>
+  <script src="/static/app-time.js"></script>
+  <script src="/static/theme.js"></script>
 </head>
 <body>
   <header>
@@ -131,7 +134,7 @@
       const table = document.createElement('table');
       table.innerHTML = '<thead><tr><th class="sel-h"><span class="sr">select</span></th>' +
                         '<th>ID</th><th>Model (fingerprint)</th>' +
-                        '<th>Engine</th><th>Context size</th><th>Created (UTC)</th></tr></thead>';
+                        '<th>Engine</th><th>Context size</th><th>Created</th></tr></thead>';
       const tbody = document.createElement('tbody');
       for (const r of runs) {
         const tr = document.createElement('tr');
@@ -139,9 +142,10 @@
         cb.type = 'checkbox'; cb.dataset.runId = r.id;
         const td = document.createElement('td'); td.appendChild(cb); tr.appendChild(td);
         for (const [k, cls] of [['id','mono'], ['model_fingerprint','mono'],
-                                ['engine',''], ['context_size',''], ['created_at','']]) {
+                                ['engine',''], ['context_size',''],
+                                ['created_at','date']]) {
           const cell = document.createElement('td');
-          cell.textContent = r[k];
+          cell.textContent = k === 'created_at' ? fmtLocalTime(r[k]) : r[k];
           if (cls) cell.className = cls;
           tr.appendChild(cell);
         }
@@ -248,8 +252,8 @@
                 ({ x: p.context_tokens,
                    y: metric === 'ttft_ms' && p.value != null
                       ? p.value / 1000 : p.value })),
-              borderColor: '#555',
-              backgroundColor: '#555',
+              borderColor: 'var(--text-muted)',
+              backgroundColor: 'var(--text-muted)',
               borderDash: [6, 4],
               pointRadius: 0,
               borderWidth: 2,
@@ -379,7 +383,7 @@
                   'decode_tps_combined', 'prefill_tps_combined'];
                 const good = higherBetter.includes(metric)
                   ? row.delta_pct > 0 : row.delta_pct < 0;
-                td.style.color = good ? '#0a7f36' : '#b00020';
+                td.style.color = good ? 'var(--ok)' : 'var(--err)';
               }
               tr.appendChild(td);
             }

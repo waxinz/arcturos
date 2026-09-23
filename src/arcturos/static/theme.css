@@ -1,0 +1,93 @@
+/* theme.css — shared light/dark palettes (2026-09-22 UX round).
+   Light mode = the dashboard's original look, verbatim.
+   Dark mode = Dracula (draculatheme.com): bg #282A36, surfaces lifted,
+   text #F8F8F2, muted #6272A4, purple accent, cyan links — a widely
+   loved dark palette tuned for long technical sessions. */
+:root {
+  --bg: #fafafa;
+  --text: #1a1a1a;
+  --text-muted: #666;
+  --text-soft: #444;
+  --text-heading: #222;
+  --surface: #fff;
+  --border: #e5e5e5;
+  --border-strong: #222;
+  --link: #1a56a0;
+  --accent: #1a56a0;
+  --null: #767676;
+  --warn: #b45309;
+  --good-bg: #d9f2e0; --good-text: #14532d;
+  --bad-bg: #fde8d3;  --bad-text: #7c2d12;
+  --neutral-bg: #e5e5e5; --neutral-text: #444;
+  --bad-red-bg: #fbe0e0; --bad-red-text: #7f1d1d;
+  --shadow: rgba(0,0,0,.06);
+  --chart-grid: #e5e5e5;
+  --input-border: #ccc;
+  --disabled: #999;
+  --err: #b00020;
+  --ok: #0a7d2c;
+  --hint: #777;
+  --code-bg: #eee;
+  --bar-track: #e8e8e8;
+  --bar-fill-a: #2e7d32; --bar-fill-b: #66bb6a;
+  --bar-stripe-a: #90a4ae; --bar-stripe-b: #b0bec5;
+  --bar-text: #102a10;
+  --clock: #555;
+  --fp-text: #333;
+  --win-a-bg: #f0faf2;
+  --pf-btn: #555;
+}
+
+html[data-theme="dark"] {
+  --bg: #282A36;            /* Dracula background */
+  --text: #F8F8F2;          /* Dracula foreground */
+  --text-muted: #9DA5C4;    /* lifted comment grey for AA on #282A36 */
+  --text-soft: #C9D1E3;
+  --text-heading: #F8F8F2;
+  --surface: #21222C;       /* darker card surface */
+  --border: #44475A;        /* Dracula selection/line */
+  --border-strong: #6272A4; /* Dracula comment */
+  --link: #8BE9FD;          /* Dracula cyan */
+  --accent: #BD93F9;        /* Dracula purple */
+  --null: #6272A4;
+  --warn: #FFB86C;          /* Dracula orange */
+  --good-bg: #1f3a2e; --good-text: #50FA7B;   /* Dracula green */
+  --bad-bg: #3a2a1f;  --bad-text: #FFB86C;
+  --neutral-bg: #44475A; --neutral-text: #F8F8F2;
+  --bad-red-bg: #3a2233; --bad-red-text: #FF79C6;  /* Dracula pink */
+  --shadow: rgba(0,0,0,.4);
+  --chart-grid: #44475A;
+  --input-border: #6272A4;
+  --disabled: #6272A4;
+  --err: #FF5555;          /* Dracula red */
+  --ok: #50FA7B;           /* Dracula green */
+  --hint: #9DA5C4;
+  --code-bg: #44475A;
+  --bar-track: #44475A;
+  --bar-fill-a: #50FA7B; --bar-fill-b: #8BE9FD;
+  --bar-stripe-a: #6272A4; --bar-stripe-b: #44475A;
+  --bar-text: #F8F8F2;
+  --clock: #9DA5C4;
+  --fp-text: #BD93F9;
+  --win-a-bg: #1f3a2e;
+  --pf-btn: #44475A;
+}
+
+/* Toggle button — right edge of the nav bar */
+nav { display: flex; align-items: center; flex-wrap: wrap; }
+nav .theme-toggle {
+  margin-left: auto;
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  cursor: pointer;
+  font-size: 1rem;
+  line-height: 1;
+  padding: .25rem .55rem;
+  transition: background .15s ease, border-color .15s ease;
+}
+nav .theme-toggle:hover {
+  background: var(--neutral-bg);
+  border-color: var(--border-strong);
+}
