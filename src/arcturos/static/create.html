@@ -16,6 +16,7 @@
     h2 { font-size: 1.25rem; margin-top: 2rem; }
     .sub { color: var(--text-muted); margin-top: .25rem; }
     nav a { margin-right: 1rem; color: var(--text); text-decoration: none; font-weight: 600; }
+    nav a:visited { color: var(--text); }
     nav a.active { text-decoration: underline; }
     .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 1rem; }
     .card { background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 1rem; }
@@ -26,7 +27,7 @@
             font-size: .9rem; border: 1px solid var(--input-border); border-radius: 4px; }
     textarea { font-family: ui-monospace, monospace; font-size: .8rem; min-height: 90px; }
     button { margin-top: .6rem; padding: .45rem 1rem; font-size: .9rem;
-             background: var(--text-heading); color: var(--surface); border: 0; border-radius: 4px; cursor: pointer; }
+             background: var(--btn-bg); color: var(--btn-text); border: 0; border-radius: 4px; cursor: pointer; }
     button:disabled { background: var(--disabled); cursor: wait; }
     .msg { margin-top: .5rem; font-size: .85rem; min-height: 1.1em; }
     .bp-status a, .msg a { color: inherit; text-decoration: underline;
