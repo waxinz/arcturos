@@ -643,3 +643,20 @@ def test_runs_page_renders_display_name(client):
     for unnamed runs) over the bare stored name."""
     html = client.get("/runs").text
     assert "r.display_name || r.name || '—'" in html
+
+
+def test_runs_page_name_column_not_shifted(client):
+    """Regression (2026-09-22): the runs-page render loop used to skip
+    cells[0] (assuming it was the ID, which is built separately), so the
+    Name column displayed server_url and every column after it shifted
+    one left — run 5 showed 'http://10.10.10.122:8000' as its name. The
+    name cell must be rendered explicitly between the ID cell and the
+    data loop, and the loop must start at index 0."""
+    html = client.get("/runs").text
+    i_name = html.find("tr.appendChild(nameCell)")
+    i_loop = html.find("for (let i = 0; i < cells.length; i++)")
+    assert i_name != -1, "name cell not rendered explicitly"
+    assert i_loop != -1, "data loop must start at index 0 (cells[0] is server_url)"
+    assert i_name < i_loop, "name cell must be appended before the data loop"
+    # the name expression must feed nameCell, not the skipped cells array
+    assert "nameCell.textContent = r.display_name || r.name" in html
