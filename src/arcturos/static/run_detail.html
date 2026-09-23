@@ -135,28 +135,11 @@
           meta.appendChild(dt); meta.appendChild(dd);
         }
 
-        // Rename action (2026-09-22 naming feature): the name is a label,
-        // editable on the run-detail page per the PRD.
-        const renameBtn = document.createElement('button');
-        renameBtn.className = 'linklike';
-        renameBtn.textContent = '✎ Rename';
-        renameBtn.onclick = async () => {
-          const current = run.name || '';
-          const next = window.prompt('Run name (empty = clear back to default)', current);
-          if (next === null) return;  // cancelled
-          const res = await fetch('/api/runs/' + run.id + '/name', {
-            method: 'PATCH', headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({name: next.trim() || null})});
-          if (res.ok) location.reload();
-          else {
-            const detail = await res.json().then(d => d.detail).catch(() => res.status);
-            window.alert('Rename failed: ' + detail);
-          }
-        };
-        document.getElementById('run-actions').appendChild(renameBtn);
-
         // Spec'd header actions (ux-design §4.6/§6): compare-from-here,
-        // pin-as-baseline stub, export — no dead-end page.
+        // pin-as-baseline stub, export — no dead-end page. Built FIRST:
+        // the actions container is cleared here, so anything appended
+        // before this wipe would be destroyed (the rename button used to
+        // vanish exactly this way).
         const acts = document.getElementById('run-actions');
         acts.innerHTML = '';
         const a1 = document.createElement('a');
@@ -175,6 +158,27 @@
         a3.href = '/api/export/runs/' + run.id + '/benchmarks';
         a3.textContent = '⤓ Benchmarks CSV';
         acts.appendChild(a3);
+
+        // Rename action (2026-09-22 naming feature): the name is a label,
+        // editable on the run-detail page per the PRD. Appended LAST so
+        // the actions-container wipe above can never remove it.
+        const renameBtn = document.createElement('button');
+        renameBtn.className = 'linklike';
+        renameBtn.textContent = '✎ Rename';
+        renameBtn.onclick = async () => {
+          const current = run.name || '';
+          const next = window.prompt('Run name (empty = clear back to default)', current);
+          if (next === null) return;  // cancelled
+          const res = await fetch('/api/runs/' + run.id + '/name', {
+            method: 'PATCH', headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({name: next.trim() || null})});
+          if (res.ok) location.reload();
+          else {
+            const detail = await res.json().then(d => d.detail).catch(() => res.status);
+            window.alert('Rename failed: ' + detail);
+          }
+        };
+        acts.appendChild(renameBtn);
 
         // Pin as baseline (§4.6): metric family is chosen by the owner —
         // "speed" covers tok/s + TTFT/wall, "quality" covers eval/judgment
