@@ -583,3 +583,19 @@ def test_run_detail_page_rename_control(client):
     assert "name: next.trim() || null" in html      # empty -> clear (null)
     assert "next === null" in html                   # cancel is a no-op
     assert "Run name (empty = clear back to default)" in html
+
+
+def test_run_detail_rename_survives_actions_wipe(client):
+    """Regression (2026-09-22): the header-actions block used to run
+    `acts.innerHTML = ''` AFTER the rename button was appended to the
+    same container — wiping the button off the live page (it was in the
+    HTML source but never visible). The rename append must come after
+    the wipe so the button survives rendering."""
+    run_id = client.post("/api/runs", json=RUN).json()["id"]
+    html = client.get(f"/runs/{run_id}").text
+    i_wipe = html.find("acts.innerHTML = ''")
+    i_rename = html.find("acts.appendChild(renameBtn)")
+    assert i_wipe != -1 and i_rename != -1
+    assert i_wipe < i_rename, (
+        "rename button is appended before the actions-container wipe — "
+        "it gets destroyed and never renders")
