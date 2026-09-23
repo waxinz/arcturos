@@ -27,6 +27,13 @@
     .status { color: #666; font-size: .85rem; margin-top: .75rem; }
     .empty { color: #666; padding: 2rem; text-align: center; }
     .null { color: #767676; } /* 4.5:1 on white — WCAG AA (UX review) */
+    .run-name-line { margin: .4rem 0 0; font-size: 1.05rem; }
+    .run-name-line .name-value { font-weight: 600; }
+    .run-name-line .name-unnamed { color: #767676; font-style: italic; }
+    .run-name-line input { font-size: 1rem; padding: .25rem .5rem;
+                           border: 1px solid #bbb; border-radius: 4px;
+                           width: min(28rem, 90%); }
+    .run-name-line .linklike { font-size: .85rem; margin-left: .5rem; }
     .actions { margin-top: 1rem; }
     .actions a, .actions button { margin-right: .75rem; padding: .4rem .8rem;
                                   font-size: .88rem; cursor: pointer; }
@@ -54,6 +61,7 @@
   </header>
 
   <h2 id="run-title">Run …</h2>
+  <p id="run-name-line" class="run-name-line"></p>
   <div id="run-meta" class="meta"></div>
 
   <div class="actions" id="run-actions"></div>
@@ -125,8 +133,7 @@
         // textContent-built meta card: no innerHTML injection from API strings
         const meta = document.getElementById('run-meta');
         meta.innerHTML = '';  // static empty shell, no data
-        for (const [k, v] of [['Name', run.name || '—'],
-                              ['Server', run.server_url], ['Engine', run.engine],
+        for (const [k, v] of [['Server', run.server_url], ['Engine', run.engine],
                               ['Context size', run.context_size],
                               ['Created', run.created_at]]) {
           const dt = document.createElement('dt'); dt.textContent = k;
@@ -134,6 +141,87 @@
           dd.textContent = (v === null || v === undefined) ? '—' : String(v);
           meta.appendChild(dt); meta.appendChild(dd);
         }
+
+        // Inline-editable run name (2026-09-22 naming UX round): the name
+        // is a label, editable in place per the PRD. Edit swaps the value
+        // for an input; Save PATCHes the API and updates in place (no
+        // reload); empty submit clears back to the default rendering;
+        // Cancel/Escape reverts. Errors render inline, never alert().
+        const nameLine = document.getElementById('run-name-line');
+        nameLine.innerHTML = '';
+        const nameText = document.createElement('span');
+        nameText.className = 'name-value';
+        const editBtn = document.createElement('button');
+        editBtn.className = 'linklike';
+        editBtn.textContent = '✎ edit';
+        editBtn.title = 'Rename this run';
+        nameLine.appendChild(nameText);
+        nameLine.appendChild(editBtn);
+
+        function renderName() {
+          nameLine.innerHTML = '';
+          nameLine.appendChild(nameText);
+          nameLine.appendChild(editBtn);
+          if (run.name) {
+            nameText.textContent = run.name;
+            nameText.className = 'name-value';
+            nameText.title = 'Custom run name';
+          } else {
+            nameText.textContent = 'unnamed — default: ' +
+              (run.display_name || (run.server_url + ' · ' + run.model_fingerprint));
+            nameText.className = 'name-unnamed';
+            nameText.title = 'No custom name set — shown with the computed default';
+          }
+        }
+        renderName();
+
+        editBtn.onclick = () => {
+          nameLine.innerHTML = '';
+          const input = document.createElement('input');
+          input.type = 'text';
+          input.value = run.name || '';
+          input.placeholder = 'default: ' +
+            (run.display_name || run.server_url + ' · ' + run.model_fingerprint);
+          input.maxLength = 200;
+          const saveBtn = document.createElement('button');
+          saveBtn.className = 'linklike';
+          saveBtn.textContent = 'Save';
+          const cancelBtn = document.createElement('button');
+          cancelBtn.className = 'linklike';
+          cancelBtn.textContent = 'Cancel';
+          nameLine.appendChild(input);
+          nameLine.appendChild(saveBtn);
+          nameLine.appendChild(cancelBtn);
+          const err = document.createElement('span');
+          err.className = 'name-unnamed';
+          nameLine.appendChild(err);
+          input.focus();
+
+          async function save() {
+            const next = input.value.trim();
+            saveBtn.disabled = true;
+            try {
+              const res = await fetch('/api/runs/' + run.id + '/name', {
+                method: 'PATCH', headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({name: next || null})});
+              if (res.ok) {
+                run.name = next || null;   // update in place, no reload
+                renderName();
+              } else {
+                const detail = await res.json().then(d => d.detail).catch(() => 'HTTP ' + res.status);
+                err.textContent = typeof detail === 'string' ? detail : JSON.stringify(detail);
+              }
+            } catch (e) {
+              err.textContent = 'network error: ' + e.message;
+            } finally { saveBtn.disabled = false; }
+          }
+          saveBtn.onclick = save;
+          cancelBtn.onclick = renderName;
+          input.onkeydown = (ev) => {
+            if (ev.key === 'Enter') save();
+            if (ev.key === 'Escape') renderName();
+          };
+        };
 
         // Spec'd header actions (ux-design §4.6/§6): compare-from-here,
         // pin-as-baseline stub, export — no dead-end page. Built FIRST:
@@ -158,27 +246,6 @@
         a3.href = '/api/export/runs/' + run.id + '/benchmarks';
         a3.textContent = '⤓ Benchmarks CSV';
         acts.appendChild(a3);
-
-        // Rename action (2026-09-22 naming feature): the name is a label,
-        // editable on the run-detail page per the PRD. Appended LAST so
-        // the actions-container wipe above can never remove it.
-        const renameBtn = document.createElement('button');
-        renameBtn.className = 'linklike';
-        renameBtn.textContent = '✎ Rename';
-        renameBtn.onclick = async () => {
-          const current = run.name || '';
-          const next = window.prompt('Run name (empty = clear back to default)', current);
-          if (next === null) return;  // cancelled
-          const res = await fetch('/api/runs/' + run.id + '/name', {
-            method: 'PATCH', headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({name: next.trim() || null})});
-          if (res.ok) location.reload();
-          else {
-            const detail = await res.json().then(d => d.detail).catch(() => res.status);
-            window.alert('Rename failed: ' + detail);
-          }
-        };
-        acts.appendChild(renameBtn);
 
         // Pin as baseline (§4.6): metric family is chosen by the owner —
         // "speed" covers tok/s + TTFT/wall, "quality" covers eval/judgment

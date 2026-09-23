@@ -66,7 +66,10 @@
         for (const r of runs) {
           const tr = document.createElement('tr');
           const cells = [
-            r.name || '—',           // Name: second column (2026-09-22)
+            // Name: second column (2026-09-22). display_name = stored name
+            // when set, else a computed 'host · model' label so legacy
+            // unnamed runs still show a usable label (never a bare '—').
+            r.display_name || r.name || '—',
             r.server_url, r.model_fingerprint,
             r.engine, r.context_size, r.created_at
           ];

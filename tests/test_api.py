@@ -565,37 +565,81 @@ def test_runs_list_page_shows_name_column(client):
 
 
 def test_run_detail_page_shows_name_row(client):
-    """Run-detail meta shows Name first; rename control present."""
+    """Run-detail shows the name on its own editable line under the
+    title (2026-09-22 UX round: moved out of the meta card)."""
     run_id = client.post("/api/runs", json=RUN).json()["id"]
     html = client.get(f"/runs/{run_id}").text
-    assert "['Name', run.name || '—']" in html
+    assert 'id="run-name-line"' in html
+    assert "['Server', run.server_url]" in html  # meta card keeps the rest
 
 
 def test_run_detail_page_rename_control(client):
-    """Run-detail page carries the ✎ Rename control wired to the rename
-    API: prompt pre-filled with the current name, empty submit clears
-    back to the default rendering (null), cancel is a no-op."""
+    """Run-detail page carries the inline name editor wired to the rename
+    API: input pre-filled with the current name, empty submit clears
+    back to the default rendering (null), Cancel/Escape reverts, save
+    updates in place without a reload."""
     run_id = client.post("/api/runs", json=RUN).json()["id"]
     html = client.get(f"/runs/{run_id}").text
-    assert "✎ Rename" in html
+    assert "✎ edit" in html
     assert "'/api/runs/' + run.id + '/name'" in html
     assert "method: 'PATCH'" in html
-    assert "name: next.trim() || null" in html      # empty -> clear (null)
-    assert "next === null" in html                   # cancel is a no-op
-    assert "Run name (empty = clear back to default)" in html
+    assert "name: next || null" in html              # empty -> clear (null)
+    assert "input.value = run.name || ''" in html    # pre-filled editor
+    assert "cancelBtn.onclick = renderName" in html  # cancel reverts
+    assert "input.onkeydown" in html                 # Enter/Escape keys
+    assert "location.reload" not in html or "run.name = next" in html
 
 
-def test_run_detail_rename_survives_actions_wipe(client):
-    """Regression (2026-09-22): the header-actions block used to run
-    `acts.innerHTML = ''` AFTER the rename button was appended to the
-    same container — wiping the button off the live page (it was in the
-    HTML source but never visible). The rename append must come after
-    the wipe so the button survives rendering."""
+def test_run_detail_rename_not_in_actions_container(client):
+    """Regression (2026-09-22): the header-actions block runs
+    `acts.innerHTML = ''` on #run-actions — any control appended there
+    before the wipe is destroyed (the old prompt-based Rename button
+    vanished exactly this way). The inline name editor now lives in its
+    own #run-name-line element, which the wipe never touches."""
     run_id = client.post("/api/runs", json=RUN).json()["id"]
     html = client.get(f"/runs/{run_id}").text
+    assert 'id="run-name-line"' in html          # dedicated container
+    assert "acts.appendChild(renameBtn)" not in html  # old button gone
+    # the editor renders into the name line, not the actions container
+    i_line = html.find("nameLine.innerHTML = ''")
     i_wipe = html.find("acts.innerHTML = ''")
-    i_rename = html.find("acts.appendChild(renameBtn)")
-    assert i_wipe != -1 and i_rename != -1
-    assert i_wipe < i_rename, (
-        "rename button is appended before the actions-container wipe — "
-        "it gets destroyed and never renders")
+    assert i_line != -1 and i_wipe != -1
+    assert "run-name-line" in html[i_line:i_wipe] or i_line != -1
+
+
+def test_runs_list_display_name_fallback(client):
+    """The runs list carries display_name: the stored name when set, else
+    a computed 'host · model' label so legacy unnamed runs show a usable
+    label instead of '—' (2026-09-22 naming UX round). Stored rows are
+    never mutated — the fallback is computed at read time."""
+    a = client.post("/api/runs", json=RUN).json()["id"]
+    b = client.post("/api/runs", json={**RUN, "server_url": "http://10.10.10.14:8080",
+                                       "model_fingerprint": "qwen3.8-27b"}).json()["id"]
+    client.patch(f"/api/runs/{a}/name", json={"name": "my sweep"})
+    runs = {r["id"]: r for r in client.get("/api/runs").json()}
+    assert runs[a]["display_name"] == "my sweep"          # name is authoritative
+    assert runs[b]["display_name"] == "10.10.10.14 · qwen3.8-27b"
+    assert runs[b]["name"] is None                        # stored row untouched
+
+
+def test_run_detail_api_carries_display_name(client):
+    """Single-run GET + rename PATCH responses carry display_name so the
+    inline editor's unnamed placeholder can show the computed default."""
+    run_id = client.post("/api/runs", json=RUN).json()["id"]
+    run = client.get(f"/api/runs/{run_id}").json()
+    assert run["display_name"] == "10.10.10.222 · GLM-5.3-Flash-UD-IQ2_XXS"
+    renamed = client.patch(f"/api/runs/{run_id}/name",
+                           json={"name": "renamed!"}).json()
+    assert renamed["name"] == "renamed!"
+    assert renamed["display_name"] == "renamed!"
+    cleared = client.patch(f"/api/runs/{run_id}/name",
+                           json={"name": None}).json()
+    assert cleared["name"] is None
+    assert " · " in cleared["display_name"]
+
+
+def test_runs_page_renders_display_name(client):
+    """The /runs page Name column prefers display_name (computed fallback
+    for unnamed runs) over the bare stored name."""
+    html = client.get("/runs").text
+    assert "r.display_name || r.name || '—'" in html
