@@ -65,11 +65,12 @@
         if (!runs.length) { status.textContent = 'No runs recorded yet.'; return; }
         for (const r of runs) {
           const tr = document.createElement('tr');
+          // Name: second column (2026-09-22). display_name = stored name
+          // when set, else a computed 'host · model' label so legacy
+          // unnamed runs still show a usable label (never a bare '—').
+          const nameCell = document.createElement('td');
+          nameCell.textContent = r.display_name || r.name || '—';
           const cells = [
-            // Name: second column (2026-09-22). display_name = stored name
-            // when set, else a computed 'host · model' label so legacy
-            // unnamed runs still show a usable label (never a bare '—').
-            r.display_name || r.name || '—',
             r.server_url, r.model_fingerprint,
             r.engine, r.context_size, r.created_at
           ];
@@ -88,7 +89,8 @@
             first.appendChild(badge);
           }
           tr.appendChild(first);
-          for (let i = 1; i < cells.length; i++) {
+          tr.appendChild(nameCell);
+          for (let i = 0; i < cells.length; i++) {
             const td = document.createElement('td');
             td.textContent = cells[i];
             td.className = (cells[i] === r.server_url || cells[i] === r.model_fingerprint) ? 'mono' : '';
