@@ -18,7 +18,7 @@ def two_runs(client):
     out = []
     for run_number in (1, 2):
         r = client.post("/api/runs", json={
-            "server_url": "http://10.10.10.122:8000",
+            "server_url": "http://fixt-host-a:8000",
             "model_fingerprint": fp, "engine": "llama.cpp",
             "context_size": 262144})
         assert r.status_code == 201

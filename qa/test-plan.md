@@ -25,7 +25,7 @@ Rules:
 - [x] `tests/test_api.py::test_add_benchmark*` — metrics per context point; 422 on invalid (e.g. mtp_accepted > mtp_draft_n)
 - [x] `tests/test_api.py::test_append_not_overwrite` — re-POST same point → 2 rows
 - [ ] `qa/suites/test_j1_integration.py` — bench module → storage round trip (added with bench core)
-- [ ] Real smoke: bench ruapehu at 512 tokens, verify row appears via API
+- [ ] Real smoke: bench demo host A at 512 tokens, verify row appears via API
 
 ### J2 — Comparison (future endpoints/views)
 - [ ] ≥2 models × ≥1 metric × N points in one query
@@ -55,7 +55,7 @@ Rules:
 - [x] API key auth (J6): `tests/test_ops_dispatch.py` authed-mock (llama.cpp `--api-key` behavior) — keyless request → preflight 401 → DispatchError; with key → sweep succeeds end-to-end. Preflight module + endpoint accept `api_key` for auth probes.
 - [x] `tests/test_api.py` — power provenance: `power_watts` without `power_host` → 422 (ADR 002 enforced at the boundary); watts + host accepted and stored
 - [x] `tests/test_bench_stream_power.py` + `tests/test_ops_dispatch.py` — power sampler mean/None semantics preserved
-- [ ] Live smoke: dispatch a 1-point bench from `/create` against ruapehu during a quiet window; verify row lands in /compare
+- [ ] Live smoke: dispatch a 1-point bench from `/create` against demo host A during a quiet window; verify row lands in /compare
 - [ ] Live smoke: eval replay from `/create` against qwen rotation; verify rows land in /evals
 
 ### Async bench jobs + progress indicator (added 2026-09-21)

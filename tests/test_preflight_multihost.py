@@ -142,7 +142,7 @@ def test_preflight_endpoint_dead_target(client):
 def test_compare_payload_carries_host_metadata(client):
     """Multi-host compare: server_url + host_label present per run."""
     run = client.post("/api/runs", json={
-        "server_url": "http://10.10.10.122:8000/v1",
+        "server_url": "http://fixt-host-a:8000/v1",
         "model_fingerprint": "/models/ds4.gguf", "engine": "llama.cpp",
         "context_size": 262144}).json()
     client.post(f"/api/runs/{run['id']}/benchmarks", json={"context_tokens": 4096,
@@ -150,24 +150,24 @@ def test_compare_payload_carries_host_metadata(client):
     data = client.get("/api/compare/benchmarks",
                       params={"runs": run["id"]}).json()
     r = data["runs"][0]
-    assert r["server_url"] == "http://10.10.10.122:8000/v1"
-    assert r["host_label"] == "10.10.10.122"
+    assert r["server_url"] == "http://fixt-host-a:8000/v1"
+    assert r["host_label"] == "fixt-host-a"
     assert r["model_fingerprint"] == "/models/ds4.gguf"
 
 
 def test_run_diff_metadata_includes_host(client):
     """Two runs on different hosts -> host diff shows both."""
     ra = client.post("/api/runs", json={
-        "server_url": "http://10.10.10.122:8000", "model_fingerprint": "m",
+        "server_url": "http://fixt-host-a:8000", "model_fingerprint": "m",
         "engine": "llama.cpp", "context_size": 4096}).json()
     rb = client.post("/api/runs", json={
-        "server_url": "http://10.10.10.222:8000", "model_fingerprint": "m",
+        "server_url": "http://fixt-host-b:8000", "model_fingerprint": "m",
         "engine": "llama.cpp", "context_size": 4096}).json()
     for rid in (ra["id"], rb["id"]):
         client.post(f"/api/runs/{rid}/benchmarks", json={"context_tokens": 4096,
                                                          "decode_tps": 30.0})
     data = client.get(f"/api/compare/run-diff/{ra['id']}/{rb['id']}").json()
     host_diff = data["engine_metadata"]["host"]
-    assert host_diff["a"] == "10.10.10.122"
-    assert host_diff["b"] == "10.10.10.222"
+    assert host_diff["a"] == "fixt-host-a"
+    assert host_diff["b"] == "fixt-host-b"
     assert host_diff["same"] is False

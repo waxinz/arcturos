@@ -13,7 +13,7 @@ import pytest
 def seeded_run(client):
     """One run, so the export endpoints have something to export."""
     r = client.post("/api/runs", json={
-        "server_url": "http://10.10.10.122:8000",
+        "server_url": "http://fixt-host-a:8000",
         "model_fingerprint": "/models/ds4-flash-q8.gguf",
         "engine": "llama.cpp", "context_size": 262144})
     assert r.status_code == 201, r.text

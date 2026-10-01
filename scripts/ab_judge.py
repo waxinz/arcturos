@@ -6,8 +6,11 @@ judge endpoint, parses the verdict, and stores a judgment via the API.
 
 Usage:
     venv/bin/python scripts/ab_judge.py [--api http://localhost:24816]
-        --suite-id 1 --judge-url http://10.10.10.222:8000
-        [--judge-model GLM-5.3-Flash] [--template blind-pair-v1]
+        --suite-id 1 --judge-url http://your-judge-host:8000
+        [--judge-model <name>] [--template blind-pair-v1]
+
+--judge-url may also come from arcturos.local.toml ([demo] judge_url) or
+the ARCTUROS_DEMO__JUDGE_URL environment variable.
 
 CAVEAT printed at runtime: judge must not be a contestant for trustworthy
 results. Enforced with --allow-contestant-judge to override.
@@ -24,6 +27,9 @@ from urllib import request as urlreq
 from urllib.error import HTTPError, URLError
 
 ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT / "src"))
+
+from arcturos import config
 
 JUDGE_PROMPT_TEMPLATE = """You are a blind preference judge. Two anonymous responses to the
 same prompt follow. Judge ONLY response quality: correctness, instruction
@@ -125,11 +131,18 @@ def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--api", default="http://localhost:24816")
     ap.add_argument("--suite-id", type=int, required=True)
-    ap.add_argument("--judge-url", required=True)
+    ap.add_argument("--judge-url", default=None,
+                    help="falls back to [demo] judge_url in arcturos.local.toml / arcturos.toml")
     ap.add_argument("--judge-model", default=None)
     ap.add_argument("--template", default="blind-pair-v1")
     ap.add_argument("--allow-contestant-judge", action="store_true")
     args = ap.parse_args()
+
+    # --judge-url falls back to the config layer (local overlay > template)
+    if not args.judge_url:
+        args.judge_url = config.get("demo", "judge_url", None)
+    if not args.judge_url:
+        ap.error("--judge-url is required (or set [demo] judge_url in arcturos.local.toml)")
 
     # load suite items for category + prompts
     suite_file = ROOT / "qa" / "suites" / "smoke-reasoning-v1.json"
