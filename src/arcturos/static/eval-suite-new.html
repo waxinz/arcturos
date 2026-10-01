@@ -67,15 +67,16 @@
     <h1>Suite create</h1>
     <p class="page-intro">Create the suite record, define its item JSON (optional pre-store), then replay it against a target — the three cards run top-to-bottom and the suite id flows from the first card into the replay form.</p>
     <div class="grid">
-<div class="card" id="eval-suite-create">
+    <div class="card" id="eval-suite-create">
       <h3>Eval suite — create</h3>
       <p class="hint">Creates the suite record; populate results afterwards by replaying it ("Eval replay — kick off").</p>
       <label>Suite name <input id="suite-name" placeholder="smoke-reasoning"></label>
       <label>Version <input id="suite-version" value="v1"></label>
       <button id="suite-btn">＋ Create suite</button>
       <div id="suite-msg" class="msg"></div>
-  </div>
-<div class="card" id="eval-suite-items">
+    </div>
+
+    <div class="card" id="eval-suite-items">
       <h3>Eval suite items — define (optional, pre-store)</h3>
       <p class="hint">Suite JSON kept in the browser for dispatch: {"items":[{"id":"x","prompt":"…"}]} or multi-turn {"type":"multi-turn","id":"x","turns":[…]}.</p>
       <textarea id="suite-json" placeholder='{"items": [{"id": "q1", "prompt": "What is 2+2?"}]}'>{"items": [{"id": "q1", "prompt": "What is 2+2?"}]}</textarea>
@@ -85,7 +86,8 @@
 
     
 
-<div class="card" id="eval-replay-kick">
+
+    <div class="card" id="eval-replay-kick">
       <h3>Eval replay — kick off</h3>
       <p class="hint">Replays the JSON from "Eval suite items — definition" against an OpenAI-compatible chat endpoint, stores eval_results.</p>
       <label>Suite ID (from "Eval suite — create" result) <input id="eval-suite-id" placeholder="e.g. 3"></label>
@@ -102,7 +104,7 @@
       </div>
       <div id="eval-msg" class="msg"></div>
     </div>
-
+    </div>
   </main>
   <script>
 function $(id) { return document.getElementById(id); }

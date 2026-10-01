@@ -21,6 +21,9 @@
     th { font-weight: 600; color: var(--text-soft); }
     td.mono { font-family: ui-monospace, monospace; font-size: .82rem; }
     .status { color: var(--text-muted); font-size: .85rem; margin-top: .75rem; }
+    .col-check { width: 2rem; text-align: center; }
+    td.col-check { text-align: center; }
+    h2 button { margin-left: .5rem; font-size: .8rem; padding: .3rem .7rem; }
     nav a { margin-right: 1rem; color: var(--text); text-decoration: none; font-weight: 600; }
     nav a:visited { color: var(--text); }
     nav a.active { text-decoration: underline; }
@@ -62,10 +65,14 @@
   </aside>
 
   <main class="page">
-  <h2>Runs <button id="export-runs" title="Download all runs as CSV">⤓ CSV</button></h2>
+  <h2>Runs
+    <button id="export-runs" title="Download all runs as CSV">⤓ CSV</button>
+    <button id="hide-selected" disabled title="Hide every checked run from list views (append-only flag; unhide any time)">Hide selected</button>
+  </h2>
   <table>
     <thead>
       <tr>
+        <th class="col-check"><input type="checkbox" id="runs-select-all" aria-label="Select all runs"></th>
         <th>ID</th><th>Name</th><th>Server</th><th>Model fingerprint</th>
         <th>Engine</th><th>Context size</th><th>Created</th><th></th>
       </tr>
@@ -85,6 +92,18 @@
         if (!runs.length) { status.textContent = 'No runs recorded yet.'; return; }
         for (const r of runs) {
           const tr = document.createElement('tr');
+          // Selection checkbox (2026-09-30): first cell, feeds the
+          // Hide-selected bulk action in the header.
+          const checkCell = document.createElement('td');
+          checkCell.className = 'col-check';
+          const check = document.createElement('input');
+          check.type = 'checkbox';
+          check.dataset.runId = String(r.id);
+          check.className = 'run-select';
+          check.setAttribute('aria-label', 'Select run #' + r.id);
+          check.addEventListener('change', updateHideSelected);
+          checkCell.appendChild(check);
+          tr.appendChild(checkCell);
           // Name: second column (2026-09-22). display_name = stored name
           // when set, else a computed 'host · model' label so legacy
           // unnamed runs still show a usable label (never a bare '—').
@@ -140,6 +159,56 @@
     document.getElementById('export-runs').addEventListener('click', () => {
       window.location = '/api/export/runs';
     });
+
+    // ---- bulk selection + Hide selected (2026-09-30) ------------------
+    const hideSelectedBtn = document.getElementById('hide-selected');
+
+    function updateHideSelected() {
+      const boxes = Array.from(document.querySelectorAll('.run-select'));
+      const picked = boxes.filter(b => b.checked).length;
+      hideSelectedBtn.disabled = picked === 0;
+      hideSelectedBtn.textContent = picked
+        ? 'Hide selected (' + picked + ')'
+        : 'Hide selected';
+      const all = document.getElementById('runs-select-all');
+      if (all) {
+        all.checked = boxes.length > 0 && picked === boxes.length;
+        all.indeterminate = picked > 0 && picked < boxes.length;
+      }
+    }
+
+    document.getElementById('runs-select-all').addEventListener('change', (ev) => {
+      const want = ev.target.checked;
+      document.querySelectorAll('.run-select').forEach(b => { b.checked = want; });
+      updateHideSelected();
+    });
+
+    hideSelectedBtn.addEventListener('click', async () => {
+      const ids = Array.from(document.querySelectorAll('.run-select'))
+        .filter(b => b.checked)
+        .map(b => parseInt(b.dataset.runId, 10));
+      if (!ids.length) return;
+      const noun = ids.length === 1 ? 'run' : 'runs';
+      if (!window.confirm('Hide ' + ids.length + ' ' + noun + ' (#' + ids.join(', #') +
+          ') from list views? Append-only flag — nothing is deleted; unhide any time.')) return;
+      const results = await Promise.allSettled(ids.map(id =>
+        fetch('/api/runs/' + id + '/visibility', {
+          method: 'PUT', headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({hidden: true})}).then(r => ({id, ok: r.ok, status: r.status}))
+      ));
+      const settled = results.map(r => r.value).filter(Boolean);
+      const ok = settled.filter(r => r.ok);
+      const failed = settled.filter(r => !r.ok);
+      const status = document.getElementById('status');
+      if (failed.length) {
+        status.textContent = 'Hide failed for ' + failed.map(r => '#' + r.id + ' (' + r.status + ')').join(', ') +
+          (ok.length ? ' — ' + ok.length + ' hidden.' : '');
+      } else {
+        status.textContent = '✔ Hid ' + ok.length + ' ' + noun + '.';
+      }
+      loadRuns();
+    });
+
     loadRuns();
   </script>
   </main>
