@@ -8,6 +8,7 @@
   <link rel="icon" type="image/png" sizes="180x180" href="/static/icons/scorpio-favicon-180.png">
   <title>Arcturos — Create &amp; Run</title>
   <link rel="stylesheet" href="/static/theme.css">
+  <link rel="stylesheet" href="/static/nav.css">
   <style>
     body { font-family: system-ui, -apple-system, sans-serif; margin: 2rem auto;
            max-width: 1080px; color: var(--text); background: var(--bg); }
@@ -72,56 +73,43 @@
   </style>
   <script src="/static/app-time.js"></script>
   <script src="/static/theme.js"></script>
-  <script>
-    // Grouped-nav active highlight (2026-09-30 UX round).
-    (function () {
-      var links = document.querySelectorAll("nav a[href]");
-      var here = location.pathname + location.hash;
-      for (const a of links) {
-        const href = a.getAttribute("href");
-        const base = href.split("#")[0];
-        const active = base === '/create' &&
-          (href.indexOf("#") === -1 ? location.hash === ""
-                                    : href === here);
-        if (active) a.classList.add("active");
-      }
-    })();
-  </script>
+  <script src="/static/nav.js"></script>
 </head>
-<body>
-  <header>
-    <h1>Arcturos</h1>
-    <div class="sub">Local-first LLM benchmarking &amp; evaluation dashboard</div>
-        <nav>
-      <div class="nav-groups" data-nav-section="Benchmarks">
-        <span class="nav-group-label">Benchmarks</span>
-        <a href="/create">Kick off</a>
-        <a href="/">Runs</a>
-        <a href="/compare">Compare</a>
-        <a href="/diff">Diff</a>
+<body class="shell" data-page="kickoff" data-section="Benchmarks">
+  <aside class="sidebar">
+    <a class="brand" href="/">Arcturos</a>
+    <span class="brand-sub">LLM benchmark &amp; eval dashboard</span>
+    <nav>
+      <div class="nav-section" data-nav-section="Benchmarks">
+        <div class="nav-section-head">Benchmarks</div>
+        <a href="/kickoff" data-page="kickoff">Kick off</a>
+        <a href="/" data-page="runs">Runs</a>
+        <a href="/compare" data-page="compare">Compare</a>
+        <a href="/diff" data-page="diff">Run diff</a>
       </div>
-      <div class="nav-groups" data-nav-section="Evals">
-        <span class="nav-group-label">Evals</span>
-        <a href="/evals">Evals</a>
-        <a href="/judgments">Judgments</a>
-        <a href="/create#eval-suite-create">Suite create</a>
-        <a href="/create#eval-suite-items">Suite items</a>
-        <a href="/create#eval-replay-kick">Replay kick-off</a>
+      <div class="nav-section" data-nav-section="Evals">
+        <div class="nav-section-head">Evals</div>
+        <a href="/evals/suites/new" data-page="evalsuite">Suite create</a>
+        <a href="/evals" data-page="evals">Results</a>
+        <a href="/judgments" data-page="judgments">Judgments</a>
+        <a href="/reports" data-page="reports">Reports</a>
       </div>
-      <div class="nav-groups" data-nav-section="Settings">
-        <span class="nav-group-label">Settings</span>
-        <a href="/models">Models</a>
-        <a href="/baselines">Baselines</a>
+      <div class="nav-section" data-nav-section="Settings">
+        <div class="nav-section-head">Settings</div>
+        <a href="/models" data-page="models">Models</a>
+        <a href="/baselines" data-page="baselines">Baselines</a>
       </div>
     </nav>
-  </header>
+    <div class="sidebar-foot">
+      <button class="theme-toggle-inline" data-theme-toggle>☾</button>
+    </div>
+  </aside>
 
-  <h2>Create &amp; Run</h2>
-  <p class="hint">Append-only store: creating adds rows; nothing is ever overwritten. Bench sweeps run as async jobs — the progress bar polls until the run is stored; eval replays stay synchronous.</p>
-
-  <div class="grid">
+  <main class="page">
+    <h1>Kick off</h1>
+    <p class="page-intro">Cold-cache sweep against one server — stores a run plus one benchmark row per context target. The progress panel streams per-point metrics as the sweep runs.</p>
     <div class="card">
-      <h3>Benchmark run — kick off</h3>
+    <div class="card">
       <p class="hint">Runs a cold-cache sweep. Transport <b>native</b> targets a llama.cpp server (/completion); <b>openai</b> targets any OpenAI-compatible chat server (tabbyAPI, vLLM, litellm — needs a model name). Stores a run + one benchmark row per context target.</p>
       <label>Server URL
         <input id="bench-url" value="http://10.10.10.122:8000">
@@ -173,42 +161,7 @@
         </div>
       </div>
     </div>
-
-    <div class="card" id="eval-suite-create">
-      <h3>Eval suite — create</h3>
-      <p class="hint">Creates the suite record; populate results afterwards by replaying it ("Eval replay — kick off").</p>
-      <label>Suite name <input id="suite-name" placeholder="smoke-reasoning"></label>
-      <label>Version <input id="suite-version" value="v1"></label>
-      <button id="suite-btn">＋ Create suite</button>
-      <div id="suite-msg" class="msg"></div>
-    </div>
-
-    <div class="card" id="eval-suite-items">
-      <h3>Eval suite items — define (optional, pre-store)</h3>
-      <p class="hint">Suite JSON kept in the browser for dispatch: {"items":[{"id":"x","prompt":"…"}]} or multi-turn {"type":"multi-turn","id":"x","turns":[…]}.</p>
-      <textarea id="suite-json" placeholder='{"items": [{"id": "q1", "prompt": "What is 2+2?"}]}'>{"items": [{"id": "q1", "prompt": "What is 2+2?"}]}</textarea>
-      <button id="suite-validate-btn">✔ Validate JSON</button>
-      <div id="suite-json-msg" class="msg"></div>
-    </div>
-
-    <div class="card" id="eval-replay-kick">
-      <h3>Eval replay — kick off</h3>
-      <p class="hint">Replays the JSON from "Eval suite items — definition" against an OpenAI-compatible chat endpoint, stores eval_results.</p>
-      <label>Suite ID (from "Eval suite — create" result) <input id="eval-suite-id" placeholder="e.g. 3"></label>
-      <label>Target (OpenAI-compatible base URL incl. /v1)
-        <input id="eval-target" value="http://192.168.122.1:4000/v1">
-      </label>
-      <div class="row2">
-        <div><label>Model fingerprint <input id="eval-model" placeholder="qwen3.8-27b-rotation"></label></div>
-        <div><label>API key (optional) <input id="eval-key" type="password" placeholder="sk-…"></label></div>
-      </div>
-      <div class="row2">
-        <div><button id="eval-btn" style="width:100%">▶ Kick off eval replay</button></div>
-        <div><button id="eval-pf-btn" style="width:100%; background:var(--pf-btn)">✔ Check target</button></div>
-      </div>
-      <div id="eval-msg" class="msg"></div>
-    </div>
-  </div>
+  </main>
 
   <script>
     function $(id) { return document.getElementById(id); }
@@ -265,7 +218,7 @@
       try {
         // POST: the API key travels in the body, never in a URL (GET query
         // strings leak into access logs / history / proxies — UX review).
-        const keyEl = kind === 'bench' ? $('bench-key') : $('eval-key');
+        const keyEl = $('bench-key');
         const body = {target: targetEl.value.trim(), kind: kind};
         if (keyEl && keyEl.value.trim()) body.api_key = keyEl.value.trim();
         const res = await fetch('/api/ops/preflight', {method: 'POST',
@@ -283,7 +236,6 @@
       finally { kindBtn.disabled = false; kindBtn.textContent = '✔ Check target'; }
     }
     $('bench-pf-btn').onclick = () => checkPreflight($('bench-pf-btn'), $('bench-url'), $('bench-msg'), $('bench-transport').value === 'openai' ? 'eval' : 'bench');
-    $('eval-pf-btn').onclick = () => checkPreflight($('eval-pf-btn'), $('eval-target'), $('eval-msg'), 'eval');
 
     // ---- async bench job + progress indicator ---------------------------
     const bpPoll = { timer: null, zoom: false, streams: 1 };
@@ -477,72 +429,11 @@
       finally { busy($('bench-btn'), false, 'Kick off bench'); }
     };
 
-    $('suite-validate-btn').onclick = () => {
-      try {
-        const suite = JSON.parse($('suite-json').value);
-        if (!Array.isArray(suite.items) || !suite.items.length)
-          throw new Error('need non-empty "items" array');
-        for (const it of suite.items) {
-          if (!it.id) throw new Error('item missing id');
-          if (it.type === 'multi-turn') continue;
-          if (!it.prompt) throw new Error('item ' + it.id + ' missing prompt');
-        }
-        setMsg($('suite-json-msg'), 'Valid: ' + suite.items.length + ' item(s)', true);
-      } catch (err) { setMsg($('suite-json-msg'), 'Invalid: ' + err.message); }
-    };
+    
 
-    $('suite-btn').onclick = async () => {
-      const data = await post('/api/eval-suites', {
-        name: $('suite-name').value.trim(),
-        version: $('suite-version').value.trim() || 'v1',
-      }, $('suite-btn'), $('suite-msg'), 'Create suite');
-      if (data) {
-        setMsg($('suite-msg'), 'Suite #' + data.id + ' created (' + data.name + ')', true);
-        $('eval-suite-id').value = data.id;
-      }
-    };
+    
 
-    $('eval-btn').onclick = async () => {
-      let suite;
-      try { suite = JSON.parse($('suite-json').value); }
-      catch (err) { setMsg($('eval-msg'), 'Suite JSON invalid: ' + err.message); return; }
-      const data = await post('/api/ops/eval', {
-        suite_id: parseInt($('eval-suite-id').value, 10),
-        target: $('eval-target').value.trim(),
-        model_fingerprint: $('eval-model').value.trim(),
-        api_key: $('eval-key').value.trim() || null,
-        suite: suite,
-      }, $('eval-btn'), $('eval-msg'), 'Replay eval suite');
-      if (data) setMsg($('eval-msg'),
-        'Stored ' + data.stored.length + ' result(s) in suite #' + data.suite_id, true);
-    };
-
-  </script>
-  <script>
-    // Grouped-nav anchor routing (2026-09-30 UX round): nav anchors like
-    // /create#eval-suite-create scroll to the matching card and flash it;
-    // a direct hash visit does the same on load.
-    (function () {
-      function goto(hash) {
-        const target = document.getElementById(hash);
-        if (!target) return;
-        target.scrollIntoView({behavior: 'smooth', block: 'start'});
-        target.style.transition = 'box-shadow .2s ease';
-        target.style.boxShadow = '0 0 0 2px var(--accent)';
-        setTimeout(function () { target.style.boxShadow = ''; }, 1200);
-      }
-      var navAnchors = document.querySelectorAll('nav a[href*="#"]');
-      for (const a of navAnchors) {
-        a.addEventListener('click', function (ev) {
-          const hash = this.getAttribute('href').split('#')[1];
-          if (document.getElementById(hash)) {
-            ev.preventDefault();
-            goto(hash);
-          }
-        });
-      }
-      if (location.hash) goto(location.hash.slice(1));
-    })();
+    
   </script>
 </body>
 </html>

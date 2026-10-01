@@ -80,25 +80,69 @@ def test_reports_view_contract(client):
 
 
 def test_nav_links_in_shared_views(client):
-    # 2026-09-30 grouped nav: every page labels the three sections and
-    # still links all views. "Reports" (dropped from the nav in the same
-    # round) is asserted via its API surface instead.
-    for path in ("/", "/compare", "/diff", "/evals", "/judgments", "/reports"):
+    # 2026-09-30 round 2: sidebar rail — every page carries the three
+    # section labels and data-page/data-section identity for nav.js.
+    for path in ("/", "/compare", "/diff", "/kickoff", "/evals",
+                 "/evals/suites/new", "/judgments", "/reports",
+                 "/models", "/baselines"):
         text = client.get(path).text
-        assert "Evals" in text, path
-        assert "Judgments" in text, path
-        assert "nav-group-label" in text, path        # grouped nav present
-        assert "Benchmarks" in text, path
+        assert 'data-nav-section="Benchmarks"' in text, path
+        assert 'data-nav-section="Evals"' in text, path
+        assert 'data-nav-section="Settings"' in text, path
+        assert 'class="sidebar"' in text, path
+        assert 'data-page=' in text, path
+
+
+def test_reports_is_under_evals_nav(client):
+    # Owner call (2026-09-30): Reports lives in the Evals section.
+    text = client.get("/evals").text
+    assert 'data-page="reports"' in text
+    assert 'href="/reports" data-page="reports">Reports</a>' in text
+    # ...and sits inside the Evals group block, not elsewhere:
+    evals_block = text.split('data-nav-section="Evals"')[1].split('</div>\n      <div class="nav-section"')[0]
+    assert 'href="/reports"' in evals_block
+
+
+def test_eval_suite_page_has_three_cards(client):
+    # Suite create page: the three eval kick-off cards live on ONE page
+    # (owner call: features share the suite-creation flow, not anchors).
+    text = client.get("/evals/suites/new").text
+    assert 'id="eval-suite-create"' in text
+    assert 'id="eval-suite-items"' in text
+    assert 'id="eval-replay-kick"' in text
+    assert '<h3>Eval suite — create</h3>' in text
+    assert '<h3>Eval replay — kick off</h3>' in text
+
+
+def test_kickoff_page_bench_only(client):
+    # Kick off page: ONLY the benchmark card — no eval cards, no anchors.
+    text = client.get("/kickoff").text
+    assert 'id="bench-btn"' in text                  # bench card present
+    assert 'id="eval-suite-create"' not in text      # eval cards absent
+    assert 'id="eval-replay-kick"' not in text
+    assert '/create#' not in text                    # no anchor nav links
+    # /create (legacy alias) serves the same page
+    alias = client.get("/create").text
+    assert 'id="bench-btn"' in alias
+    assert 'id="eval-suite-create"' not in alias
+
+
+def test_split_pages_served(client):
+    for path, marker in [("/kickoff", "Kick off"),
+                         ("/evals/suites/new", "Suite create")]:
+        res = client.get(path)
+        assert res.status_code == 200, path
+        assert "text/html" in res.headers["content-type"], path
+        assert marker in res.text, path
 
 
 def test_new_views_have_full_nav(client):
-    # Evals group pages cross-link each other; all pages reach Runs and
-    # Compare; /create stays reachable (it hosts the eval cards).
+    # Evals group pages cross-link each other + reach Runs/Compare via the rail.
     for path in ("/evals", "/judgments", "/reports"):
         text = client.get(path).text
-        for link in ("href=\"/evals\"", "href=\"/judgments\"",
-                     "href=\"/create#eval-suite-create\"",
-                     "href=\"/\"", "href=\"/compare\""):
+        for link in ('href="/evals"', 'href="/judgments"',
+                     'href="/evals/suites/new"',
+                     'href="/"', 'href="/compare"'):
             assert link in text, f"{path} missing {link}"
 
 

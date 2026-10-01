@@ -1,0 +1,199 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="icon" type="image/png" sizes="16x16" href="/static/icons/scorpio-favicon-16.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/static/icons/scorpio-favicon-32.png">
+  <link rel="icon" type="image/png" sizes="180x180" href="/static/icons/scorpio-favicon-180.png">
+  <title>Arcturos — Suite create</title>
+  <link rel="stylesheet" href="/static/theme.css">
+  <link rel="stylesheet" href="/static/nav.css">
+  <style>
+    /* shell + shared form chrome (nav.css + theme.css carry the rest) */
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 1rem; }
+    .card { background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 1rem; }
+    .card h3 { margin: 0 0 .75rem; font-size: 1rem; }
+    label { display: block; font-size: .85rem; font-weight: 600; color: var(--text-soft);
+            margin: .5rem 0 .2rem; }
+    input, textarea, select { width: 100%; box-sizing: border-box; padding: .35rem;
+            font-size: .9rem; border: 1px solid var(--input-border); border-radius: 4px; }
+    textarea { font-family: ui-monospace, monospace; font-size: .8rem; min-height: 90px; }
+    button { margin-top: .6rem; padding: .45rem 1rem; font-size: .9rem;
+             background: var(--btn-bg); color: var(--btn-text); border: 0; border-radius: 4px; cursor: pointer; }
+    button:disabled { background: var(--disabled); cursor: wait; }
+    .msg { margin-top: .5rem; font-size: .85rem; min-height: 1.1em; }
+    .bp-status a, .msg a { color: inherit; text-decoration: underline;
+                           font-weight: 600; }
+    .msg.err { color: var(--err); }
+    .msg.ok { color: var(--ok); }
+    .hint { color: var(--hint); font-size: .78rem; margin: .3rem 0; }
+    .row2 { display: flex; gap: .6rem; } .row2 > div { flex: 1; }
+  </style>
+  <script src="/static/app-time.js"></script>
+  <script src="/static/theme.js"></script>
+  <script src="/static/nav.js"></script>
+</head>
+<body class="shell" data-page="evalsuite" data-section="Evals">
+  <aside class="sidebar">
+    <a class="brand" href="/">Arcturos</a>
+    <span class="brand-sub">LLM benchmark &amp; eval dashboard</span>
+    <nav>
+      <div class="nav-section" data-nav-section="Benchmarks">
+        <div class="nav-section-head">Benchmarks</div>
+        <a href="/kickoff" data-page="kickoff">Kick off</a>
+        <a href="/" data-page="runs">Runs</a>
+        <a href="/compare" data-page="compare">Compare</a>
+        <a href="/diff" data-page="diff">Run diff</a>
+      </div>
+      <div class="nav-section" data-nav-section="Evals">
+        <div class="nav-section-head">Evals</div>
+        <a href="/evals/suites/new" data-page="evalsuite">Suite create</a>
+        <a href="/evals" data-page="evals">Results</a>
+        <a href="/judgments" data-page="judgments">Judgments</a>
+        <a href="/reports" data-page="reports">Reports</a>
+      </div>
+      <div class="nav-section" data-nav-section="Settings">
+        <div class="nav-section-head">Settings</div>
+        <a href="/models" data-page="models">Models</a>
+        <a href="/baselines" data-page="baselines">Baselines</a>
+      </div>
+    </nav>
+    <div class="sidebar-foot">
+      <button class="theme-toggle-inline" data-theme-toggle>☾</button>
+    </div>
+  </aside>
+  <main class="page">
+    <h1>Suite create</h1>
+    <p class="page-intro">Create the suite record, define its item JSON (optional pre-store), then replay it against a target — the three cards run top-to-bottom and the suite id flows from the first card into the replay form.</p>
+    <div class="grid">
+<div class="card" id="eval-suite-create">
+      <h3>Eval suite — create</h3>
+      <p class="hint">Creates the suite record; populate results afterwards by replaying it ("Eval replay — kick off").</p>
+      <label>Suite name <input id="suite-name" placeholder="smoke-reasoning"></label>
+      <label>Version <input id="suite-version" value="v1"></label>
+      <button id="suite-btn">＋ Create suite</button>
+      <div id="suite-msg" class="msg"></div>
+  </div>
+<div class="card" id="eval-suite-items">
+      <h3>Eval suite items — define (optional, pre-store)</h3>
+      <p class="hint">Suite JSON kept in the browser for dispatch: {"items":[{"id":"x","prompt":"…"}]} or multi-turn {"type":"multi-turn","id":"x","turns":[…]}.</p>
+      <textarea id="suite-json" placeholder='{"items": [{"id": "q1", "prompt": "What is 2+2?"}]}'>{"items": [{"id": "q1", "prompt": "What is 2+2?"}]}</textarea>
+      <button id="suite-validate-btn">✔ Validate JSON</button>
+      <div id="suite-json-msg" class="msg"></div>
+    </div>
+
+    
+
+<div class="card" id="eval-replay-kick">
+      <h3>Eval replay — kick off</h3>
+      <p class="hint">Replays the JSON from "Eval suite items — definition" against an OpenAI-compatible chat endpoint, stores eval_results.</p>
+      <label>Suite ID (from "Eval suite — create" result) <input id="eval-suite-id" placeholder="e.g. 3"></label>
+      <label>Target (OpenAI-compatible base URL incl. /v1)
+        <input id="eval-target" value="http://192.168.122.1:4000/v1">
+      </label>
+      <div class="row2">
+        <div><label>Model fingerprint <input id="eval-model" placeholder="qwen3.8-27b-rotation"></label></div>
+        <div><label>API key (optional) <input id="eval-key" type="password" placeholder="sk-…"></label></div>
+      </div>
+      <div class="row2">
+        <div><button id="eval-btn" style="width:100%">▶ Kick off eval replay</button></div>
+        <div><button id="eval-pf-btn" style="width:100%; background:var(--pf-btn)">✔ Check target</button></div>
+      </div>
+      <div id="eval-msg" class="msg"></div>
+    </div>
+
+  </main>
+  <script>
+function $(id) { return document.getElementById(id); }
+    function setMsg(el, text, ok) {
+      el.textContent = text;
+      el.className = ok ? 'msg ok' : 'msg err';
+    }
+    function busy(btn, on, label) {
+      btn.disabled = on;
+      btn.textContent = on ? '⏳ ' + label : label.replace('⏳ ', '');
+    }
+    function fmtDetail(detail, status) {
+      // Pydantic 422 details are arrays of {loc, msg} objects; render them
+      // as "field: msg" strings instead of '[object Object],…' (UX review).
+      if (Array.isArray(detail)) {
+        return detail.map(d => {
+          const loc = (d.loc || []).filter(x => x !== 'body').join('.');
+          return loc + ': ' + (d.msg || JSON.stringify(d));
+        }).join(' | ');
+      }
+      return detail || ('HTTP ' + status);
+    }
+
+    async function post(url, body, btn, msg, label, confirmText) {
+      // Destructive-adjacent posts (append-only records that pair with
+      // existing rows) get a confirm dialog per ux-design principle 5.
+      if (confirmText && !window.confirm(confirmText)) {
+        setMsg(msg, 'Cancelled.');
+        return null;
+      }
+      busy(btn, true, label);
+      setMsg(msg, 'Working…');
+      try {
+        const res = await fetch(url, {method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify(body)});
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          setMsg(msg, 'Failed: ' + fmtDetail(data.detail, res.status));
+          return null;
+        }
+        return data;
+      } catch (err) {
+        setMsg(msg, 'Failed: ' + err);
+        return null;
+      } finally {
+        busy(btn, false, label);
+      }
+    }
+
+    
+$('suite-validate-btn').onclick = () => {
+      try {
+        const suite = JSON.parse($('suite-json').value);
+        if (!Array.isArray(suite.items) || !suite.items.length)
+          throw new Error('need non-empty "items" array');
+        for (const it of suite.items) {
+          if (!it.id) throw new Error('item missing id');
+          if (it.type === 'multi-turn') continue;
+          if (!it.prompt) throw new Error('item ' + it.id + ' missing prompt');
+        }
+        setMsg($('suite-json-msg'), 'Valid: ' + suite.items.length + ' item(s)', true);
+      } catch (err) { setMsg($('suite-json-msg'), 'Invalid: ' + err.message); }
+    };
+
+    $('suite-btn').onclick = async () => {
+      const data = await post('/api/eval-suites', {
+        name: $('suite-name').value.trim(),
+        version: $('suite-version').value.trim() || 'v1',
+      }, $('suite-btn'), $('suite-msg'), 'Create suite');
+      if (data) {
+        setMsg($('suite-msg'), 'Suite #' + data.id + ' created (' + data.name + ')', true);
+        $('eval-suite-id').value = data.id;
+      }
+    };
+
+    $('eval-btn').onclick = async () => {
+      let suite;
+      try { suite = JSON.parse($('suite-json').value); }
+      catch (err) { setMsg($('eval-msg'), 'Suite JSON invalid: ' + err.message); return; }
+      const data = await post('/api/ops/eval', {
+        suite_id: parseInt($('eval-suite-id').value, 10),
+        target: $('eval-target').value.trim(),
+        model_fingerprint: $('eval-model').value.trim(),
+        api_key: $('eval-key').value.trim() || null,
+        suite: suite,
+      }, $('eval-btn'), $('eval-msg'), 'Replay eval suite');
+      if (data) setMsg($('eval-msg'),
+        'Stored ' + data.stored.length + ' result(s) in suite #' + data.suite_id, true);
+    };
+
+  </script>
+</body>
+</html>
