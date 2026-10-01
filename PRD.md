@@ -136,7 +136,9 @@ record judgments — all from the web UI (added 2026-09-17 from UI feedback;
 extends the original "glance-first UI" principle: the dashboard is now also
 the launch surface, not only the reading surface).
 
-- **Create & Run view (`/create`)** with six cards:
+- **Create & Run view (`/create`)** with four cards (2026-09-30 amendment:
+  the manual benchmark-point and judgment-record cards were removed — both
+  unused in practice; the API endpoints remain for scripted use):
   1. **Bench dispatch** — pick server URL, context targets, n_predict,
      optional API key; the API replays a real cold-cache sweep (tokenize →
      UUID-prefixed prompts → native `/completion`), stores run + benchmark
@@ -149,9 +151,10 @@ the launch surface, not only the reading surface).
      fingerprint + optional API key (password field, never stored);
      single- and multi-turn items replay and
      store eval_results.
-  5. **Manual benchmark point** — add externally-measured rows to an existing
-     run; power provenance (host + GPU index) required with any watts value.
-  6. **Judgment record** — blind A/B verdict between two stored results.
+- **Grouped navigation (added 2026-09-30):** the dashboard nav organises
+  every view into three labelled sections — **Benchmarks** (kick off, runs,
+  compare, diff), **Evals** (evals, judgments, plus the three /create suite
+  cards via anchors), and **Settings** (models registry, baselines).
 - **API dispatch endpoints** (thin wrappers over ops.py): `POST /api/ops/bench`,
   `POST /api/ops/eval`. Both accept an optional `api_key` body field passed
   through to every outbound request. Synchronous, bounded by timeouts;
