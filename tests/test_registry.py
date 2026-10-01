@@ -11,7 +11,7 @@ import pytest
 def seeded_run(client):
     """One run, so there is something to pin and to auto-register."""
     r = client.post("/api/runs", json={
-        "server_url": "http://10.10.10.122:8000",
+        "server_url": "http://fixt-host-a:8000",
         "model_fingerprint": "/models/ds4-flash-q8.gguf",
         "engine": "llama.cpp",
         "context_size": 262144,
@@ -74,7 +74,7 @@ def test_baseline_pin_and_repin(client, seeded_run):
 
     # second run for the same fingerprint, then re-pin: replaces the pointer
     client.post("/api/runs", json={
-        "server_url": "http://10.10.10.122:8000",
+        "server_url": "http://fixt-host-a:8000",
         "model_fingerprint": fp, "engine": "llama.cpp",
         "context_size": 131072})
     r = client.post("/api/baselines", json={

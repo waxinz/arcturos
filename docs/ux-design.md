@@ -83,7 +83,7 @@ bookmarked and re-shared over the LAN.
 **Flow**
 
 1. Operator picks target + model. Either via flags or interactively:
-   `arcturos bench http://ruapehu:8000/vllm --model ds4-flash --ctx 4096 32768 131072 250000`
+   `arcturos bench http://demo host A:8000/vllm --model ds4-flash --ctx 4096 32768 131072 250000`
 2. **Health preflight (J6)** runs automatically before launch: server reachability,
    `/tokenize` availability (with the dispatch's API key when provided), model loaded,
    context size discovered, GPU visible for power sampling. Failures abort with an
@@ -143,7 +143,7 @@ with a "clear filters" link. Superseded runs are toggleable ("show history").
 **Flow**
 
 1. Suites live in versioned JSON/YAML. `arcturos eval suites/qa-basic.yaml
-   http://aotea:8080 --model m3 --concurrency 4 --retries 2`
+   http://demo host C:8080 --model m3 --concurrency 4 --retries 2`
 2. Runner prints a live table: item ID, turn shape (1-turn/mt), status
    (pending → running → ok / error / retrying), latency so far. Failures are
    printed inline, not swallowed: `[item 17] error 500 after 2 retries — stored`.

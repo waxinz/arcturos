@@ -52,7 +52,16 @@
   <script src="/static/app-time.js"></script>
   <script src="/static/theme.js"></script>
   <script src="/static/nav.js"></script>
-</head>
+    <script>
+      // Defaults flow from arcturos.toml / arcturos.local.toml (config.py
+      // exposes /api/config/ui-defaults). Keep the form usable if the
+      // endpoint is unreachable: fall back to neutral placeholders.
+      fetch('/api/config/ui-defaults').then(r => r.json()).then(cfg => {
+        if (cfg.server_url) document.getElementById('bench-url').value = cfg.server_url;
+        if (cfg.model) document.getElementById('bench-model').value = cfg.model;
+      }).catch(() => {});
+    </script>
+  </head>
 <body class="shell" data-page="kickoff" data-section="Benchmarks">
   <aside class="sidebar">
     <a class="brand" href="/">Arcturos</a>
@@ -90,7 +99,7 @@
       <h3>Benchmark run — kick off</h3>
       <p class="hint">Runs a cold-cache sweep. Transport <b>native</b> targets a llama.cpp server (/completion); <b>openai</b> targets any OpenAI-compatible chat server (tabbyAPI, vLLM, litellm — needs a model name). Stores a run + one benchmark row per context target.</p>
       <label>Server URL
-        <input id="bench-url" value="http://10.10.10.122:8000">
+        <input id="bench-url" value="http://localhost:8000">
       </label>
       <label>Context targets (tokens, comma-separated)
         <input id="bench-targets" value="32768, 65536, 131072, 196608, 256256">
@@ -103,7 +112,7 @@
           </select>
         </label></div>
         <div><label>Model (openai transport)
-          <input id="bench-model" value="GLM-5.3-Flash">
+          <input id="bench-model" value="">
         </label></div>
       </div>
       <label>API key (optional, for auth-protected servers)
@@ -195,7 +204,9 @@ function $(id) { return document.getElementById(id); }
       try {
         // POST: the API key travels in the body, never in a URL (GET query
         // strings leak into access logs / history / proxies — UX review).
-        const keyEl = kind === 'bench' ? $('bench-key') : $('eval-key');
+        // bench / eval listeners pass their own key element; the page only
+        // ships bench-key, so anything else falls back to null (no key).
+        const keyEl = document.getElementById('bench-key');
         const body = {target: targetEl.value.trim(), kind: kind};
         if (keyEl && keyEl.value.trim()) body.api_key = keyEl.value.trim();
         const res = await fetch('/api/ops/preflight', {method: 'POST',
@@ -213,7 +224,6 @@ function $(id) { return document.getElementById(id); }
       finally { kindBtn.disabled = false; kindBtn.textContent = '✔ Check target'; }
     }
     $('bench-pf-btn').onclick = () => checkPreflight($('bench-pf-btn'), $('bench-url'), $('bench-msg'), $('bench-transport').value === 'openai' ? 'eval' : 'bench');
-    $('eval-pf-btn').onclick = () => checkPreflight($('eval-pf-btn'), $('eval-target'), $('eval-msg'), 'eval');
 
     // ---- async bench job + progress indicator ---------------------------
     const bpPoll = { timer: null, zoom: false, streams: 1 };

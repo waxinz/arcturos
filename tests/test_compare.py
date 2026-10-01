@@ -11,9 +11,9 @@ import pytest
 # ---------------------------------------------------------- fixtures --------
 
 RUN_A = {
-    "server_url": "http://10.10.10.122:8000",
+    "server_url": "http://fixt-host-a:8000",
     "model_fingerprint": (
-        "/home/alexei/.cache/huggingface/hub/models--unsloth--DeepSeek-V4-Flash-0731-GGUF/"
+        "~/.cache/huggingface/hub/models--unsloth--DeepSeek-V4-Flash-0731-GGUF/"
         "snapshots/fbbb5b93fb787c21338159b0af3318bb3f4d9768/UD-IQ3_XXS/"
         "DeepSeek-V4-Flash-0731-UD-IQ3_XXS-00001-of-00004.gguf"
     ),
@@ -22,7 +22,7 @@ RUN_A = {
 }
 
 RUN_B = {
-    "server_url": "http://10.10.10.222:8000",
+    "server_url": "http://fixt-host-b:8000",
     "model_fingerprint": "GLM-5.3-Flash (GGUF, pakuranga-inf 6x3090)",
     "engine": "llama.cpp",
     "context_size": 262144,

@@ -2,8 +2,8 @@
   "//": "Fixture: demo seed data for dashboard demo mode + integration tests. Shape matches the live API contract in src/arcturos/schemas.py (2026-09-17). Applied by scripts/seed_demo.py or manually via POST.",
   "runs": [
     {
-      "server_url": "http://10.10.10.122:8000",
-      "model_fingerprint": "DeepSeek-V4-Flash (GGUF, unsloth UD-IQ3_XXS, ruapehu 6x3090)",
+      "server_url": "http://demo-host-a.local:8000",
+      "model_fingerprint": "DeepSeek-V4-Flash (GGUF, unsloth UD-IQ3_XXS, demo GPU node)",
       "engine": "llama.cpp",
       "context_size": 262144,
       "benchmarks": [
@@ -17,7 +17,7 @@
           "mtp_draft_n": 96,
           "mtp_accepted": 83,
           "power_watts": 249.5,
-          "power_host": "10.10.10.122 (ruapehu)",
+          "power_host": "demo-host-a",
           "power_gpu_index": null
         },
         {
@@ -30,7 +30,7 @@
           "mtp_draft_n": 96,
           "mtp_accepted": 83,
           "power_watts": 250.1,
-          "power_host": "10.10.10.122 (ruapehu)",
+          "power_host": "demo-host-a",
           "power_gpu_index": null
         },
         {
@@ -43,7 +43,7 @@
           "mtp_draft_n": 96,
           "mtp_accepted": 81,
           "power_watts": 250.0,
-          "power_host": "10.10.10.122 (ruapehu)",
+          "power_host": "demo-host-a",
           "power_gpu_index": null
         },
         {
@@ -56,14 +56,14 @@
           "mtp_draft_n": 96,
           "mtp_accepted": 80,
           "power_watts": 249.8,
-          "power_host": "10.10.10.122 (ruapehu)",
+          "power_host": "demo-host-a",
           "power_gpu_index": null
         }
       ]
     },
     {
-      "server_url": "http://10.10.10.222:8000",
-      "model_fingerprint": "GLM-5.3-Flash (GGUF, pakuranga-inf 6x3090)",
+      "server_url": "http://demo-host-b.local:8000",
+      "model_fingerprint": "GLM-5.3-Flash (GGUF, demo GPU node)",
       "engine": "llama.cpp",
       "context_size": 262144,
       "benchmarks": [
@@ -77,7 +77,7 @@
           "mtp_draft_n": 96,
           "mtp_accepted": 86,
           "power_watts": 248.2,
-          "power_host": "10.10.10.222 (pakuranga-inf)",
+          "power_host": "demo-host-b",
           "power_gpu_index": null
         },
         {
@@ -90,7 +90,7 @@
           "mtp_draft_n": 96,
           "mtp_accepted": 84,
           "power_watts": 249.9,
-          "power_host": "10.10.10.222 (pakuranga-inf)",
+          "power_host": "demo-host-b",
           "power_gpu_index": null
         },
         {
@@ -103,7 +103,7 @@
           "mtp_draft_n": 96,
           "mtp_accepted": 83,
           "power_watts": 250.3,
-          "power_host": "10.10.10.222 (pakuranga-inf)",
+          "power_host": "demo-host-b",
           "power_gpu_index": null
         },
         {
@@ -116,7 +116,7 @@
           "mtp_draft_n": 96,
           "mtp_accepted": 82,
           "power_watts": 250.0,
-          "power_host": "10.10.10.222 (pakuranga-inf)",
+          "power_host": "demo-host-b",
           "power_gpu_index": null
         }
       ]

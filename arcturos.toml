@@ -1,0 +1,23 @@
+# arcturos.toml — committed defaults template.
+# Operator-private values (real hostnames, API keys) belong in
+# arcturos.local.toml which is .gitignored — never commit that file.
+# Environment overrides: ARCTUROS_BENCH__SERVER_URL=http://host:port etc.
+
+[bench]
+# Default target shown in the Kick off form. Point at your own inference
+# server via arcturos.local.toml:  server_url = "http://your-host:8000"
+server_url = "http://localhost:8000"
+# Model name for the openai transport (leave empty to type per dispatch).
+model = ""
+# Sent per-request only; never stored by the dashboard.
+api_key = ""
+
+[demo]
+# seed_demo.py probes these (first live wins) before synthetic seeding.
+live_targets = ["http://localhost:8000"]
+# Default judge / eval-replay endpoint (suite page, ab_judge.py).
+judge_url = ""
+
+[ui]
+# Theme preference applied when the visitor has no saved choice.
+theme_default = "system"
