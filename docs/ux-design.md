@@ -65,9 +65,10 @@ Dashboard → /create (Create & Run)
 ├─ Bench dispatch      (server URL, ctx targets, n_predict [+ api key] → real sweep)
 ├─ Eval suite create   (name + version → suite id echoed to replay form)
 ├─ Suite item editor   (JSON textarea, client-side validated)
-├─ Eval replay dispatch(suite id + target + fingerprint [+ api key])
-├─ Manual bench point  (external measurement; power provenance required)
-└─ Judgment record     (blind A/B verdict between stored results)
+└─ Eval replay dispatch(suite id + target + fingerprint [+ api key])
+
+(2026-09-30: manual bench point + judgment record were removed — unused.
+They remain API-only surfaces: POST /api/runs/{id}/benchmarks, /api/judgments.)
 ```
 
 Dashboard nav is a persistent left rail (7 items above), each opening a
@@ -280,12 +281,13 @@ version, last refresh). No auth. All views URL-addressable.
   judgment history list with generation selector.
 - **Reports:** as §4.5.
 - **Models:** registry cards; alias edit inline; fingerprint copy button.
-- **Create & Run (`/create`, J7):** six form cards in a responsive grid —
+- **Create & Run (`/create`, J7):** four form cards in a responsive grid —
   (1) bench dispatch (server URL, ctx targets, n_predict, optional API key
    password field), (2) eval suite create, (3) suite item JSON editor with
    client-side validation, (4) eval replay dispatch (target, fingerprint,
-   optional API key password field), (5) manual benchmark
-   point, (6) judgment record. Every card posts to the API synchronously;
+   optional API key password field). 2026-09-30: manual benchmark point and
+   judgment record cards were removed (unused; API surfaces remain).
+   Every card posts to the API synchronously;
   busy state disables the button with a spinner label; result messages are
   green (success + stored ids echoed for the next form) or red (422/502
   detail shown verbatim). Suite-create echoes the new id into the replay
