@@ -110,6 +110,29 @@ arcturos/
 
 ### Log (newest first)
 
+- 2026-09-30 — Grouped navigation UX round: the flat nine-link nav became
+  three labelled sections — Benchmarks (Kick off / Runs / Compare / Diff),
+  Evals (Evals / Judgments / Suite create / Suite items / Replay kick-off),
+  Settings (Models / Baselines) — implemented as .nav-groups blocks with
+  hairline dividers + uppercase labels in theme.css, wired on all ten
+  pages; the per-page highlighter (inlined under the theme.js script tag)
+  is now hash-aware. The eval kick-off cards moved conceptually under the
+  Evals group: nav links /create#eval-suite-create, /create#eval-suite-items,
+  /create#eval-replay-kick anchor-scroll to (and flash) the matching card —
+  card ids + a click/lochash router added. /create's stale numerals
+  ("1 · Benchmark run" etc.) dropped; cross-card hints name cards instead
+  of numbers. The unused card 5 (manual benchmark point) and card 6
+  (judgment record) were REMOVED from /create — API surfaces stay (POST
+  /api/runs/{id}/benchmarks, /api/judgments); PRD J7 + ux-design amended.
+  Operator item set delivered in the same round: /create's model field
+  defaults to GLM-5.3-Flash (openai transport), the Power host / GPU index
+  pair was removed from the bench card (power stays an API-only body field
+  per ADR 002), the Compare picker table gained a Name column in the
+  second position (display_name, same fallback rule as /runs), and the
+  Diff page's A/B selects label entries '#id — run name' (display_name →
+  name → fingerprint chain). test_evalviews nav assertions updated for
+  the grouped shape. 229 passed.
+
 - 2026-09-22 — Final check-in: naming UX round + theme + local-time
   datetimes + coverage validation. (1) Run-detail: the rename button
   was appended to #run-actions BEFORE that container was wiped by the
