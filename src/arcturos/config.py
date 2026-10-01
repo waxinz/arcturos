@@ -23,8 +23,11 @@ _CANDIDATE_FILES = ("arcturos.local.toml", "arcturos.toml")
 
 
 def _candidate_paths():
-    """Where files may live: cwd (repo root / service CWD) + package parent."""
-    roots = [Path.cwd(), Path(__file__).resolve().parent.parent]
+    """Where files may live: the service CWD plus every parent of the
+    package (so the repo root is found whether run as a checkout, an
+    installed package, or from an arbitrary working directory)."""
+    here = Path(__file__).resolve()          # .../src/arcturos/config.py
+    roots = [Path.cwd(), *here.parents]
     seen = []
     for root in roots:
         for name in _CANDIDATE_FILES:
