@@ -37,13 +37,14 @@ def _candidate_paths():
     return seen
 
 
-def _flatten(d, prefix=""):
-    """{bench: {server_url: x}} -> {('bench','server_url'): x} for env overlay."""
+def _flatten(d, prefix=()):
+    """{bench: {server_url: x}} -> {('bench','server_url'): x}.
+    Tuple keys — the same shape the ARCTUROS_* env parser produces."""
     flat = {}
     for k, v in d.items():
-        key = f"{prefix}{k}"
+        key = prefix + (str(k),)
         if isinstance(v, dict):
-            flat.update(_flatten(v, key + "__"))
+            flat.update(_flatten(v, key))
         else:
             flat[key] = v
     return flat
