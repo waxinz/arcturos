@@ -33,7 +33,7 @@ EXPECTED_COLUMNS = {
 }
 
 RUN = {
-    "server_url": "http://10.10.10.222:8000/v1",
+    "server_url": "http://fixt-host-b:8000/v1",
     "model_fingerprint": "GLM-5.3-Flash-UD-IQ2_XXS",
     "engine": "llama.cpp",
     "context_size": 262144,
@@ -85,7 +85,7 @@ def test_runs_benchmarks_roundtrip(client):
             "mtp_draft_n": 3,
             "mtp_accepted": 2,
             "power_watts": 250.0,
-            "power_host": "alexei@10.10.10.122",
+            "power_host": "benchuser@fixt-host-a",
             "power_gpu_index": 0,
         },
     )
@@ -613,12 +613,12 @@ def test_runs_list_display_name_fallback(client):
     label instead of '—' (2026-09-22 naming UX round). Stored rows are
     never mutated — the fallback is computed at read time."""
     a = client.post("/api/runs", json=RUN).json()["id"]
-    b = client.post("/api/runs", json={**RUN, "server_url": "http://10.10.10.14:8080",
+    b = client.post("/api/runs", json={**RUN, "server_url": "http://fixt-host-c:8080",
                                        "model_fingerprint": "qwen3.8-27b"}).json()["id"]
     client.patch(f"/api/runs/{a}/name", json={"name": "my sweep"})
     runs = {r["id"]: r for r in client.get("/api/runs").json()}
     assert runs[a]["display_name"] == "my sweep"          # name is authoritative
-    assert runs[b]["display_name"] == "10.10.10.14 · qwen3.8-27b"
+    assert runs[b]["display_name"] == "fixt-host-c · qwen3.8-27b"
     assert runs[b]["name"] is None                        # stored row untouched
 
 
@@ -627,7 +627,7 @@ def test_run_detail_api_carries_display_name(client):
     inline editor's unnamed placeholder can show the computed default."""
     run_id = client.post("/api/runs", json=RUN).json()["id"]
     run = client.get(f"/api/runs/{run_id}").json()
-    assert run["display_name"] == "10.10.10.222 · GLM-5.3-Flash-UD-IQ2_XXS"
+    assert run["display_name"] == "fixt-host-b · GLM-5.3-Flash-UD-IQ2_XXS"
     renamed = client.patch(f"/api/runs/{run_id}/name",
                            json={"name": "renamed!"}).json()
     assert renamed["name"] == "renamed!"
@@ -649,7 +649,7 @@ def test_runs_page_name_column_not_shifted(client):
     """Regression (2026-09-22): the runs-page render loop used to skip
     cells[0] (assuming it was the ID, which is built separately), so the
     Name column displayed server_url and every column after it shifted
-    one left — run 5 showed 'http://10.10.10.122:8000' as its name. The
+    one left — run 5 showed 'http://fixt-host-a:8000' as its name. The
     name cell must be rendered explicitly between the ID cell and the
     data loop, and the loop must start at index 0."""
     html = client.get("/runs").text

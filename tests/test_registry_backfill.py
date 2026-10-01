@@ -17,7 +17,7 @@ def test_backfill_registers_preexisting_runs(tmp_path):
     conn.execute(
         "INSERT INTO runs (server_url, model_fingerprint, engine, "
         "context_size, created_at) VALUES (?, ?, ?, ?, ?)",
-        ("http://10.10.10.122:8000", "/m/old-fp.gguf", "llama.cpp",
+        ("http://fixt-host-a:8000", "/m/old-fp.gguf", "llama.cpp",
          262144, "2026-09-01T10:00:00.000"),
     )
     conn.commit()

@@ -23,6 +23,9 @@ from urllib import request as urlreq
 from urllib.error import HTTPError, URLError
 
 ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT / "src"))
+
+from arcturos import config
 SUITES_DIR = ROOT / "qa" / "suites"
 
 
@@ -181,7 +184,8 @@ def main() -> None:
     bench_rows = seed_benchmarks(args.api, demo)
     print(f"seeded {bench_rows} benchmark rows")
     live_target = None
-    for candidate in ("http://10.10.10.122:8000", "http://10.10.10.222:8000"):
+    for candidate in config.get_section("demo").get("live_targets",
+                                                    ["http://localhost:8000"]):
         try:
             urlreq.urlopen(candidate + "/health", timeout=4)
             live_target = candidate

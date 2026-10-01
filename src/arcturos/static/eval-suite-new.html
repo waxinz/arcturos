@@ -33,7 +33,14 @@
   <script src="/static/app-time.js"></script>
   <script src="/static/theme.js"></script>
   <script src="/static/nav.js"></script>
-</head>
+    <script>
+      // Replay target default from arcturos.toml / local overlay
+      // (/api/config/ui-defaults); silent fallback = user types it.
+      fetch('/api/config/ui-defaults').then(r => r.json()).then(cfg => {
+        if (cfg.eval_target) document.getElementById('eval-target').value = cfg.eval_target;
+      }).catch(() => {});
+    </script>
+  </head>
 <body class="shell" data-page="evalsuite" data-section="Evals">
   <aside class="sidebar">
     <a class="brand" href="/">Arcturos</a>
@@ -92,7 +99,7 @@
       <p class="hint">Replays the JSON from "Eval suite items — definition" against an OpenAI-compatible chat endpoint, stores eval_results.</p>
       <label>Suite ID (from "Eval suite — create" result) <input id="eval-suite-id" placeholder="e.g. 3"></label>
       <label>Target (OpenAI-compatible base URL incl. /v1)
-        <input id="eval-target" value="http://192.168.122.1:4000/v1">
+        <input id="eval-target" value="">
       </label>
       <div class="row2">
         <div><label>Model fingerprint <input id="eval-model" placeholder="qwen3.8-27b-rotation"></label></div>

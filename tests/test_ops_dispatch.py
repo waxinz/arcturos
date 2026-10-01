@@ -551,22 +551,22 @@ def test_dispatch_bench_power_host_opt_in_samples_and_stores(db_path):
             db_path, "http://fake:4000/v1", [128, 256], 30,
             transport_name="openai", model="GLM-5.3-Flash",
             transport=_openai_preflight_app(),
-            power_host="alexei@10.10.10.222", power_gpu_index=1)
+            power_host="benchuser@fixt-host-b", power_gpu_index=1)
 
-    assert calls["host"] == "alexei@10.10.10.222"
+    assert calls["host"] == "benchuser@fixt-host-b"
     assert calls["gpu"] == 1
     assert len(calls["samplers"]) == 2  # one sampler per point
     assert all(s["started"] and s["stopped"] for s in calls["samplers"])
     for p in result["points"]:
         assert p["power_watts"] == 149.9
-        assert p["power_host"] == "alexei@10.10.10.222"
+        assert p["power_host"] == "benchuser@fixt-host-b"
         assert p["power_gpu_index"] == 1
 
     from arcturos.bench import export_run_json
     exported = export_run_json(db_path, 1)
     for b in exported["benchmarks"]:
         assert b["power_watts"] == 149.9
-        assert b["power_host"] == "alexei@10.10.10.222"
+        assert b["power_host"] == "benchuser@fixt-host-b"
         assert b["power_gpu_index"] == 1
 
 
@@ -605,22 +605,22 @@ def test_dispatch_bench_native_power_host_opt_in_samples_and_stores(db_path):
         result = ops.dispatch_bench(
             db_path, "http://fake:8000", [128, 256], 8,
             transport=_bench_app(),          # native transport
-            power_host="alexei@10.10.10.122", power_gpu_index=2)
+            power_host="benchuser@fixt-host-a", power_gpu_index=2)
 
     assert len(calls["samplers"]) == 2  # one sampler per point
-    assert all(s["host"] == "alexei@10.10.10.122" and s["gpu"] == 2
+    assert all(s["host"] == "benchuser@fixt-host-a" and s["gpu"] == 2
                and s["started"] and s["stopped"]
                for s in calls["samplers"])
     for p in result["points"]:
         assert p["power_watts"] == 129.4
-        assert p["power_host"] == "alexei@10.10.10.122"
+        assert p["power_host"] == "benchuser@fixt-host-a"
         assert p["power_gpu_index"] == 2
 
     from arcturos.bench import export_run_json
     exported = export_run_json(db_path, 1)
     for b in exported["benchmarks"]:
         assert b["power_watts"] == 129.4
-        assert b["power_host"] == "alexei@10.10.10.122"
+        assert b["power_host"] == "benchuser@fixt-host-a"
         assert b["power_gpu_index"] == 2
 
 
@@ -737,9 +737,9 @@ def test_dispatch_bench_openai_mid_sweep_failure_stores_partial_run(db_path):
 
 def test_default_run_name_humanized():
     """Default name format: 'host · model · 64k/128k' with humanized ctx."""
-    n = ops.default_run_name("http://10.10.10.222:8000", "GLM-5.3-Flash",
+    n = ops.default_run_name("http://fixt-host-b:8000", "GLM-5.3-Flash",
                              [32768, 65536, 131072])
-    assert n == "10.10.10.222 · GLM-5.3-Flash · 32k/64k/128k"
+    assert n == "fixt-host-b · GLM-5.3-Flash · 32k/64k/128k"
     # non-kibibyte targets stay raw
     n2 = ops.default_run_name("http://h:8000", "m", [1500, 4096])
     assert n2 == "h · m · 1500/4k"

@@ -61,6 +61,7 @@ from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 from . import compare, ops, reports
+from . import config
 from .db import DEFAULT_DB_PATH, connect, init_db
 from .schemas import (
     BaselineCreate,
@@ -223,6 +224,19 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
         )
         db.commit()
         return Response(status_code=204)
+
+    @app.get("/api/config/ui-defaults", include_in_schema=False)
+    def ui_defaults():
+        """Non-secret UI boot values (arcturos.toml / local overlay).
+
+        api_key is deliberately NOT exposed — it flows server-side only.
+        """
+        return {
+            "server_url": config.get("bench", "server_url",
+                                     "http://localhost:8000"),
+            "model": config.get("bench", "model", ""),
+            "eval_target": config.get("demo", "judge_url", ""),
+        }
 
     @app.get("/api/runs/{run_id}/visibility")
     def get_run_visibility(run_id: int, db=Depends(get_db)):

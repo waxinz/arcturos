@@ -225,7 +225,7 @@ the launch surface, not only the reading surface).
 - [x] Suite existence checked before replay; eval batch is transactional (failure → nothing stored).
 - [x] Power numbers always carry host + GPU index provenance.
 - [x] Health preflight before dispatch (J6).
-- [x] First real benchmark captured via /create dispatch (openai transport, run 9 vs pakuranga tabbyAPI GLM-5.3-Flash).
+- [x] First real benchmark captured via /create dispatch (openai transport, run 9 vs demo host B tabbyAPI GLM-5.3-Flash).
 - [x] Async bench jobs with live progress (bar + status + ETA + zoom) on /create.
 - [x] Runs can be soft-hidden from list/compare views and unhidden, without deleting data.
 

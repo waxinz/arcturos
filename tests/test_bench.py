@@ -342,12 +342,12 @@ def test_store_benchmark_run_roundtrip(tmp_path):
     }
 
     run_id = bench.store_benchmark_run(
-        str(db_path), "http://10.10.10.122:8000", meta, points
+        str(db_path), "http://fixt-host-a:8000", meta, points
     )
     assert isinstance(run_id, int) and run_id >= 1
 
     out = bench.export_run_json(db_path, run_id)
-    assert out["run"]["server_url"] == "http://10.10.10.122:8000"
+    assert out["run"]["server_url"] == "http://fixt-host-a:8000"
     assert out["run"]["model_fingerprint"] == meta["model_path"]
     assert out["run"]["engine"] == "llama.cpp"
     assert out["run"]["context_size"] == 262144

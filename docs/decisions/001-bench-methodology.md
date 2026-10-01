@@ -71,7 +71,7 @@ existing schema, an unknown n_ctx is stored as `0` — a documented sentinel for
 "unknown" rather than a fabricated value. No DDL is duplicated; the db.py
 helpers (`connect`, `init_db`) are reused.
 
-## Validation (2026-09-17, live smoke on ruapehu 10.10.10.122:8000)
+## Validation (2026-09-17, live smoke on demo host A)
 
 Ran one real point (target 512, n_predict 32) against the live llama.cpp
 server. Endpoint shapes matched the assumptions exactly — no code adaptation

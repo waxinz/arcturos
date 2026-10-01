@@ -155,7 +155,7 @@ def test_ops_eval_roundtrip(client, monkeypatch):
 def test_power_provenance_validation(client):
     """ADR 002: power_watts without power_host is rejected (422)."""
     run = client.post("/api/runs", json={
-        "server_url": "http://10.10.10.122:8000/v1",
+        "server_url": "http://fixt-host-a:8000/v1",
         "model_fingerprint": "m", "engine": "llama.cpp",
         "context_size": 262144}).json()
     r = client.post(f"/api/runs/{run['id']}/benchmarks", json={
@@ -163,9 +163,9 @@ def test_power_provenance_validation(client):
     assert r.status_code == 422
     ok = client.post(f"/api/runs/{run['id']}/benchmarks", json={
         "context_tokens": 4096, "power_watts": 134.0,
-        "power_host": "alexei@10.10.10.122", "power_gpu_index": 0})
+        "power_host": "benchuser@fixt-host-a", "power_gpu_index": 0})
     assert ok.status_code == 201
-    assert ok.json()["power_host"] == "alexei@10.10.10.122"
+    assert ok.json()["power_host"] == "benchuser@fixt-host-a"
 
 
 
@@ -176,7 +176,7 @@ def test_hidden_run_rejected_by_baseline_deltas(client):
     """Soft-hide gates every compare surface: a hidden run is 404 as the
     delta target (parity with run-diff and the series endpoint)."""
     run = client.post("/api/runs", json={
-        "server_url": "http://10.10.10.122:8000",
+        "server_url": "http://fixt-host-a:8000",
         "model_fingerprint": "/m/h.gguf", "engine": "llama.cpp",
         "context_size": 4096}).json()
     client.post(f"/api/runs/{run['id']}/benchmarks",
@@ -192,11 +192,11 @@ def test_hidden_run_rejected_by_baseline_deltas(client):
 def test_hidden_run_rejected_as_baseline_reference(client):
     """A hidden run cannot serve as the baseline= reference either."""
     a = client.post("/api/runs", json={
-        "server_url": "http://10.10.10.122:8000",
+        "server_url": "http://fixt-host-a:8000",
         "model_fingerprint": "/m/a.gguf", "engine": "llama.cpp",
         "context_size": 4096}).json()
     b = client.post("/api/runs", json={
-        "server_url": "http://10.10.10.122:8000",
+        "server_url": "http://fixt-host-a:8000",
         "model_fingerprint": "/m/b.gguf", "engine": "llama.cpp",
         "context_size": 4096}).json()
     client.post(f"/api/runs/{a['id']}/benchmarks",
@@ -279,7 +279,7 @@ def test_bench_job_status_unknown_id_404(client):
 def test_eval_dispatch_validation_errors(client):
     """POST /api/ops/eval rejects bad shapes with 422 before touching
     the target: suite_id, target URL, fingerprint, suite payload, name."""
-    base = {"suite_id": 1, "target": "http://10.10.10.14:8080",
+    base = {"suite_id": 1, "target": "http://fixt-host-c:8080",
             "model_fingerprint": "m", "suite": {"items": []}}
     r = client.post("/api/ops/eval", json={**base, "suite_id": "one"})
     assert r.status_code == 422 and "suite_id" in r.json()["detail"]

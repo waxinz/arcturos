@@ -79,7 +79,7 @@ _SHARD_SUFFIX = re.compile(r"-\d+-of-\d+$")
 
 
 def host_label(server_url: str) -> str:
-    """Compact host tag for legends: 'http://10.10.10.122:8000' -> '10.10.10.122'.
+    """Compact host tag for legends: 'http://bench.example.com:8000' -> 'bench.example.com'.
 
     Distinguishes multi-host runs in compare views (ADR 002: power metrics
     and queueing behavior are host-specific, so the host must be visible).
