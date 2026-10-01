@@ -8,11 +8,9 @@
   <link rel="stylesheet" href="/static/theme.css">
   <link rel="stylesheet" href="/static/nav.css">
   <style>
-    body { font-family: system-ui, -apple-system, sans-serif; margin: 2rem auto;
-           max-width: 1080px; color: var(--text); background: var(--bg); }
     h1 { font-size: 1.6rem; margin: 0; }
     .card { background: var(--surface); border: 1px solid var(--border);
-            border-radius: 6px; padding: 1.1rem; max-width: 760px; }
+            border-radius: 6px; padding: 1.1rem; }
     .card h2 { margin: 0 0 .8rem; font-size: 1.15rem; }
     label { display: block; font-size: .85rem; font-weight: 600; color: var(--text-soft);
             margin: .55rem 0 .2rem; }
@@ -87,10 +85,8 @@
 
   
   <main class="page">
-  <main class="page">
     <h1>Arcturos</h1>
     <div class="card">
-<div class="card">
       <h3>Benchmark run — kick off</h3>
       <p class="hint">Runs a cold-cache sweep. Transport <b>native</b> targets a llama.cpp server (/completion); <b>openai</b> targets any OpenAI-compatible chat server (tabbyAPI, vLLM, litellm — needs a model name). Stores a run + one benchmark row per context target.</p>
       <label>Server URL
@@ -144,8 +140,6 @@
       </div>
     </div>
 
-        </div>
-  </main>
   <script>
 function $(id) { return document.getElementById(id); }
     function setMsg(el, text, ok) {
@@ -411,20 +405,6 @@ function $(id) { return document.getElementById(id); }
         bpPollLoop(data.job_id);
       } catch (err) { setMsg($('bench-msg'), 'Kick off failed: ' + err); }
       finally { busy($('bench-btn'), false, 'Kick off bench'); }
-    };
-
-    $('suite-validate-btn').onclick = () => {
-      try {
-        const suite = JSON.parse($('suite-json').value);
-        if (!Array.isArray(suite.items) || !suite.items.length)
-          throw new Error('need non-empty "items" array');
-        for (const it of suite.items) {
-          if (!it.id) throw new Error('item missing id');
-          if (it.type === 'multi-turn') continue;
-          if (!it.prompt) throw new Error('item ' + it.id + ' missing prompt');
-        }
-        setMsg($('suite-json-msg'), 'Valid: ' + suite.items.length + ' item(s)', true);
-      } catch (err) { setMsg($('suite-json-msg'), 'Invalid: ' + err.message); }
     };
 
       </script>
