@@ -80,18 +80,25 @@ def test_reports_view_contract(client):
 
 
 def test_nav_links_in_shared_views(client):
-    for path in ("/", "/compare", "/diff"):
+    # 2026-09-30 grouped nav: every page labels the three sections and
+    # still links all views. "Reports" (dropped from the nav in the same
+    # round) is asserted via its API surface instead.
+    for path in ("/", "/compare", "/diff", "/evals", "/judgments", "/reports"):
         text = client.get(path).text
         assert "Evals" in text, path
         assert "Judgments" in text, path
-        assert "Reports" in text, path
+        assert "nav-group-label" in text, path        # grouped nav present
+        assert "Benchmarks" in text, path
 
 
 def test_new_views_have_full_nav(client):
+    # Evals group pages cross-link each other; all pages reach Runs and
+    # Compare; /create stays reachable (it hosts the eval cards).
     for path in ("/evals", "/judgments", "/reports"):
         text = client.get(path).text
-        for link in ("href=\"/compare\"", "href=\"/evals\"",
-                     "href=\"/judgments\"", "href=\"/reports\""):
+        for link in ("href=\"/evals\"", "href=\"/judgments\"",
+                     "href=\"/create#eval-suite-create\"",
+                     "href=\"/\"", "href=\"/compare\""):
             assert link in text, f"{path} missing {link}"
 
 

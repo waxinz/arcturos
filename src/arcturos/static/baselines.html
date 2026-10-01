@@ -28,21 +28,47 @@
   </style>
   <script src="/static/app-time.js"></script>
   <script src="/static/theme.js"></script>
+  <script>
+    // Grouped-nav active highlight (2026-09-30 UX round).
+    (function () {
+      var links = document.querySelectorAll("nav a[href]");
+      var here = location.pathname + location.hash;
+      for (const a of links) {
+        const href = a.getAttribute("href");
+        const base = href.split("#")[0];
+        const active = base === '/baselines' &&
+          (href.indexOf("#") === -1 ? location.hash === ""
+                                    : href === here);
+        if (active) a.classList.add("active");
+      }
+    })();
+  </script>
 </head>
 <body>
   <header>
     <h1>Arcturos</h1>
     <div class="sub">Local-first LLM benchmarking &amp; evaluation dashboard</div>
         <nav>
-      <a href="/create">Create &amp; Run</a>
-      <a href="/">Runs</a>
-      <a href="/compare">Compare</a>
-      <a href="/diff">Diff</a>
-      <a href="/evals">Evals</a>
-      <a href="/judgments">Judgments</a>
-      <a href="/reports">Reports</a>
-      <a href="/models">Models</a>
-      <a href="/baselines" class="active">Baselines</a>
+      <div class="nav-groups" data-nav-section="Benchmarks">
+        <span class="nav-group-label">Benchmarks</span>
+        <a href="/create">Kick off</a>
+        <a href="/">Runs</a>
+        <a href="/compare">Compare</a>
+        <a href="/diff">Diff</a>
+      </div>
+      <div class="nav-groups" data-nav-section="Evals">
+        <span class="nav-group-label">Evals</span>
+        <a href="/evals">Evals</a>
+        <a href="/judgments">Judgments</a>
+        <a href="/create#eval-suite-create">Suite create</a>
+        <a href="/create#eval-suite-items">Suite items</a>
+        <a href="/create#eval-replay-kick">Replay kick-off</a>
+      </div>
+      <div class="nav-groups" data-nav-section="Settings">
+        <span class="nav-group-label">Settings</span>
+        <a href="/models">Models</a>
+        <a href="/baselines">Baselines</a>
+      </div>
     </nav>
   </header>
 

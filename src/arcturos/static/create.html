@@ -72,21 +72,47 @@
   </style>
   <script src="/static/app-time.js"></script>
   <script src="/static/theme.js"></script>
+  <script>
+    // Grouped-nav active highlight (2026-09-30 UX round).
+    (function () {
+      var links = document.querySelectorAll("nav a[href]");
+      var here = location.pathname + location.hash;
+      for (const a of links) {
+        const href = a.getAttribute("href");
+        const base = href.split("#")[0];
+        const active = base === '/create' &&
+          (href.indexOf("#") === -1 ? location.hash === ""
+                                    : href === here);
+        if (active) a.classList.add("active");
+      }
+    })();
+  </script>
 </head>
 <body>
   <header>
     <h1>Arcturos</h1>
     <div class="sub">Local-first LLM benchmarking &amp; evaluation dashboard</div>
         <nav>
-      <a href="/create" class="active">Create &amp; Run</a>
-      <a href="/">Runs</a>
-      <a href="/compare">Compare</a>
-      <a href="/diff">Diff</a>
-      <a href="/evals">Evals</a>
-      <a href="/judgments">Judgments</a>
-      <a href="/reports">Reports</a>
-      <a href="/models">Models</a>
-      <a href="/baselines">Baselines</a>
+      <div class="nav-groups" data-nav-section="Benchmarks">
+        <span class="nav-group-label">Benchmarks</span>
+        <a href="/create">Kick off</a>
+        <a href="/">Runs</a>
+        <a href="/compare">Compare</a>
+        <a href="/diff">Diff</a>
+      </div>
+      <div class="nav-groups" data-nav-section="Evals">
+        <span class="nav-group-label">Evals</span>
+        <a href="/evals">Evals</a>
+        <a href="/judgments">Judgments</a>
+        <a href="/create#eval-suite-create">Suite create</a>
+        <a href="/create#eval-suite-items">Suite items</a>
+        <a href="/create#eval-replay-kick">Replay kick-off</a>
+      </div>
+      <div class="nav-groups" data-nav-section="Settings">
+        <span class="nav-group-label">Settings</span>
+        <a href="/models">Models</a>
+        <a href="/baselines">Baselines</a>
+      </div>
     </nav>
   </header>
 
@@ -95,7 +121,7 @@
 
   <div class="grid">
     <div class="card">
-      <h3>1 · Benchmark run — kick off</h3>
+      <h3>Benchmark run — kick off</h3>
       <p class="hint">Runs a cold-cache sweep. Transport <b>native</b> targets a llama.cpp server (/completion); <b>openai</b> targets any OpenAI-compatible chat server (tabbyAPI, vLLM, litellm — needs a model name). Stores a run + one benchmark row per context target.</p>
       <label>Server URL
         <input id="bench-url" value="http://10.10.10.122:8000">
@@ -111,7 +137,7 @@
           </select>
         </label></div>
         <div><label>Model (openai transport)
-          <input id="bench-model" placeholder="GLM-5.3-Flash">
+          <input id="bench-model" value="GLM-5.3-Flash">
         </label></div>
       </div>
       <label>API key (optional, for auth-protected servers)
@@ -126,14 +152,6 @@
       <label>Parallel streams (identical runs per target, 1-16)
         <input id="bench-streams" value="1">
       </label>
-      <div class="row2">
-        <div><label>Power host (optional, dedicated inference host per ADR 002)
-          <input id="bench-power-host" placeholder="alexei@10.10.10.222">
-        </label></div>
-        <div><label>GPU index
-          <input id="bench-power-gpu" value="0">
-        </label></div>
-      </div>
       <div class="row2">
         <div><button id="bench-btn" style="width:100%">▶ Kick off bench</button></div>
         <div><button id="bench-pf-btn" style="width:100%; background:var(--pf-btn)">✔ Check target</button></div>
@@ -156,27 +174,27 @@
       </div>
     </div>
 
-    <div class="card">
-      <h3>2 · Eval suite — create</h3>
-      <p class="hint">Creates the suite record; populate results afterwards by replaying it (card 4).</p>
+    <div class="card" id="eval-suite-create">
+      <h3>Eval suite — create</h3>
+      <p class="hint">Creates the suite record; populate results afterwards by replaying it ("Eval replay — kick off").</p>
       <label>Suite name <input id="suite-name" placeholder="smoke-reasoning"></label>
       <label>Version <input id="suite-version" value="v1"></label>
       <button id="suite-btn">＋ Create suite</button>
       <div id="suite-msg" class="msg"></div>
     </div>
 
-    <div class="card">
-      <h3>3 · Eval suite items — define (optional, pre-store)</h3>
+    <div class="card" id="eval-suite-items">
+      <h3>Eval suite items — define (optional, pre-store)</h3>
       <p class="hint">Suite JSON kept in the browser for dispatch: {"items":[{"id":"x","prompt":"…"}]} or multi-turn {"type":"multi-turn","id":"x","turns":[…]}.</p>
       <textarea id="suite-json" placeholder='{"items": [{"id": "q1", "prompt": "What is 2+2?"}]}'>{"items": [{"id": "q1", "prompt": "What is 2+2?"}]}</textarea>
       <button id="suite-validate-btn">✔ Validate JSON</button>
       <div id="suite-json-msg" class="msg"></div>
     </div>
 
-    <div class="card">
-      <h3>4 · Eval replay — kick off</h3>
-      <p class="hint">Replays the JSON from card 3 against an OpenAI-compatible chat endpoint, stores eval_results.</p>
-      <label>Suite ID (from card 2 result) <input id="eval-suite-id" placeholder="e.g. 3"></label>
+    <div class="card" id="eval-replay-kick">
+      <h3>Eval replay — kick off</h3>
+      <p class="hint">Replays the JSON from "Eval suite items — definition" against an OpenAI-compatible chat endpoint, stores eval_results.</p>
+      <label>Suite ID (from "Eval suite — create" result) <input id="eval-suite-id" placeholder="e.g. 3"></label>
       <label>Target (OpenAI-compatible base URL incl. /v1)
         <input id="eval-target" value="http://192.168.122.1:4000/v1">
       </label>
@@ -189,43 +207,6 @@
         <div><button id="eval-pf-btn" style="width:100%; background:var(--pf-btn)">✔ Check target</button></div>
       </div>
       <div id="eval-msg" class="msg"></div>
-    </div>
-
-    <div class="card">
-      <h3>5 · Benchmark point — add manually</h3>
-      <p class="hint">For external measurements: add one benchmark row to an existing run.</p>
-      <label>Run ID <input id="mb-run-id" placeholder="1"></label>
-      <div class="row2">
-        <div><label>Context tokens <input id="mb-ctx" value="4096"></label></div>
-        <div><label>Decode tok/s <input id="mb-decode" placeholder="20.5"></label></div>
-      </div>
-      <div class="row2">
-        <div><label>Prefill tok/s <input id="mb-prefill"></label></div>
-        <div><label>TTFT ms <input id="mb-ttft"></label></div>
-      </div>
-      <div class="row2">
-        <div><label>Power W <input id="mb-power"></label></div>
-        <div><label>Power host <input id="mb-power-host" placeholder="alexei@10.10.10.122"></label></div>
-      </div>
-      <button id="mb-btn">＋ Add benchmark point</button>
-      <div id="mb-msg" class="msg"></div>
-    </div>
-
-    <div class="card">
-      <h3>6 · Judgment — record</h3>
-      <p class="hint">Blind A/B verdict between two stored eval results (see /judgments for ids).</p>
-      <div class="row2">
-        <div><label>Result A id <input id="j-a"></label></div>
-        <div><label>Result B id <input id="j-b"></label></div>
-      </div>
-      <div class="row2">
-        <div><label>Winner <select id="j-winner"><option>a</option><option>b</option><option>tie</option></select></label></div>
-        <div><label>Confidence <input id="j-conf" placeholder="0.8"></label></div>
-      </div>
-      <label>Judge model <input id="j-judge" placeholder="qwen-3.6-27b"></label>
-      <label>Rationale <textarea id="j-rationale"></textarea></label>
-      <button id="j-btn">＋ Record judgment</button>
-      <div id="j-msg" class="msg"></div>
     </div>
   </div>
 
@@ -474,8 +455,6 @@
             n_predict: parseInt($('bench-npredict').value, 10) || 256,
             streams: parseInt($('bench-streams').value, 10) || 1,
             name: $('bench-name').value.trim() || null,
-            power_host: $('bench-power-host').value.trim() || null,
-            power_gpu_index: parseInt($('bench-power-gpu').value, 10) || 0,
             api_key: $('bench-key').value.trim() || null,
             transport: transport,
             model: $('bench-model').value.trim() || null,
@@ -538,39 +517,32 @@
         'Stored ' + data.stored.length + ' result(s) in suite #' + data.suite_id, true);
     };
 
-    $('mb-btn').onclick = async () => {
-      const runId = parseInt($('mb-run-id').value, 10);
-      const body = {context_tokens: parseInt($('mb-ctx').value, 10)};
-      for (const [id, key] of [['mb-decode','decode_tps'], ['mb-prefill','prefill_tps'],
-                               ['mb-ttft','ttft_ms'], ['mb-power','power_watts']]) {
-        const v = parseFloat($(id).value);
-        if (!isNaN(v)) body[key] = v;
+  </script>
+  <script>
+    // Grouped-nav anchor routing (2026-09-30 UX round): nav anchors like
+    // /create#eval-suite-create scroll to the matching card and flash it;
+    // a direct hash visit does the same on load.
+    (function () {
+      function goto(hash) {
+        const target = document.getElementById(hash);
+        if (!target) return;
+        target.scrollIntoView({behavior: 'smooth', block: 'start'});
+        target.style.transition = 'box-shadow .2s ease';
+        target.style.boxShadow = '0 0 0 2px var(--accent)';
+        setTimeout(function () { target.style.boxShadow = ''; }, 1200);
       }
-      if ($('mb-power-host').value.trim()) body.power_host = $('mb-power-host').value.trim();
-      const data = await post('/api/runs/' + runId + '/benchmarks', body,
-        $('mb-btn'), $('mb-msg'), 'Add benchmark point',
-        'Add an externally-measured benchmark point to run #' + runId +
-        '? This appends a new row (existing rows are never overwritten).');
-      if (data) setMsg($('mb-msg'), 'Benchmark row #' + data.id + ' added to run ' + runId, true);
-    };
-
-    $('j-btn').onclick = async () => {
-      const body = {
-        eval_result_a: parseInt($('j-a').value, 10),
-        eval_result_b: parseInt($('j-b').value, 10),
-        judge_model: $('j-judge').value.trim(),
-        judge_template_version: 'ui-v1',
-        winner: $('j-winner').value,
-      };
-      const conf = parseFloat($('j-conf').value);
-      if (!isNaN(conf)) body.confidence = conf;
-      if ($('j-rationale').value.trim()) body.rationale = $('j-rationale').value.trim();
-      const data = await post('/api/judgments', body, $('j-btn'), $('j-msg'),
-        'Record judgment',
-        'Record judgment #' + body.eval_result_a + ' vs #' + body.eval_result_b +
-        ' (winner: ' + body.winner + ')? This appends a new blind verdict row.');
-      if (data) setMsg($('j-msg'), 'Judgment #' + data.id + ' recorded (' + data.winner + ')', true);
-    };
+      var navAnchors = document.querySelectorAll('nav a[href*="#"]');
+      for (const a of navAnchors) {
+        a.addEventListener('click', function (ev) {
+          const hash = this.getAttribute('href').split('#')[1];
+          if (document.getElementById(hash)) {
+            ev.preventDefault();
+            goto(hash);
+          }
+        });
+      }
+      if (location.hash) goto(location.hash.slice(1));
+    })();
   </script>
 </body>
 </html>
