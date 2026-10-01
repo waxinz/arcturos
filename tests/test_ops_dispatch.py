@@ -587,7 +587,7 @@ def test_dispatch_bench_native_power_host_opt_in_samples_and_stores(db_path):
 
     Regression: the first cut of opt-in power wired ONLY the openai path —
     a native dispatch with power_host set silently sampled nothing
-    (2026-09-22, ruapehu-class targets)."""
+    (2026-09-22, demo-host-a-class targets)."""
     class _FakeSampler:
         def __init__(self, host, gpu_index=0):
             calls["samplers"].append({"host": host, "gpu": gpu_index,
@@ -774,10 +774,10 @@ def test_dispatch_bench_openai_name_stored(db_path):
         result = ops.dispatch_bench(
             db_path, "http://fake:4000/v1", [128], 30,
             transport_name="openai", model="GLM-5.3-Flash",
-            transport=_openai_preflight_app(), name="pakuranga sweep")
+            transport=_openai_preflight_app(), name="demo sweep")
     from arcturos.bench import export_run_json
     exported = export_run_json(db_path, result["run_id"])
-    assert exported["run"]["name"] == "pakuranga sweep"
+    assert exported["run"]["name"] == "demo sweep"
 
 
 def test_dispatch_eval_creates_named_eval_run(db_path, pass_preflight):
