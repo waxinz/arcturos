@@ -92,7 +92,7 @@ def test_extract_output_reasoning_fallback():
 def test_extract_output_null_usage():
     """tabbyAPI returns usage: null (key present, value None) — extract must
     not explode and must fall back to 0 tokens (regression from live eval
-    dispatch against ruapehu GLM-5.3-Flash exl3, 2026-09-21)."""
+    dispatch against demo-host-a GLM-5.3-Flash exl3, 2026-09-21)."""
     resp = {"choices": [{"message": {"content": "ok", "reasoning_content": None}}],
             "usage": None}
     out, pt, ct = extract_output(resp)
