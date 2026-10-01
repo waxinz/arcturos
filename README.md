@@ -17,15 +17,17 @@ Arcturos benchmarks LLM inference servers and evaluates their outputs — all da
 - **CSV export** of runs, comparisons, eval results, and judgments
 - **Append-only storage** — measurement rows are never mutated; visibility and naming are separate, reversible layers
 
-## Quick start
+### Quick start
 
 ```bash
 git clone https://github.com/waxinz/arcturos.git
 cd arcturos
-python3 -m venv venv && venv/bin/pip install -r requirements.txt
-
-uvicorn arcturos.main:app --host 0.0.0.0 --port 24816
+./start.sh
 ```
+
+That's it — `start.sh` provisions everything (creates the venv, installs dependencies) and installs Arcturos as a **systemd user service** (auto-starts, survives logouts; enable boot-time start with `sudo loginctl enable-linger $USER`). Without systemd (macOS, containers) it falls back to running in the foreground.
+
+Other commands: `./start.sh run` (foreground), `./start.sh remove` (uninstall).
 
 Open `http://localhost:24816` — the sidebar walks you through the three sections:
 
