@@ -23,7 +23,7 @@ RUN_A = {
 
 RUN_B = {
     "server_url": "http://fixt-host-b:8000",
-    "model_fingerprint": "GLM-5.3-Flash (GGUF, pakuranga-inf 6x3090)",
+    "model_fingerprint": "GLM-5.3-Flash (GGUF, demo GPU node)",
     "engine": "llama.cpp",
     "context_size": 262144,
 }
@@ -95,7 +95,7 @@ def test_compare_benchmarks_happy_path(client):
     assert data["runs"][0]["engine"] == "llama.cpp"
     # Path fingerprint -> short legend name (basename minus shard suffix).
     assert data["runs"][0]["model_fingerprint_short"] == "DeepSeek-V4-Flash-0731-UD-IQ3_XXS"
-    assert data["runs"][1]["model_fingerprint_short"] == "GLM-5.3-Flash (GGUF, pakuranga-inf 6x3090)"
+    assert data["runs"][1]["model_fingerprint_short"] == "GLM-5.3-Flash (GGUF, demo GPU node)"
 
     assert data["metrics"] == ["decode_tps", "prefill_tps", "mtp_acceptance"]
 
