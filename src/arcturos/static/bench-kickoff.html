@@ -1,0 +1,434 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="icon" type="image/png" sizes="16x16" href="/static/icons/scorpio-favicon-16.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/static/icons/scorpio-favicon-32.png">
+  <link rel="stylesheet" href="/static/theme.css">
+  <link rel="stylesheet" href="/static/nav.css">
+  <style>
+    body { font-family: system-ui, -apple-system, sans-serif; margin: 2rem auto;
+           max-width: 1080px; color: var(--text); background: var(--bg); }
+    h1 { font-size: 1.6rem; margin: 0; }
+    .card { background: var(--surface); border: 1px solid var(--border);
+            border-radius: 6px; padding: 1.1rem; max-width: 760px; }
+    .card h2 { margin: 0 0 .8rem; font-size: 1.15rem; }
+    label { display: block; font-size: .85rem; font-weight: 600; color: var(--text-soft);
+            margin: .55rem 0 .2rem; }
+    input, select { width: 100%; box-sizing: border-box; padding: .35rem;
+            font-size: .9rem; border: 1px solid var(--input-border); border-radius: 4px; }
+    button { margin-top: .6rem; padding: .45rem 1rem; font-size: .9rem;
+             background: var(--btn-bg); color: var(--btn-text); border: 0;
+             border-radius: 4px; cursor: pointer; }
+    button:disabled { background: var(--disabled); cursor: wait; }
+    .msg { margin-top: .5rem; font-size: .85rem; min-height: 1.1em; }
+    .bp-status a, .msg a { color: inherit; text-decoration: underline;
+                           font-weight: 600; }
+    .msg.err { color: var(--err); }
+    .msg.ok { color: var(--ok); }
+    .hint { color: var(--hint); font-size: .78rem; margin: .3rem 0; }
+    .row2 { display: flex; gap: .6rem; } .row2 > div { flex: 1; }
+.benchprog { margin-top: .7rem; display: none; }
+    .benchprog.active { display: block; }
+    .bp-barwrap { position: relative; height: 18px; background: var(--bar-track);
+                  border-radius: 9px; overflow: hidden; }
+    .bp-bar { height: 100%; width: 0%; background: linear-gradient(90deg,var(--bar-fill-a),var(--bar-fill-b));
+              transition: width .6s ease; }
+    .bp-bar.indeterminate { width: 100% !important;
+      background: repeating-linear-gradient(45deg,var(--bar-stripe-a),var(--bar-stripe-a) 12px,var(--bar-stripe-b) 12px,var(--bar-stripe-b) 24px);
+      animation: bp-slide 1.2s linear infinite; }
+    @keyframes bp-slide { from { background-position: 0 0; } to { background-position: 34px 0; } }
+    .bp-pct { position: absolute; inset: 0; display: flex; align-items: center;
+              justify-content: center; font-size: .72rem; font-weight: 700;
+              color: var(--bar-text); text-shadow: 0 0 3px rgba(255,255,255,.7); }
+    .bp-status { font-size: .82rem; margin-top: .35rem; }
+    .bp-clock { font-size: .78rem; color: var(--clock); margin-top: .1rem;
+                font-variant-numeric: tabular-nums; }
+    .bp-toggle { background: none; border: none; color: var(--link); font-size: .78rem;
+                 padding: 0; margin-top: .3rem; cursor: pointer; text-decoration: underline; }
+    .bp-detail { display: none; margin-top: .4rem; font-size: .78rem;
+                 border-top: 1px dashed var(--input-border); padding-top: .4rem; }
+    .bp-detail.open { display: block; }
+      </style>
+  <script src="/static/app-time.js"></script>
+  <script src="/static/theme.js"></script>
+  <script src="/static/nav.js"></script>
+</head>
+<body class="shell" data-page="kickoff" data-section="Benchmarks">
+  <aside class="sidebar">
+    <a class="brand" href="/">Arcturos</a>
+    <span class="brand-sub">LLM benchmark &amp; eval dashboard</span>
+    <nav>
+      <div class="nav-section" data-nav-section="Benchmarks">
+        <div class="nav-section-head">Benchmarks</div>
+        <a href="/kickoff" data-page="kickoff">Kick off</a>
+        <a href="/" data-page="runs">Runs</a>
+        <a href="/compare" data-page="compare">Compare</a>
+        <a href="/diff" data-page="diff">Run diff</a>
+      </div>
+      <div class="nav-section" data-nav-section="Evals">
+        <div class="nav-section-head">Evals</div>
+        <a href="/evals/suites/new" data-page="evalsuite">Suite create</a>
+        <a href="/evals" data-page="evals">Results</a>
+        <a href="/judgments" data-page="judgments">Judgments</a>
+        <a href="/reports" data-page="reports">Reports</a>
+      </div>
+      <div class="nav-section" data-nav-section="Settings">
+        <div class="nav-section-head">Settings</div>
+        <a href="/models" data-page="models">Models</a>
+        <a href="/baselines" data-page="baselines">Baselines</a>
+      </div>
+    </nav>
+    <div class="sidebar-foot">
+      <button class="theme-toggle-inline" data-theme-toggle>☾</button>
+    </div>
+  </aside>
+
+  
+  <main class="page">
+  <main class="page">
+    <h1>Arcturos</h1>
+    <div class="card">
+<div class="card">
+      <h3>Benchmark run — kick off</h3>
+      <p class="hint">Runs a cold-cache sweep. Transport <b>native</b> targets a llama.cpp server (/completion); <b>openai</b> targets any OpenAI-compatible chat server (tabbyAPI, vLLM, litellm — needs a model name). Stores a run + one benchmark row per context target.</p>
+      <label>Server URL
+        <input id="bench-url" value="http://10.10.10.122:8000">
+      </label>
+      <label>Context targets (tokens, comma-separated)
+        <input id="bench-targets" value="32768, 65536, 131072, 196608, 256256">
+      </label>
+      <div class="row2">
+        <div><label>Transport
+          <select id="bench-transport">
+            <option value="openai" selected>openai (tabbyAPI / vLLM / litellm)</option>
+            <option value="native">native (llama.cpp)</option>
+          </select>
+        </label></div>
+        <div><label>Model (openai transport)
+          <input id="bench-model" value="GLM-5.3-Flash">
+        </label></div>
+      </div>
+      <label>API key (optional, for auth-protected servers)
+        <input id="bench-key" type="password" placeholder="sk-…">
+      </label>
+      <label>n_predict (tokens per point)
+        <input id="bench-npredict" value="256">
+      </label>
+      <label>Run name (optional — default: host · model · targets)
+        <input id="bench-name" placeholder="e.g. pakuranga GLM 192k sweep">
+      </label>
+      <label>Parallel streams (identical runs per target, 1-16)
+        <input id="bench-streams" value="1">
+      </label>
+      <div class="row2">
+        <div><button id="bench-btn" style="width:100%">▶ Kick off bench</button></div>
+        <div><button id="bench-pf-btn" style="width:100%; background:var(--pf-btn)">✔ Check target</button></div>
+      </div>
+      <div id="bench-msg" class="msg"></div>
+      <div id="bench-progress" class="benchprog">
+        <div class="bp-barwrap"><div id="bp-bar" class="bp-bar"></div>
+          <div id="bp-pct" class="bp-pct"></div></div>
+        <div id="bp-status" class="bp-status"></div>
+        <div id="bp-clock" class="bp-clock"></div>
+        <button id="bp-zoom" class="bp-toggle" type="button">▸ details</button>
+        <div id="bp-detail" class="bp-detail">
+          <div class="table-scroll">
+          <table><thead id="bp-head"><tr><th>#</th><th>ctx</th><th>prefill</th><th>decode</th>
+            <th>ttft (s)</th><th>wall</th><th>streams</th></tr></thead>
+            <tbody id="bp-rows"></tbody></table>
+          </div>
+          <div id="bp-events"></div>
+        </div>
+      </div>
+    </div>
+
+        </div>
+  </main>
+  <script>
+function $(id) { return document.getElementById(id); }
+    function setMsg(el, text, ok) {
+      el.textContent = text;
+      el.className = ok ? 'msg ok' : 'msg err';
+    }
+    function busy(btn, on, label) {
+      btn.disabled = on;
+      btn.textContent = on ? '⏳ ' + label : label.replace('⏳ ', '');
+    }
+    function fmtDetail(detail, status) {
+      // Pydantic 422 details are arrays of {loc, msg} objects; render them
+      // as "field: msg" strings instead of '[object Object],…' (UX review).
+      if (Array.isArray(detail)) {
+        return detail.map(d => {
+          const loc = (d.loc || []).filter(x => x !== 'body').join('.');
+          return loc + ': ' + (d.msg || JSON.stringify(d));
+        }).join(' | ');
+      }
+      return detail || ('HTTP ' + status);
+    }
+
+    async function post(url, body, btn, msg, label, confirmText) {
+      // Destructive-adjacent posts (append-only records that pair with
+      // existing rows) get a confirm dialog per ux-design principle 5.
+      if (confirmText && !window.confirm(confirmText)) {
+        setMsg(msg, 'Cancelled.');
+        return null;
+      }
+      busy(btn, true, label);
+      setMsg(msg, 'Working…');
+      try {
+        const res = await fetch(url, {method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify(body)});
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          setMsg(msg, 'Failed: ' + fmtDetail(data.detail, res.status));
+          return null;
+        }
+        return data;
+      } catch (err) {
+        setMsg(msg, 'Failed: ' + err);
+        return null;
+      } finally {
+        busy(btn, false, label);
+      }
+    }
+
+    async function checkPreflight(kindBtn, targetEl, msgEl, kind) {
+      kindBtn.disabled = true; kindBtn.textContent = '⏳ Checking…';
+      setMsg(msgEl, 'Preflight…');
+      try {
+        // POST: the API key travels in the body, never in a URL (GET query
+        // strings leak into access logs / history / proxies — UX review).
+        const keyEl = kind === 'bench' ? $('bench-key') : $('eval-key');
+        const body = {target: targetEl.value.trim(), kind: kind};
+        if (keyEl && keyEl.value.trim()) body.api_key = keyEl.value.trim();
+        const res = await fetch('/api/ops/preflight', {method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify(body)});
+        const data = await res.json();
+        if (!res.ok) { setMsg(msgEl, 'Preflight failed: ' + fmtDetail(data.detail, res.status)); return; }
+        const fails = (data.checks || []).filter(c => !c.ok);
+        if (!fails.length) {
+          setMsg(msgEl, '✔ ' + (data.checks || []).map(c => c.name).join(' ✓, ') + ' ✓ — target ready', true);
+        } else {
+          setMsg(msgEl, '✘ ' + fails.map(c => c.name + ': ' + c.detail).join(' | '));
+        }
+      } catch (err) { setMsg(msgEl, 'Preflight failed: ' + err); }
+      finally { kindBtn.disabled = false; kindBtn.textContent = '✔ Check target'; }
+    }
+    $('bench-pf-btn').onclick = () => checkPreflight($('bench-pf-btn'), $('bench-url'), $('bench-msg'), $('bench-transport').value === 'openai' ? 'eval' : 'bench');
+    $('eval-pf-btn').onclick = () => checkPreflight($('eval-pf-btn'), $('eval-target'), $('eval-msg'), 'eval');
+
+    // ---- async bench job + progress indicator ---------------------------
+    const bpPoll = { timer: null, zoom: false, streams: 1 };
+
+    // Live detail table adapts to the job: single-stream jobs keep the
+    // compact 7-column table; multi-stream jobs add a Σ prefill/decode pair
+    // (combined throughput across streams = true server capacity). Decided
+    // once at kick-off from the form so columns never flicker mid-run.
+    function bpColumns(streams) {
+      const head = $('bp-head').firstElementChild;
+      head.innerHTML = (streams > 1)
+        ? '<th>#</th><th>ctx</th><th>prefill</th><th>decode</th>' +
+          '<th>Σ prefill</th><th>Σ decode</th><th>ttft (s)</th><th>wall</th><th>streams</th>'
+        : '<th>#</th><th>ctx</th><th>prefill</th><th>decode</th>' +
+          '<th>ttft (s)</th><th>wall</th><th>streams</th>';
+    }
+
+    function bpFmtSecs(s) {
+      if (s == null) return '—';
+      const m = Math.floor(s / 60), r = Math.round(s % 60);
+      return m ? (m + 'm ' + String(r).padStart(2, '0') + 's') : (r + 's');
+    }
+    function bpRow(p, i) {
+          const cell = (v, suffix) => {
+        // 2dp display precision: 30.105000000000004 -> '30.11 t/s'.
+        // Time metrics display in SECONDS (2026-09-22 UX rule): ttft_ms
+        // is stored in ms -> /1000 for display. Integers and strings pass
+        // through; presentation-only.
+        if (v == null) return '—';
+        if (typeof v === 'number' && !Number.isInteger(v)) {
+          return v.toFixed(2) + (suffix || '');
+        }
+        return v + (suffix || '');
+      };
+      const secs = (ms) => (ms == null ? null : ms / 1000);
+          // Multi-stream jobs: one extra Σ pair after decode — combined
+          // throughput across all streams (true server capacity). Single-stream
+          // jobs keep the compact table (nothing to sum).
+          if (bpPoll.streams > 1) {
+            return '<tr><td>' + (i + 1) + '</td><td>' + p.context_tokens + '</td>' +
+              '<td>' + cell(p.prefill_tps, ' t/s') + '</td>' +
+              '<td>' + cell(p.decode_tps, ' t/s') + '</td>' +
+              '<td>' + cell(p.prefill_tps_combined, ' t/s') + '</td>' +
+              '<td>' + cell(p.decode_tps_combined, ' t/s') + '</td>' +
+              '<td>' + cell(secs(p.ttft_ms), ' s') + '</td>' +
+              '<td>' + cell(p.wall_s, ' s') + '</td>' +
+              '<td>' + cell(p.streams) + '</td></tr>';
+          }
+          return '<tr><td>' + (i + 1) + '</td><td>' + p.context_tokens + '</td>' +
+            '<td>' + cell(p.prefill_tps, ' t/s') + '</td>' +
+            '<td>' + cell(p.decode_tps, ' t/s') + '</td>' +
+            '<td>' + cell(secs(p.ttft_ms), ' s') + '</td>' +
+            '<td>' + cell(p.wall_s, ' s') + '</td>' +
+            '<td>' + cell(p.streams) + '</td></tr>';
+        }
+    function bpRender(st) {
+      const total = st.targets_total, done = st.points_done;
+      const frac = total ? done / total : 0;
+      const bar = $('bp-bar'), pct = $('bp-pct');
+      if (st.status === 'preflight') {
+        bar.classList.add('indeterminate'); pct.textContent = '…';
+      } else {
+        bar.classList.remove('indeterminate');
+        bar.style.width = (frac * 100).toFixed(1) + '%';
+        pct.textContent = Math.round(frac * 100) + '%';
+      }
+      $('bp-status').textContent = st.status_line || st.status;
+      $('bp-clock').textContent =
+        'elapsed ' + bpFmtSecs(st.elapsed_s) +
+        ' · remaining ~' + bpFmtSecs(st.eta_s);
+      const rows = $('bp-rows');
+      (st.points || []).forEach((p, i) => {
+        if (!rows.rows[i]) rows.insertRow(i).innerHTML = bpRow(p, i);
+        else rows.rows[i].innerHTML = bpRow(p, i);
+      });
+      if (st.zoom_events && st.zoom_events.length)
+        $('bp-events').innerHTML = st.zoom_events.map(e => '<div class="bp-ev">' + e + '</div>').join('');
+    }
+    async function bpPollLoop(jobId) {
+      try {
+        const res = await fetch('/api/ops/bench/jobs/' + jobId);
+        let st = null;
+        try { st = await res.json(); } catch (_) { /* non-JSON body */ }
+        if (!res.ok || !st || !st.status) {
+          // Transient backend hiccup (restart, 500): keep polling instead of
+          // killing the indicator — the sweep itself runs server-side.
+          bpPoll.retries = (bpPoll.retries || 0) + 1;
+          if (bpPoll.retries > 20) { bpStop(); setMsg($('bench-msg'), 'Job poll failed: HTTP ' + res.status); }
+          else bpPoll.timer = setTimeout(() => bpPollLoop(jobId), 2000);
+          return;
+        }
+        bpPoll.retries = 0;
+        bpRender(st);
+        if (st.status === 'done') {
+          bpStop();
+          const okEl = $('bench-msg');
+          okEl.innerHTML = '✔ <a href="/runs/' + st.run_id + '">Run #' +
+            st.run_id + '</a> stored — ' + st.points_done + ' point(s)';
+          okEl.className = 'msg ok';
+          $('bp-bar').classList.remove('indeterminate');
+          $('bp-bar').style.width = '100%';
+          $('bp-pct').textContent = '100%';
+          $('bp-status').innerHTML = 'Complete — <a href="/runs/' +
+            st.run_id + '">run #' + st.run_id + '</a>';
+          $('bp-clock').textContent = 'elapsed ' + bpFmtSecs(st.elapsed_s);
+        } else if (st.status === 'error') {
+          bpStop();
+          setMsg($('bench-msg'), '✘ Bench failed: ' + (st.error || 'unknown'), false);
+          $('bp-status').textContent = 'Failed';
+          // Partial-run preservation (2026-09-22): completed points were
+          // stored as a partial run — link to them instead of a dead end.
+          if (st.run_id) {
+            const partial = document.createElement('div');
+            const link = document.createElement('a');
+            link.href = '/runs/' + st.run_id;
+            link.textContent = '⚠ run #' + st.run_id + ' (partial)';
+            link.title = 'Completed points were preserved before the failure';
+            partial.appendChild(link);
+            partial.appendChild(document.createTextNode(
+              ' — ' + (st.points_done || 0) + ' completed point(s) kept'));
+            $('bp-status').appendChild(partial);
+          }
+        } else {
+          bpPoll.timer = setTimeout(() => bpPollLoop(jobId), 1000);
+        }
+      } catch (err) {
+        // Network-level failure (restart, proxy blip): same bounded retry
+        // as HTTP failures — the sweep itself runs server-side.
+        bpPoll.retries = (bpPoll.retries || 0) + 1;
+        if (bpPoll.retries > 20) { bpStop(); setMsg($('bench-msg'), 'Job poll failed: ' + err); }
+        else bpPoll.timer = setTimeout(() => bpPollLoop(jobId), 2000);
+      }
+    }
+    function bpStop() { if (bpPoll.timer) { clearTimeout(bpPoll.timer); bpPoll.timer = null; } }
+    $('bp-zoom').onclick = () => {
+      bpPoll.zoom = !bpPoll.zoom;
+      $('bp-detail').classList.toggle('open', bpPoll.zoom);
+      $('bp-zoom').textContent = bpPoll.zoom ? '▾ details' : '▸ details';
+    };
+
+    $('bench-btn').onclick = async () => {
+      // Flag dropped non-numeric targets instead of silently mangling input.
+      const targets = [];
+      let dropped = [];
+      for (const s of $('bench-targets').value.split(',')) {
+        const n = parseInt(s.trim(), 10);
+        if (isNaN(n)) { if (s.trim()) dropped.push(s.trim()); continue; }
+        targets.push(n);
+      }
+      if (!targets.length) {
+        setMsg($('bench-msg'), 'No valid context targets — enter comma-separated lengths, e.g. 2048, 8192');
+        return;
+      }
+      if (dropped.length) setMsg($('bench-msg'),
+        'Ignored non-numeric target(s): ' + dropped.join(', '));
+      const transport = $('bench-transport').value;
+      if (transport === 'openai' && !$('bench-model').value.trim()) {
+        setMsg($('bench-msg'), 'The openai transport needs a model name (e.g. GLM-5.3-Flash)');
+        return;
+      }
+      busy($('bench-btn'), true, 'Kick off bench');
+      setMsg($('bench-msg'), 'Submitting…');
+      try {
+        const res = await fetch('/api/ops/bench/jobs', {method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({
+            server_url: $('bench-url').value.trim(),
+            targets: targets,
+            n_predict: parseInt($('bench-npredict').value, 10) || 256,
+            streams: parseInt($('bench-streams').value, 10) || 1,
+            name: $('bench-name').value.trim() || null,
+            api_key: $('bench-key').value.trim() || null,
+            transport: transport,
+            model: $('bench-model').value.trim() || null,
+          })});
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) { setMsg($('bench-msg'), 'Kick off failed: ' + fmtDetail(data.detail, res.status)); return; }
+        // job accepted — hand over to the progress indicator
+        $('bench-progress').classList.add('active');
+        bpPoll.streams = parseInt($('bench-streams').value, 10) || 1;
+        bpColumns(bpPoll.streams);
+        $('bp-rows').innerHTML = '';
+        $('bp-events').innerHTML = '';
+        $('bp-bar').style.width = '0%';
+        $('bp-status').textContent = 'queued…';
+        $('bp-clock').textContent = '';
+        setMsg($('bench-msg'), 'Job ' + data.job_id + ' accepted — sweep running', true);
+        bpPoll.retries = 0;  // fresh job: full retry budget for its poller
+        bpPollLoop(data.job_id);
+      } catch (err) { setMsg($('bench-msg'), 'Kick off failed: ' + err); }
+      finally { busy($('bench-btn'), false, 'Kick off bench'); }
+    };
+
+    $('suite-validate-btn').onclick = () => {
+      try {
+        const suite = JSON.parse($('suite-json').value);
+        if (!Array.isArray(suite.items) || !suite.items.length)
+          throw new Error('need non-empty "items" array');
+        for (const it of suite.items) {
+          if (!it.id) throw new Error('item missing id');
+          if (it.type === 'multi-turn') continue;
+          if (!it.prompt) throw new Error('item ' + it.id + ' missing prompt');
+        }
+        setMsg($('suite-json-msg'), 'Valid: ' + suite.items.length + ' item(s)', true);
+      } catch (err) { setMsg($('suite-json-msg'), 'Invalid: ' + err.message); }
+    };
+
+      </script>
+  </main>
+
+</body>
+</html>
