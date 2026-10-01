@@ -79,6 +79,31 @@ html[data-theme="dark"] {
 
 /* Toggle button — right edge of the nav bar */
 nav { display: flex; align-items: center; flex-wrap: wrap; }
+
+/* Grouped nav (2026-09-30 UX round): three labelled sections —
+   Benchmarks / Evals / Settings — with a hairline divider between groups. */
+.nav-groups {
+  display: flex;
+  align-items: center;
+  gap: .55rem;
+  padding-right: 1rem;
+  margin-right: .9rem;
+  border-right: 1px solid var(--nav-divider, var(--border));
+}
+.nav-groups:last-of-type {
+  border-right: 0;
+  margin-right: 0;
+}
+.nav-group-label {
+  font-size: .72rem;
+  font-weight: 700;
+  letter-spacing: .07em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+.nav-groups a { white-space: nowrap; }
+
 nav .theme-toggle {
   margin-left: auto;
   background: none;
@@ -115,3 +140,10 @@ input::placeholder, textarea::placeholder { color: var(--null); }
 a { color: var(--link); }
 a:visited { color: var(--link); }
 a:hover, a:active { color: var(--accent); }
+
+/* Grouped-nav secondary links (2026-09-30): anchor links into /create that
+   target a DIFFERENT section than the current page render quieter, so the
+   reader's eye lands on the current group first. Purely presentational —
+   hover restores full contrast. */
+nav a.nav-quiet { color: var(--hint); font-weight: 400; }
+nav a.nav-quiet:hover { color: var(--text); font-weight: 600; }
