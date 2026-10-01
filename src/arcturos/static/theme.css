@@ -87,6 +87,15 @@ html[data-theme="dark"] {
    kept so any page still using a <nav> header keeps its toggle) */
 nav { display: flex; align-items: center; flex-wrap: wrap; }
 
+/* Base canvas + typography (2026-09-30: moved OUT of per-page inline
+   styles into the shared sheet so every page paints the same way).
+   Per-page <style> blocks may still override for a specific page. */
+body {
+  font-family: system-ui, -apple-system, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+}
+
 nav .theme-toggle {
   margin-left: auto;
   background: none;
