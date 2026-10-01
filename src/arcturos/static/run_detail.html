@@ -8,6 +8,7 @@
   <link rel="icon" type="image/png" sizes="180x180" href="/static/icons/scorpio-favicon-180.png">
   <title>Arcturos — Run detail</title>
   <link rel="stylesheet" href="/static/theme.css">
+  <link rel="stylesheet" href="/static/nav.css">
   <style>
     body { font-family: system-ui, -apple-system, sans-serif; margin: 2rem auto;
            max-width: 1080px; color: var(--text); background: var(--bg); }
@@ -46,6 +47,7 @@
   </style>
   <script src="/static/app-time.js"></script>
   <script src="/static/theme.js"></script>
+  <script src="/static/nav.js"></script>
   <script>
     // Grouped-nav active highlight (2026-09-30 UX round).
     (function () {
@@ -62,7 +64,7 @@
     })();
   </script>
 </head>
-<body>
+<body class="shell" data-page="runsdetail" data-section="Benchmarks">
   <header>
     <h1>Arcturos</h1>
     <div class="sub">Local-first LLM benchmarking &amp; evaluation dashboard</div>

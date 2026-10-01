@@ -5,30 +5,22 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <link rel="icon" type="image/png" sizes="16x16" href="/static/icons/scorpio-favicon-16.png">
   <link rel="icon" type="image/png" sizes="32x32" href="/static/icons/scorpio-favicon-32.png">
-  <link rel="icon" type="image/png" sizes="180x180" href="/static/icons/scorpio-favicon-180.png">
-  <title>Arcturos — Create &amp; Run</title>
   <link rel="stylesheet" href="/static/theme.css">
   <link rel="stylesheet" href="/static/nav.css">
   <style>
     body { font-family: system-ui, -apple-system, sans-serif; margin: 2rem auto;
            max-width: 1080px; color: var(--text); background: var(--bg); }
-    header { border-bottom: 2px solid var(--text-heading); padding-bottom: .5rem; margin-bottom: 1.5rem; }
     h1 { font-size: 1.6rem; margin: 0; }
-    h2 { font-size: 1.25rem; margin-top: 2rem; }
-    .sub { color: var(--text-muted); margin-top: .25rem; }
-    nav a { margin-right: 1rem; color: var(--text); text-decoration: none; font-weight: 600; }
-    nav a:visited { color: var(--text); }
-    nav a.active { text-decoration: underline; }
-    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 1rem; }
-    .card { background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 1rem; }
-    .card h3 { margin: 0 0 .75rem; font-size: 1rem; }
+    .card { background: var(--surface); border: 1px solid var(--border);
+            border-radius: 6px; padding: 1.1rem; max-width: 760px; }
+    .card h2 { margin: 0 0 .8rem; font-size: 1.15rem; }
     label { display: block; font-size: .85rem; font-weight: 600; color: var(--text-soft);
-            margin: .5rem 0 .2rem; }
-    input, textarea, select { width: 100%; box-sizing: border-box; padding: .35rem;
+            margin: .55rem 0 .2rem; }
+    input, select { width: 100%; box-sizing: border-box; padding: .35rem;
             font-size: .9rem; border: 1px solid var(--input-border); border-radius: 4px; }
-    textarea { font-family: ui-monospace, monospace; font-size: .8rem; min-height: 90px; }
     button { margin-top: .6rem; padding: .45rem 1rem; font-size: .9rem;
-             background: var(--btn-bg); color: var(--btn-text); border: 0; border-radius: 4px; cursor: pointer; }
+             background: var(--btn-bg); color: var(--btn-text); border: 0;
+             border-radius: 4px; cursor: pointer; }
     button:disabled { background: var(--disabled); cursor: wait; }
     .msg { margin-top: .5rem; font-size: .85rem; min-height: 1.1em; }
     .bp-status a, .msg a { color: inherit; text-decoration: underline;
@@ -37,7 +29,7 @@
     .msg.ok { color: var(--ok); }
     .hint { color: var(--hint); font-size: .78rem; margin: .3rem 0; }
     .row2 { display: flex; gap: .6rem; } .row2 > div { flex: 1; }
-    .benchprog { margin-top: .7rem; display: none; }
+.benchprog { margin-top: .7rem; display: none; }
     .benchprog.active { display: block; }
     .bp-barwrap { position: relative; height: 18px; background: var(--bar-track);
                   border-radius: 9px; overflow: hidden; }
@@ -58,19 +50,7 @@
     .bp-detail { display: none; margin-top: .4rem; font-size: .78rem;
                  border-top: 1px dashed var(--input-border); padding-top: .4rem; }
     .bp-detail.open { display: block; }
-    /* Wide tables must not clip or overlay the next card: the panel grows
-       with content and the table scrolls horizontally inside it. */
-    .bp-detail table { width: 100%; border-collapse: collapse;
-                       min-width: 480px; }
-    .bp-detail .table-scroll { overflow-x: auto; }
-    .bp-detail th, .bp-detail td { text-align: left; padding: 2px 4px;
-                                   border-bottom: 1px solid var(--border);
-                                   white-space: nowrap; }
-    .bp-detail th { color: var(--text-muted); font-weight: 600; }
-    .bp-ev { color: var(--text-soft); font-family: ui-monospace, monospace; font-size: .72rem;
-             margin: 2px 0; white-space: nowrap; overflow: hidden;
-             text-overflow: ellipsis; }
-  </style>
+      </style>
   <script src="/static/app-time.js"></script>
   <script src="/static/theme.js"></script>
   <script src="/static/nav.js"></script>
@@ -105,11 +85,13 @@
     </div>
   </aside>
 
+  
   <main class="page">
-    <h1>Kick off</h1>
-    <p class="page-intro">Cold-cache sweep against one server — stores a run plus one benchmark row per context target. The progress panel streams per-point metrics as the sweep runs.</p>
+  <main class="page">
+    <h1>Arcturos</h1>
     <div class="card">
-    <div class="card">
+<div class="card">
+      <h3>Benchmark run — kick off</h3>
       <p class="hint">Runs a cold-cache sweep. Transport <b>native</b> targets a llama.cpp server (/completion); <b>openai</b> targets any OpenAI-compatible chat server (tabbyAPI, vLLM, litellm — needs a model name). Stores a run + one benchmark row per context target.</p>
       <label>Server URL
         <input id="bench-url" value="http://10.10.10.122:8000">
@@ -161,10 +143,11 @@
         </div>
       </div>
     </div>
-  </main>
 
+        </div>
+  </main>
   <script>
-    function $(id) { return document.getElementById(id); }
+function $(id) { return document.getElementById(id); }
     function setMsg(el, text, ok) {
       el.textContent = text;
       el.className = ok ? 'msg ok' : 'msg err';
@@ -218,7 +201,7 @@
       try {
         // POST: the API key travels in the body, never in a URL (GET query
         // strings leak into access logs / history / proxies — UX review).
-        const keyEl = $('bench-key');
+        const keyEl = kind === 'bench' ? $('bench-key') : $('eval-key');
         const body = {target: targetEl.value.trim(), kind: kind};
         if (keyEl && keyEl.value.trim()) body.api_key = keyEl.value.trim();
         const res = await fetch('/api/ops/preflight', {method: 'POST',
@@ -236,6 +219,7 @@
       finally { kindBtn.disabled = false; kindBtn.textContent = '✔ Check target'; }
     }
     $('bench-pf-btn').onclick = () => checkPreflight($('bench-pf-btn'), $('bench-url'), $('bench-msg'), $('bench-transport').value === 'openai' ? 'eval' : 'bench');
+    $('eval-pf-btn').onclick = () => checkPreflight($('eval-pf-btn'), $('eval-target'), $('eval-msg'), 'eval');
 
     // ---- async bench job + progress indicator ---------------------------
     const bpPoll = { timer: null, zoom: false, streams: 1 };
@@ -429,11 +413,22 @@
       finally { busy($('bench-btn'), false, 'Kick off bench'); }
     };
 
-    
+    $('suite-validate-btn').onclick = () => {
+      try {
+        const suite = JSON.parse($('suite-json').value);
+        if (!Array.isArray(suite.items) || !suite.items.length)
+          throw new Error('need non-empty "items" array');
+        for (const it of suite.items) {
+          if (!it.id) throw new Error('item missing id');
+          if (it.type === 'multi-turn') continue;
+          if (!it.prompt) throw new Error('item ' + it.id + ' missing prompt');
+        }
+        setMsg($('suite-json-msg'), 'Valid: ' + suite.items.length + ' item(s)', true);
+      } catch (err) { setMsg($('suite-json-msg'), 'Invalid: ' + err.message); }
+    };
 
-    
+      </script>
+  </main>
 
-    
-  </script>
 </body>
 </html>

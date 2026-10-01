@@ -151,6 +151,16 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
     def diff_page() -> FileResponse:
         return FileResponse(STATIC_DIR / "diff.html")
 
+    # Split pages (2026-09-30 UX round 2): every kick-off form is its own
+    # URL so the sidebar can link it directly — no anchor fragments.
+    @app.get("/kickoff", include_in_schema=False)
+    def kickoff_page() -> FileResponse:
+        return FileResponse(STATIC_DIR / "bench-kickoff.html")
+
+    @app.get("/evals/suites/new", include_in_schema=False)
+    def eval_suite_new_page() -> FileResponse:
+        return FileResponse(STATIC_DIR / "eval-suite-new.html")
+
     @app.get("/evals", include_in_schema=False)
     def evals_page() -> FileResponse:
         return FileResponse(STATIC_DIR / "evals.html")
@@ -173,6 +183,7 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
 
     @app.get("/create", include_in_schema=False)
     def create_page() -> FileResponse:
+        # Legacy path (2026-09-30 split): serves the bench kick-off page.
         return FileResponse(STATIC_DIR / "create.html")
 
     @app.get("/health")

@@ -38,6 +38,9 @@
   --win-a-bg: #f0faf2;
   --pf-btn: #555;
   --btn-bg: #1a1a1a; --btn-text: #fff;
+  /* sidebar chrome (nav.css) */
+  --hover-bg: #ececec;
+  --active-nav-bg: #dce9f7;
 }
 
 html[data-theme="dark"] {
@@ -75,34 +78,14 @@ html[data-theme="dark"] {
   --win-a-bg: #1f3a2e;
   --pf-btn: #44475A;
   --btn-bg: #BD93F9; --btn-text: #282A36;   /* purple button, dark text */
+  /* sidebar chrome (nav.css) — Dracula selection tone for hover/active */
+  --hover-bg: #3b3d4d;
+  --active-nav-bg: #44475A;
 }
 
-/* Toggle button — right edge of the nav bar */
+/* Toggle button — right edge of the nav bar (legacy top-bar shape,
+   kept so any page still using a <nav> header keeps its toggle) */
 nav { display: flex; align-items: center; flex-wrap: wrap; }
-
-/* Grouped nav (2026-09-30 UX round): three labelled sections —
-   Benchmarks / Evals / Settings — with a hairline divider between groups. */
-.nav-groups {
-  display: flex;
-  align-items: center;
-  gap: .55rem;
-  padding-right: 1rem;
-  margin-right: .9rem;
-  border-right: 1px solid var(--nav-divider, var(--border));
-}
-.nav-groups:last-of-type {
-  border-right: 0;
-  margin-right: 0;
-}
-.nav-group-label {
-  font-size: .72rem;
-  font-weight: 700;
-  letter-spacing: .07em;
-  text-transform: uppercase;
-  color: var(--text-muted);
-  white-space: nowrap;
-}
-.nav-groups a { white-space: nowrap; }
 
 nav .theme-toggle {
   margin-left: auto;

@@ -8,6 +8,7 @@
   <link rel="icon" type="image/png" sizes="180x180" href="/static/icons/scorpio-favicon-180.png">
   <title>Arcturos — Models</title>
   <link rel="stylesheet" href="/static/theme.css">
+  <link rel="stylesheet" href="/static/nav.css">
   <style>
     body { font-family: system-ui, -apple-system, sans-serif; margin: 2rem auto;
            max-width: 960px; color: var(--text); background: var(--bg); }
@@ -37,50 +38,39 @@
   </style>
   <script src="/static/app-time.js"></script>
   <script src="/static/theme.js"></script>
-  <script>
-    // Grouped-nav active highlight (2026-09-30 UX round).
-    (function () {
-      var links = document.querySelectorAll("nav a[href]");
-      var here = location.pathname + location.hash;
-      for (const a of links) {
-        const href = a.getAttribute("href");
-        const base = href.split("#")[0];
-        const active = base === '/models' &&
-          (href.indexOf("#") === -1 ? location.hash === ""
-                                    : href === here);
-        if (active) a.classList.add("active");
-      }
-    })();
-  </script>
+  <script src="/static/nav.js"></script>
 </head>
-<body>
-  <header>
-    <h1>Arcturos</h1>
-    <div class="sub">Local-first LLM benchmarking &amp; evaluation dashboard</div>
-        <nav>
-      <div class="nav-groups" data-nav-section="Benchmarks">
-        <span class="nav-group-label">Benchmarks</span>
-        <a href="/create">Kick off</a>
-        <a href="/">Runs</a>
-        <a href="/compare">Compare</a>
-        <a href="/diff">Diff</a>
+<body class="shell" data-page="models" data-section="Settings" class="shell" data-page="models" data-section="Settings" class="shell" data-page="models" data-section="Settings">
+  <aside class="sidebar">
+    <a class="brand" href="/">Arcturos</a>
+    <span class="brand-sub">LLM benchmark &amp; eval dashboard</span>
+    <nav>
+      <div class="nav-section" data-nav-section="Benchmarks">
+        <div class="nav-section-head">Benchmarks</div>
+        <a href="/kickoff" data-page="kickoff">Kick off</a>
+        <a href="/" data-page="runs">Runs</a>
+        <a href="/compare" data-page="compare">Compare</a>
+        <a href="/diff" data-page="diff">Run diff</a>
       </div>
-      <div class="nav-groups" data-nav-section="Evals">
-        <span class="nav-group-label">Evals</span>
-        <a href="/evals">Evals</a>
-        <a href="/judgments">Judgments</a>
-        <a href="/create#eval-suite-create">Suite create</a>
-        <a href="/create#eval-suite-items">Suite items</a>
-        <a href="/create#eval-replay-kick">Replay kick-off</a>
+      <div class="nav-section" data-nav-section="Evals">
+        <div class="nav-section-head">Evals</div>
+        <a href="/evals/suites/new" data-page="evalsuite">Suite create</a>
+        <a href="/evals" data-page="evals">Results</a>
+        <a href="/judgments" data-page="judgments">Judgments</a>
+        <a href="/reports" data-page="reports">Reports</a>
       </div>
-      <div class="nav-groups" data-nav-section="Settings">
-        <span class="nav-group-label">Settings</span>
-        <a href="/models">Models</a>
-        <a href="/baselines">Baselines</a>
+      <div class="nav-section" data-nav-section="Settings">
+        <div class="nav-section-head">Settings</div>
+        <a href="/models" data-page="models">Models</a>
+        <a href="/baselines" data-page="baselines">Baselines</a>
       </div>
     </nav>
-  </header>
+    <div class="sidebar-foot">
+      <button class="theme-toggle-inline" data-theme-toggle>☾</button>
+    </div>
+  </aside>
 
+  <main class="page">
   <h2>Model registry</h2>
   <p class="status" id="status">Loading…</p>
   <div id="cards"></div>
@@ -168,5 +158,7 @@
     }
     loadModels();
   </script>
+  </main>
+
 </body>
 </html>
