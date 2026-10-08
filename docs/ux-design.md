@@ -269,10 +269,13 @@ version, last refresh). No auth. All views URL-addressable.
 └──────────┴──────────────────────────────────────────────┘
 ```
 
-- **Run detail:** header = run ID, model fingerprint chip, timestamps;
-  metric table (nulls show `—` + reason tooltip); engine environment
-  collapsible; actions: compare-from-here, pin as baseline, export, view
-  artifacts.
+- **Run detail:** shared sidebar shell (2026-10-08): it is a drill-down,
+  not a nav destination — the Benchmarks rail section stays lit but no
+  link is highlighted (body carries data-page="runsdetail" with no
+  NAV_MODEL entry). Page header = run ID, model fingerprint chip,
+  timestamps; metric table (nulls show `—` + reason tooltip); engine
+  environment collapsible; actions: compare-from-here, pin as baseline,
+  export, view artifacts.
 - **Compare:** as §4.2. Chart tabs = metrics; legend = model labels with
   fingerprint tooltip.
 - **Evals:** suite list → result sets → item table → drill-down (J3/J5

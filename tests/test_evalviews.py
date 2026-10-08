@@ -84,13 +84,32 @@ def test_nav_links_in_shared_views(client):
     # section labels and data-page/data-section identity for nav.js.
     for path in ("/", "/compare", "/diff", "/kickoff", "/evals",
                  "/evals/suites/new", "/judgments", "/reports",
-                 "/models", "/baselines"):
+                 "/models", "/baselines", "/runs/1"):
         text = client.get(path).text
         assert 'data-nav-section="Benchmarks"' in text, path
         assert 'data-nav-section="Evals"' in text, path
         assert 'data-nav-section="Settings"' in text, path
         assert 'class="sidebar"' in text, path
         assert 'data-page=' in text, path
+
+
+def test_run_detail_uses_shared_shell(client):
+    # 2026-10-08: run detail was missed by the round-2 shell migration and
+    # still shipped the legacy header nav (wrong menu) + <h1>Arcturos</h1>
+    # header. It now carries the sidebar rail like every other page, with
+    # drill-down identity: Benchmarks section lit, NO nav link highlighted
+    # (it is not a nav destination), and the legacy header is gone.
+    text = client.get("/runs/1").text
+    assert 'class="sidebar"' in text
+    assert '<body class="shell" data-page="runsdetail" ' \
+           'data-section="Benchmarks">' in text
+    assert 'data-nav-section="Benchmarks"' in text
+    # legacy scaffolding must stay retired:
+    assert '<h1>Arcturos</h1>' not in text
+    assert 'nav-group-label' not in text
+    assert 'Grouped-nav active highlight' not in text
+    # content sits in the shell's .page container (clears the fixed rail):
+    assert '<main class="page">' in text
 
 
 def test_reports_is_under_evals_nav(client):
