@@ -330,9 +330,15 @@ def _run_openai_bench_points(
     """
     points: list[bench.BenchPoint] = []
     for plan in _plan_openai_points(targets):
-        prompt = bench.build_cold_prompt(plan)
-
         def _one_stream():
+            # Fresh prompt PER STREAM (ADR 004). The OpenAI API exposes no
+            # cache_prompt:false, so the UUID prefix is the only defence
+            # against prefix caching; building it once per point and
+            # sharing it made streams 2..N 100% cache hits whose TTFT
+            # was queue time, not prefill — the combined-throughput row
+            # then credited cached tokens as if prefilled (run #103:
+            # Σ prefill 1222 T/s on a server that really did ~640).
+            prompt = bench.build_cold_prompt(plan)
             op = bench_openai.run_openai_stream_point(
                 server_url, model,
                 [{"role": "user", "content": prompt}],

@@ -433,3 +433,75 @@ def test_aggregate_single_stream_combined_equals_rate():
     agg = _aggregate_stream_points([_mk_point(decode=50.0, prefill=400.0)], 1)
     assert agg.decode_tps_combined == 50.0
     assert agg.prefill_tps_combined == 400.0
+
+
+# ------------------- combined throughput under queueing (ADR 004) ----------
+
+def _mk_ttft_point(target=32768, prefill=300.0, decode=40.0, wall=110.0,
+                   out=8, ttft_ms=105000.0, prompt=32231):
+    from arcturos.bench import BenchPoint
+    return BenchPoint(target_tokens=target, prefill_tps=prefill,
+                      decode_tps=decode, wall_s=wall, output_tokens=out,
+                      ttft_ms=ttft_ms, prompt_tokens=prompt)
+
+
+def test_combined_prefill_uses_wall_window_not_rate_sum_when_queued():
+    """Regression (run #103): streams queued behind a server batch limit
+    must NOT have their per-stream rates summed. Two streams prefilled
+    cold at ~300 T/s (TTFT ~105 s) and two hit the prefix cache with
+    TTFT ~= queue time; summing rates claimed 1222 T/s of capacity the
+    server never had. Correct answer: total prompt tokens / max TTFT."""
+    from arcturos.bench import _aggregate_stream_points
+    pts = [
+        _mk_ttft_point(ttft_ms=105000.0),   # cold stream 1
+        _mk_ttft_point(ttft_ms=105000.0),   # cold stream 2
+        _mk_ttft_point(ttft_ms=209000.0, prefill=160000.0),  # cached, queued
+        _mk_ttft_point(ttft_ms=209000.0, prefill=160000.0),  # cached, queued
+    ]
+    agg = _aggregate_stream_points(pts, 4)
+    # 4 * 32231 prompt tokens over the max TTFT (209 s) — the window in
+    # which every stream's prefill completed. NOT 300+300+160000+160000.
+    assert agg.prefill_tps_combined == round(4 * 32231 / 209.0, 1)
+    assert (agg.prefill_tps_combined or 0) < 1300  # old math: ~320k here
+
+
+def test_combined_decode_uses_generation_window():
+    """Decode combined = total generated tokens / (max wall - min TTFT),
+    the window in which generation actually overlapped."""
+    from arcturos.bench import _aggregate_stream_points
+    pts = [
+        _mk_ttft_point(wall=110.0, out=8, ttft_ms=105000.0),
+        _mk_ttft_point(wall=110.0, out=8, ttft_ms=105000.0),
+        _mk_ttft_point(wall=211.0, out=8, ttft_ms=209000.0),
+        _mk_ttft_point(wall=211.0, out=8, ttft_ms=209000.0),
+    ]
+    agg = _aggregate_stream_points(pts, 4)
+    # 32 tokens over (211 - 105) s
+    assert agg.decode_tps_combined == round(32 / (211.0 - 105.0), 2)
+
+
+def test_combined_falls_back_to_rate_sum_without_ttft():
+    """Native non-stream points have no TTFT: keep the old rate-sum
+    behaviour (byte-compatible with pre-ADR-004 native rows)."""
+    from arcturos.bench import _aggregate_stream_points
+    pts = [_mk_point(prefill=400.0, decode=50.0),
+           _mk_point(prefill=380.0, decode=48.0)]
+    agg = _aggregate_stream_points(pts, 2)
+    assert agg.prefill_tps_combined == 780.0
+    assert agg.decode_tps_combined == 98.0
+
+
+def test_combined_concurrent_streams_match_rate_sum():
+    """When all streams run truly concurrently (equal TTFT/wall), the
+    wall-window math reduces to the rate sum — no regression for
+    well-behaved servers."""
+    from arcturos.bench import _aggregate_stream_points
+    pts = [
+        _mk_ttft_point(prefill=400.0, decode=50.0, wall=90.0, out=8,
+                       ttft_ms=80000.0, prompt=32000),
+        _mk_ttft_point(prefill=400.0, decode=50.0, wall=90.0, out=8,
+                       ttft_ms=80000.0, prompt=32000),
+    ]
+    agg = _aggregate_stream_points(pts, 2)
+    assert agg.prefill_tps_combined == round(64000 / 80.0, 1)  # = 400+400
+    assert agg.decode_tps_combined == round(16 / (90.0 - 80.0), 2)  # = 50+50

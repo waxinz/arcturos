@@ -110,6 +110,20 @@ arcturos/
 
 ### Log (newest first)
 
+- 2026-10-08 — Multi-stream correctness (ADR 004): openai transport now
+  builds a fresh cold prompt PER stream (run #103's shared prompt made
+  streams 2..N 100% prefix-cache hits — TTFT was queue time, and the
+  stored Σ prefill 1222 T/s credited cached tokens as if prefilled);
+  `_aggregate_stream_points` computes combined throughput over the shared
+  wall window (Σ prompt / max TTFT; Σ generated / (max wall − min TTFT))
+  instead of summing per-stream rates, which double-counted wall time
+  whenever streams queued behind a server batch limit. Native non-stream
+  path (no TTFT) keeps the old rate-sum math; truly-concurrent streams
+  reduce algebraically to the same numbers. Regression tests: distinct
+  prompts per stream (ops dispatch) + 4 aggregation cases. 241 tests
+  green. PRD §J1 amended; historical openai multi-stream combined
+  values are upper bounds.
+
 - 2026-09-30 — Grouped navigation UX round: the flat nine-link nav became
   three labelled sections — Benchmarks (Kick off / Runs / Compare / Diff),
   Evals (Evals / Judgments / Suite create / Suite items / Replay kick-off),

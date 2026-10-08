@@ -183,6 +183,14 @@ the launch surface, not only the reading surface).
   parallel streams, i.e. true server capacity under concurrency) is
   stored per point and tracked in compare reports alongside the
   per-stream means.
+- **Multi-stream correctness (added 2026-10-08, ADR 004):** the openai
+  transport now builds a fresh cold prompt PER stream (the shared prompt
+  made streams 2..N prefix-cache hits whose TTFT was queue time);
+  combined throughput is computed over the shared wall window (Σ prompt
+  tokens / max TTFT; Σ generated / (max wall − min TTFT)) instead of
+  summing per-stream rates, which double-counted wall time whenever
+  streams queued behind a server batch limit. Pre-2026-10-08 combined
+  values on openai multi-stream runs are upper bounds (e.g. run #103).
 - **Run visibility — soft hide (added 2026-09-21):** `PUT
   /api/runs/{id}/visibility` `{hidden: true|false, reason?}` appends a flag
   row (append-only, newest wins). Hidden runs drop out of `/api/runs` and
