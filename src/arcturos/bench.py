@@ -306,14 +306,41 @@ def _aggregate_stream_points(points: list[BenchPoint], streams: int) -> BenchPoi
         return int(round(m)) if m is not None else None
 
     first = points[0]
+    # Combined throughput = true server capacity under concurrency,
+    # measured over the shared wall window (ADR 004). Summing per-stream
+    # rates overstates capacity whenever streams queue behind a server
+    # batch limit: each stream's rate is computed over its own clock, so
+    # queued streams' tokens land in overlapping windows (run #103:
+    # Σ prefill 1222 T/s on a server that really computed ~640).
+    # With TTFT available: prefill combined = total prompt tokens / max
+    # TTFT (every stream's prefill has finished by then); decode
+    # combined = total generated tokens / (max wall − min TTFT).
+    # Without TTFT (native non-stream path) fall back to the rate sum.
+    prefill_combined = None
+    decode_combined = None
+    ttft_vals = [p.ttft_ms for p in points if p.ttft_ms is not None]
+    walls = [p.wall_s for p in points if p.wall_s is not None]
+    if len(ttft_vals) == len(points):  # every stream reported TTFT
+        prompt_total = _sum([p.prompt_tokens for p in points])
+        if prompt_total and max(ttft_vals) > 0:
+            prefill_combined = round(prompt_total / (max(ttft_vals) / 1000.0), 1)
+        gen_total = _sum([p.output_tokens for p in points])
+        if gen_total and walls:
+            span = max(walls) - (min(ttft_vals) / 1000.0)
+            if span > 0:
+                decode_combined = round(gen_total / span, 2)
+    if prefill_combined is None:
+        prefill_combined = _sum([p.prefill_tps for p in points])
+    if decode_combined is None:
+        decode_combined = _sum([p.decode_tps for p in points])
     return BenchPoint(
         target_tokens=first.target_tokens,
         prefill_tps=_mean([p.prefill_tps for p in points]),
         decode_tps=_mean([p.decode_tps for p in points]),
         # Combined throughput across all parallel streams — true server
         # capacity under concurrency (per-stream rates would understate it).
-        prefill_tps_combined=_sum([p.prefill_tps for p in points]),
-        decode_tps_combined=_sum([p.decode_tps for p in points]),
+        prefill_tps_combined=prefill_combined,
+        decode_tps_combined=decode_combined,
         ttft_ms=_mean([p.ttft_ms for p in points]),
         wall_s=max((p.wall_s for p in points if p.wall_s is not None),
                    default=None),
