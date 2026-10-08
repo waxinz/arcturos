@@ -25,6 +25,10 @@ STATIC = Path(__file__).resolve().parent.parent / "src" / "arcturos" / "static"
 PAGES: list[tuple[str, str, str, str]] = [
     ("bench-kickoff.html",   "kickoff",   "Benchmarks", "Kick off"),
     ("index.html",           "runs",      "Benchmarks", "Runs"),
+    # Run detail is a drill-down, not a nav destination: it carries the
+    # shell identity (Benchmarks section lit, no link highlighted) but
+    # gets no NAV_MODEL entry.
+    ("run_detail.html",      "runsdetail", "Benchmarks", "Run detail"),
     ("compare.html",         "compare",   "Benchmarks", "Compare"),
     ("diff.html",            "diff",      "Benchmarks", "Run Diff"),
     ("eval-suite-new.html",  "evalsuite", "Evals",      "Suite create"),
@@ -98,9 +102,16 @@ def build_pages() -> None:
                           '  <script src="/static/nav.js"></script>', 1)
 
         # ---- 3) body identity ---------------------------------------
-        t = re.sub(r'<body([^>]*)>',
-                   rf'<body\1 class="shell" data-page="{page}" '
-                   rf'data-section="{section}">', t, count=1)
+        # Idempotent: strip ALL previously injected class/data-* attrs
+        # from the body tag (older runs of this script stacked them),
+        # then re-add exactly one canonical set.
+        t = re.sub(
+            r'<body[^>]*>',
+            lambda m: '<body class="shell" data-page="%s" data-section="%s"%s>'
+            % (page, section,
+               re.sub(r'\s+(?:class|data-page|data-section)="[^"]*"',
+                      '', m.group(0)[len('<body'):-1]).rstrip()),
+            t, count=1)
 
         # ---- 4) sidebar injection right after <body …> --------------
         if 'class="sidebar"' not in t:
