@@ -110,6 +110,21 @@ arcturos/
 
 ### Log (newest first)
 
+- 2026-10-08 — Run detail shell fix: /runs/{id} was the one page the
+  2026-09-30 round-2 shell migration missed — it still shipped the legacy
+  header nav (old flat menu, stale /create#anchor eval links) under an
+  <h1>Arcturos</h1> header. It now carries the shared sidebar rail via
+  tools/build_nav.py (added to PAGES as a drill-down: data-page=
+  "runsdetail" + Benchmarks section lit, deliberately NO NAV_MODEL entry
+  so no nav link highlights), with content wrapped in <main class="page">
+  like every other page. build_nav.py step 3 made idempotent (it stacked
+  duplicate class/data-* attrs on <body> on every re-run — visible on
+  index/compare/diff/evals/judgments/reports/models/baselines; all
+  normalized). Legacy header + inline highlighter retired from the page.
+  test_evalviews: /runs/1 added to the shared-shell sweep +
+  test_run_detail_uses_shared_shell pins the drill-down shape. 242 passed.
+  ux-design §Run detail amended.
+
 - 2026-10-08 — Multi-stream correctness (ADR 004): openai transport now
   builds a fresh cold prompt PER stream (run #103's shared prompt made
   streams 2..N 100% prefix-cache hits — TTFT was queue time, and the
