@@ -437,6 +437,36 @@ def test_dispatch_bench_openai_happy_stores_points_no_power(db_path):
         assert b["ttft_ms"] is not None
 
 
+def test_dispatch_bench_openai_streams_get_distinct_prompts(db_path):
+    """Regression (run #103): the openai path built ONE cold prompt per
+    point and shared it across all streams, so streams 2..N were 100%
+    prefix-cache hits whose TTFT was queue time — the stored combined
+    prefill (1222 T/s) credited cached tokens as if prefilled. Every
+    stream must get its own fresh UUID-prefixed prompt."""
+    seen_contents = []
+
+    def fake_urlopen(req, timeout=None):
+        body = json.loads(req.data.decode())
+        seen_contents.append(body["messages"][0]["content"])
+        return _SSEFakeResp(_sse_text(content_chunks=4, prompt=500,
+                                      completion=30))
+
+    with patch("arcturos.bench_openai.urlreq.urlopen",
+               side_effect=fake_urlopen):
+        result = ops.dispatch_bench(
+            db_path, "http://fake:4000/v1", [128], 30,
+            transport_name="openai", model="GLM-5.3-Flash",
+            transport=_openai_preflight_app(), streams=3)
+
+    assert len(seen_contents) == 3
+    assert len(set(seen_contents)) == 3  # distinct prompts per stream
+    # deterministic bodies stay identical (MTP acceptance comparability);
+    # only the UUID cold-prefix differs
+    tails = {c.split("\n", 1)[1] for c in seen_contents}
+    assert len(tails) == 1
+    assert result["points"][0]["streams"] == 3
+
+
 def test_dispatch_bench_openai_preflight_failure_is_actionable(db_path):
     """openai dispatch against a failing target: preflight (kind='eval')
     surfaces the detail as DispatchError; no bench point is attempted."""
