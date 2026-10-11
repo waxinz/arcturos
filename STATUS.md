@@ -29,6 +29,19 @@ Compare, nicer menu."
 - Tests: 247 green (pins moved to the integrated diff + renames);
   static gates clean.
 
+### Same-round follow-ups (owner feedback while using it)
+
+- **Compare button into the runs toolbar** (ex-sticky bottom bar, felt
+  like a random popup): the toolbar row is now Compare · ⤓ CSV ·
+  Hide selected · selected-count hint. Sticky bar markup/CSS/JS
+  removed; charts still auto-scroll into view after a compare.
+- **A/B table fires without a baseline** (call-site bug: it sat inside
+  `if (data.baseline)`).
+- **A/B table units + neutral columns:** ttft_ms rows display in
+  seconds (matching the chart and the "TTFT (s)" label; delta
+  recomputed post-scale); `streams` joins `power_watts` as
+  never-verdict-coloured (a config fact, not a score).
+
 ## 2026-10-11 (later) — UX round: Runs rename, pagination, sticky bar, quiet stop
 
 Owner asked for three more changes after using the merged page; one
