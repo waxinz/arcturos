@@ -325,16 +325,20 @@ def test_compare_page_lists_combined_metric_checkboxes(client):
 
 
 def test_compare_page_merged_defaults_and_order(client):
-    """Merged Compare Runs page (owner call 2026-10-11): ttft / wall /
-    prefill / decode checkboxes are pre-checked; the runs list renders
-    latest-first (render-time reversal of the ascending API); the former
-    Runs-page controls (CSV export + Hide selected) live on the page."""
+    """Runs page (owner rename 2026-10-11, formerly "Compare Runs"):
+    ttft / wall / prefill / decode checkboxes are pre-checked; the runs
+    list renders latest-first (render-time reversal of the ascending
+    API); the former Runs-page controls (CSV export + Hide selected)
+    live on the page; a client-side pager and a sticky action bar keep
+    Compare reachable without scrolling to the bottom of a long list."""
     html = client.get("/compare").text
     assert "DEFAULT_METRICS = new Set(['decode_tps', 'prefill_tps', 'ttft_ms', 'wall_s'])" in html
     assert "b.id - a.id" in html            # latest up top
     assert 'id="export-runs"' in html       # runs CSV export carried over
     assert 'id="hide-selected"' in html     # bulk hide carried over
-    assert "<h2>Compare Runs</h2>" in html
+    assert "<h2>Runs</h2>" in html
+    assert "PAGE_SIZE = 25" in html         # client-side pagination
+    assert 'id="action-bar"' in html        # sticky Compare bar
     assert 'id="charts"' in html            # results section above controls
 
 
