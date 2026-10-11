@@ -41,6 +41,7 @@
   /* sidebar chrome (nav.css) */
   --hover-bg: #ececec;
   --active-nav-bg: #dce9f7;
+  --sidebar-bg: #f3f4f6;   /* rail reads as its own surface (2026-10-11 redesign) */
 }
 
 html[data-theme="dark"] {
@@ -81,6 +82,7 @@ html[data-theme="dark"] {
   /* sidebar chrome (nav.css) — Dracula selection tone for hover/active */
   --hover-bg: #3b3d4d;
   --active-nav-bg: #44475A;
+  --sidebar-bg: #21222C;   /* Dracula background — distinct from content bg */
 }
 
 /* Toggle button — right edge of the nav bar (legacy top-bar shape,
