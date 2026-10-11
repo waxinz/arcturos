@@ -152,11 +152,14 @@ body.shell .page {
   text-overflow: ellipsis;
 }
 
-/* Current page: filled pill + accent edge on the left. */
+/* Current page: filled pill + accent edge on the left. The extra left
+   padding keeps the icon's optical gutter clear of the 3px edge —
+   without it the edge crowds the glyph (owner QA caught it). */
 .nav-section a.active {
   background: var(--active-nav-bg);
   color: var(--accent);
   font-weight: 700;
+  padding-left: .82rem;
   box-shadow: inset 3px 0 0 var(--accent);
 }
 .nav-section a.active .nav-ico { opacity: 1; }
