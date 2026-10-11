@@ -6,7 +6,7 @@
   <link rel="icon" type="image/png" sizes="16x16" href="/static/icons/scorpio-favicon-16.png">
   <link rel="icon" type="image/png" sizes="32x32" href="/static/icons/scorpio-favicon-32.png">
   <link rel="icon" type="image/png" sizes="180x180" href="/static/icons/scorpio-favicon-180.png">
-  <title>Arcturos — Runs</title>
+  <title>Arcturos — Compare</title>
   <link rel="stylesheet" href="/static/theme.css">
   <link rel="stylesheet" href="/static/nav.css">
   <style>
@@ -73,6 +73,18 @@
     .pager button { padding: .2rem .65rem; font-size: .82rem; }
     .pager button[disabled] { opacity: .4; cursor: not-allowed; }
     .pager .pg-of { font-variant-numeric: tabular-nums; }
+    /* ---- A/B delta tables (integrated Run Diff, 2026-10-11) ---- */
+    .delta-head { display: flex; align-items: baseline; gap: .75rem;
+                  margin: 1.4rem 0 .5rem; }
+    .delta-head h3 { margin: 0; }
+    .delta-head .legend { color: var(--text-muted); font-size: .8rem; }
+    #delta-tables table { margin-bottom: 1.2rem; }
+    #delta-tables td.good { background: var(--good-bg); color: var(--good-text); font-weight: 600; }
+    #delta-tables td.bad  { background: var(--bad-red-bg); color: var(--bad-red-text); font-weight: 600; }
+    #delta-tables td.gray { color: var(--hint); }
+    #delta-tables td.num  { text-align: right; font-family: ui-monospace, monospace; font-size: .8rem; }
+    #delta-tables td.ctx  { width: 90px; }
+    #delta-tables td.metric { font-weight: 600; }
   </style>
   <script src="/static/app-time.js"></script>
   <script src="/static/theme.js"></script>
@@ -85,13 +97,12 @@
     <nav>
       <div class="nav-section" data-nav-section="Benchmarks">
         <div class="nav-section-head">Benchmarks</div>
-        <a href="/kickoff" data-page="kickoff">Kick off</a>
-        <a href="/compare" data-page="compare">Runs</a>
-        <a href="/diff" data-page="diff">Run diff</a>
+        <a href="/kickoff" data-page="kickoff">Start</a>
+        <a href="/compare" data-page="compare">Compare</a>
       </div>
       <div class="nav-section" data-nav-section="Evals">
         <div class="nav-section-head">Evals</div>
-        <a href="/evals/suites/new" data-page="evalsuite">Suite create</a>
+        <a href="/evals/suites/new" data-page="evalsuite">Create</a>
         <a href="/evals" data-page="evals">Results</a>
         <a href="/judgments" data-page="judgments">Judgments</a>
         <a href="/reports" data-page="reports">Reports</a>
@@ -108,7 +119,7 @@
   </aside>
 
   <main class="page">
-  <h2>Runs</h2>
+  <h2>Compare</h2>
   <p class="sub">Select runs, pick metrics, hit Compare — the charts land up here.
      Runs are listed latest first.</p>
 
@@ -579,13 +590,119 @@
       return String(v);
     }
 
+    // Higher-is-better metrics for A/B colouring; everything else
+    // (TTFT, wall time) is lower-is-better; power_watts is informational
+    // (the API marks it neutral) and must never get a verdict colour.
+    const HIGHER_BETTER = ['decode_tps', 'prefill_tps', 'output_tokens',
+      'mtp_acceptance', 'decode_tps_combined', 'prefill_tps_combined'];
+
+    function abDeltaClass(metric, pct) {
+      if (pct === null || pct === undefined || metric === 'power_watts') return 'gray';
+      if (Math.abs(pct) < 2) return 'gray';              // within ±2%
+      const good = HIGHER_BETTER.includes(metric) ? pct > 0 : pct < 0;
+      return good ? 'good' : 'bad';
+    }
+
+    async function renderAbDiff(data, runIds) {
+      // Integrated Run Diff (2026-10-11): with exactly two runs selected,
+      // the diff view's table renders under the charts — same payload the
+      // standalone /diff page used, so semantics are identical. Rows whose
+      // metric is missing on either side are SKIPPED (owner rule): a run
+      // with no power_watts shows no power_watts row, not a '—' filler.
+      const [a, b] = runIds;
+      const wrap = document.getElementById('delta-tables');
+      const head = document.createElement('div');
+      head.className = 'delta-head';
+      const h = document.createElement('h3');
+      h.textContent = 'A/B — ' + legendName(data.runs.find(r => r.id === +a)) +
+        ' vs ' + legendName(data.runs.find(r => r.id === +b));
+      const legend = document.createElement('span');
+      legend.className = 'legend';
+      legend.textContent = 'green = better · red = worse · gray = within ±2% ' +
+        '(deltas are B − A, % relative to A)';
+      head.appendChild(h);
+      head.appendChild(legend);
+      wrap.appendChild(head);
+
+      const table = document.createElement('table');
+      const thead = document.createElement('thead');
+      const hrow = document.createElement('tr');
+      for (const th of ['Context', 'Metric', 'A', 'B', 'Δ', 'Δ%']) {
+        const cell = document.createElement('th');
+        cell.textContent = th;
+        if (th === 'A' || th === 'B' || th === 'Δ' || th === 'Δ%') {
+          cell.style.textAlign = 'right';
+        }
+        hrow.appendChild(cell);
+      }
+      thead.appendChild(hrow);
+      table.appendChild(thead);
+      const tbody = document.createElement('tbody');
+      let any = false;
+      try {
+        const res = await fetch('/api/compare/run-diff/' + a + '/' + b);
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        const diff = await res.json();
+        const dirs = diff.directions || {};
+        for (const row of diff.deltas) {
+          for (const m of Object.keys(dirs)) {
+            const d = row.metrics[m];
+            // Skip blank rows: the metric must exist on BOTH sides at
+            // this context point (owner rule — no '—' filler rows).
+            if (d.a === null || d.a === undefined ||
+                d.b === null || d.b === undefined) continue;
+            any = true;
+            const cls = abDeltaClass(m, d.pct);
+            const tr = document.createElement('tr');
+            const cells = [
+              { t: row.context_tokens, c: 'ctx' },
+              { t: METRIC_LABELS[m] || m, c: 'metric' },
+              { t: fmtNum(d.a), c: 'num' },
+              { t: fmtNum(d.b), c: 'num' },
+              { t: d.delta === null ? '—' : fmtNum(d.delta), c: 'num ' + cls },
+              { t: d.pct === null ? '—' : fmtNum(d.pct) + '%', c: 'num ' + cls },
+            ];
+            for (const cell of cells) {
+              const td = document.createElement('td');
+              td.textContent = cell.t;
+              td.className = cell.c;
+              tr.appendChild(td);
+            }
+            tbody.appendChild(tr);
+          }
+        }
+      } catch (err) {
+        const tr = document.createElement('tr');
+        const td = document.createElement('td');
+        td.colSpan = 6;
+        td.textContent = 'A/B table unavailable: ' + err;
+        tr.appendChild(td);
+        tbody.appendChild(tr);
+      }
+      if (!any) {
+        const tr = document.createElement('tr');
+        const td = document.createElement('td');
+        td.colSpan = 6;
+        td.textContent = 'No overlapping (context, metric) values between ' +
+          'the two runs.';
+        tr.appendChild(td);
+        tbody.appendChild(tr);
+      }
+      table.appendChild(tbody);
+      wrap.appendChild(table);
+    }
+
     async function renderDeltaTables(data, runIds) {
-      // Per-run delta tables against the baseline (§4.6): one table per
-      // run, one row per (metric, context point) where BOTH sides exist.
-      // Signed percent + direction-aware good/bad colouring — the payload
-      // is self-describing, so the view only formats numbers.
+      // Two paths:
+      //  - exactly 2 runs: the integrated Run Diff (owner call 2026-10-11)
+      //    — A/B table under the charts, one row per (ctx, metric) where
+      //    BOTH runs have the metric (rows with a missing side are
+      //    skipped, e.g. power_watts when neither run collected it).
+      //  - baseline pinned: per-run delta tables vs the baseline (§4.6),
+      //    unchanged behaviour.
       const wrap = document.getElementById('delta-tables');
       wrap.innerHTML = '';
+      if (runIds.length === 2) { await renderAbDiff(data, runIds); return; }
       const header = document.createElement('h3');
       header.textContent = 'Deltas vs 📌 baseline ' +
         data.baseline.model_fingerprint_short +
@@ -744,8 +861,26 @@
     });
     buildMetricPicks();
     loadBaselines().then(rebuildBaselineSelect);
-    loadRuns().then(() => { updateCompareBtn(); updateHideSelected(); })
-      .then(rebuildBaselineSelect).catch(err => {
+    loadRuns().then(() => {
+      updateCompareBtn();
+      updateHideSelected();
+      // Deep-link preselect (run detail's "Compare from this run" /
+      // "Diff against…"): /compare?runs=1,2 checks those rows on arrival.
+      const pre = new URLSearchParams(location.search).get('runs');
+      if (pre) {
+        for (const id of pre.split(',')) {
+          const cb = document.querySelector(
+            '.run-select[data-run-id="' + id.trim() + '"]');
+          if (cb && !cb.checked) {
+            cb.checked = true;
+            cb.closest('tr').classList.add('row-selected');
+          }
+        }
+      }
+      updateCompareBtn();
+      updateHideSelected();
+      rebuildBaselineSelect();
+    }).catch(err => {
       document.getElementById('run-list').textContent = 'Failed to load runs: ' + err;
     });
     document.getElementById('run-list').addEventListener('change', (ev) => {

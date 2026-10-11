@@ -23,22 +23,30 @@ STATIC = Path(__file__).resolve().parent.parent / "src" / "arcturos" / "static"
 
 # Existing file -> (page-id, section, <h1> title)
 PAGES: list[tuple[str, str, str, str]] = [
-    ("bench-kickoff.html",   "kickoff",   "Benchmarks", "Kick off"),
+    # Owner renames (2026-10-11): "Kick off" -> "Start", "Runs" -> "Compare",
+    # Run Diff retired as a page (its A/B tables live under the charts on
+    # the Compare page). Page ids / routes / file names are stable — only
+    # labels change.
+    ("bench-kickoff.html",   "kickoff",   "Benchmarks", "Start"),
     # Legacy alias (2026-09-30 split): /create serves the same bench
-    # kick-off card as /kickoff — same page identity, kept in the shell
+    # start card as /kickoff — same page identity, kept in the shell
     # sync so its rail never drifts.
-    ("create.html",          "kickoff",   "Benchmarks", "Kick off"),
-    # Runs page (2026-10-11): the former /runs list merged into /compare —
-    # index.html retired, / and /runs redirect (main.py). Owner rename
-    # (2026-10-11, same day): the page is just "Runs" — compare is what
-    # you do FROM it, not what it is.
+    ("create.html",          "kickoff",   "Benchmarks", "Start"),
+    # Compare page (2026-10-11): the former /runs list merged into
+    # /compare — index.html retired, / and /runs redirect (main.py).
+    # Owner rename (same day): the page is "Compare".
     ("run_detail.html",      "runsdetail", "Benchmarks", "Run detail"),
     # Run detail is a drill-down, not a nav destination: it carries the
     # shell identity (Benchmarks section lit, no link highlighted) but
     # gets no NAV_MODEL entry.
-    ("compare.html",         "compare",   "Benchmarks", "Runs"),
-    ("diff.html",            "diff",      "Benchmarks", "Run Diff"),
-    ("eval-suite-new.html",  "evalsuite", "Evals",      "Suite create"),
+    ("compare.html",         "compare",   "Benchmarks", "Compare"),
+    # diff.html retired from the rail (owner call 2026-10-11): the A/B
+    # diff tables render on the Compare page under the charts. The file
+    # and /diff route stay alive (run detail deep-links ?run_a=…), but
+    # the page is no longer a nav destination — it is a legacy alias
+    # that redirects regular visitors to the integrated view.
+    ("diff.html",            "diff",      "Benchmarks", "Run diff"),
+    ("eval-suite-new.html",  "evalsuite", "Evals",      "Create"),
     ("evals.html",           "evals",     "Evals",      "Results"),
     ("judgments.html",       "judgments", "Evals",      "Judgments"),
     ("reports.html",         "reports",   "Evals",      "Reports"),
@@ -49,12 +57,11 @@ PAGES: list[tuple[str, str, str, str]] = [
 # Ordered nav model: section -> [(page-id, href, label)]
 NAV_MODEL = [
     ("Benchmarks", [
-        ("kickoff", "/kickoff", "Kick off"),
-        ("compare", "/compare", "Runs"),
-        ("diff",    "/diff",    "Run diff"),
+        ("kickoff", "/kickoff", "Start"),
+        ("compare", "/compare", "Compare"),
     ]),
     ("Evals", [
-        ("evalsuite", "/evals/suites/new", "Suite create"),
+        ("evalsuite", "/evals/suites/new", "Create"),
         ("evals",     "/evals",           "Results"),
         ("judgments", "/judgments",       "Judgments"),
         ("reports",   "/reports",         "Reports"),
