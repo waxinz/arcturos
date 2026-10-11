@@ -5,6 +5,39 @@ stays the conventions/ground-truth file; this file is the living status).
 Newest first. Read AGENTS.md first for conventions; read this file to
 resume work.
 
+## 2026-10-11 (later) — UX round: Runs rename, pagination, sticky bar, quiet stop
+
+Owner asked for three more changes after using the merged page; one
+commit each for the UX round and a follow-up fix; deployed and verified
+in a live browser.
+
+- **Renamed to "Runs"** (title, h2, rail label on all 11 pages via
+  build_nav) — "compare is what you do FROM it, not what it is".
+  Route stays /compare.
+- **Client-side pagination** (25/page, Prev/Next, page-of-N counter):
+  rows stay in the DOM, paging only toggles `hidden` — cross-page
+  selection, select-all, hide-selected, Compare payload unaffected.
+  Verified live: 87 runs → 4 pages, selection persists across pages.
+- **Sticky action bar**: Compare + selected-count pinned to the viewport
+  bottom, appears once ≥2 runs are selected (or a chart exists) — no
+  scrolling to the page end to press Compare. Charts still auto-scroll
+  into view after a compare.
+- **Runs table polish**: zebra rows, hover/selected tint, fingerprint as
+  a short chip with full path in the tooltip, server as host-only with
+  full URL in the tooltip.
+- **Stop run button quieted** (owner ask): small gray ghost button, no
+  full-width red slab. Root cause of "obtrusive" was worse than styling:
+  `.stop-btn { display:inline-block }` OVERRODE the `hidden` attribute
+  (author CSS beats the UA `[hidden]` rule), so the button shipped
+  permanently visible. Fixed with `.stop-btn[hidden] { display:none }`.
+- **Same trap bit again** on the new action bar (`display:flex` +
+  `hidden` → visible with "no runs selected"); caught in live-browser
+  verification, fixed in a follow-up commit. Lesson recorded in the
+  arcturos-dashboard skill: any author `display` rule on an element
+  toggled via `hidden` needs an explicit `[hidden] { display:none }`.
+- Tests: 247 green (merged-page pins updated: h2 Runs, PAGE_SIZE,
+  action-bar); static gates clean.
+
 ## 2026-10-11 — Compare Runs merge + stop-run + ADR 005 (run #129 math)
 
 All four owner items landed in one round; 247 tests green; deployed to
