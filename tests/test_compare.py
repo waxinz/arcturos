@@ -325,21 +325,26 @@ def test_compare_page_lists_combined_metric_checkboxes(client):
 
 
 def test_compare_page_merged_defaults_and_order(client):
-    """Runs page (owner rename 2026-10-11, formerly "Compare Runs"):
-    ttft / wall / prefill / decode checkboxes are pre-checked; the runs
-    list renders latest-first (render-time reversal of the ascending
-    API); the former Runs-page controls (CSV export + Hide selected)
-    live on the page; a client-side pager and a sticky action bar keep
-    Compare reachable without scrolling to the bottom of a long list."""
+    """Compare page (owner renames 2026-10-11: ex-"Runs", ex-"Compare
+    Runs"): ttft / wall / prefill / decode checkboxes are pre-checked;
+    the runs list renders latest-first (render-time reversal of the
+    ascending API); the former Runs-page controls (CSV export + Hide
+    selected) live on the page; a client-side pager and a sticky action
+    bar keep Compare reachable without scrolling to the bottom of a long
+    list; the integrated A/B diff renders under the charts (skip-blank)."""
     html = client.get("/compare").text
     assert "DEFAULT_METRICS = new Set(['decode_tps', 'prefill_tps', 'ttft_ms', 'wall_s'])" in html
     assert "b.id - a.id" in html            # latest up top
     assert 'id="export-runs"' in html       # runs CSV export carried over
     assert 'id="hide-selected"' in html     # bulk hide carried over
-    assert "<h2>Runs</h2>" in html
+    assert "<h2>Compare</h2>" in html
     assert "PAGE_SIZE = 25" in html         # client-side pagination
     assert 'id="action-bar"' in html        # sticky Compare bar
     assert 'id="charts"' in html            # results section above controls
+    assert "renderAbDiff" in html           # integrated Run Diff
+    assert "run-diff/" in html              # …fed by the run-diff payload
+    # Owner skip-blank rule: a metric missing on either side shows no row.
+    assert "d.a === null || d.a === undefined ||" in html
 
 
 def test_runs_root_redirect_to_compare(client):
@@ -370,17 +375,22 @@ def test_ui_floats_render_at_2dp(client):
     # create: live-table cell() rounds floats too
     create = client.get("/create").text
     assert "v.toFixed(2)" in create
-    # diff already rounded via fmt(); it must stay that way
-    diff = client.get("/diff").text
-    assert "toFixed(2)" in diff
+    # the integrated A/B diff rounds via fmtNum on the compare page
+    # (the standalone /diff page is retired; fmt() lived there)
+    assert "toFixed(2)" in client.get("/compare").text
 
 
 # ------------------------------------------------------------ views ---------
 
 
 def test_compare_views_served(client):
+    """/compare is the merged Runs+Compare page; /diff is retired as a
+    page (2026-10-11): it 308-redirects to /compare, where the A/B
+    tables render under the charts."""
     assert client.get("/compare").status_code == 200
-    assert client.get("/diff").status_code == 200
+    diff = client.get("/diff", follow_redirects=False)
+    assert diff.status_code == 308
+    assert diff.headers["location"] == "/compare"
     assert client.get("/runs").status_code == 200
     assert "Arcturos" in client.get("/compare").text
     assert "Chart" in client.get("/compare").text

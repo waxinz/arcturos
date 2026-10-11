@@ -17,26 +17,27 @@ body.shell {
 .sidebar {
   position: fixed;
   top: 0; left: 0; bottom: 0;
-  width: 224px;
-  padding: 1.1rem .9rem 1.2rem;
+  width: 236px;
+  padding: 1.2rem 1rem 1.2rem;
   display: flex;
   flex-direction: column;
-  gap: 1.1rem;
+  gap: .2rem;
   overflow-y: auto;
 }
 
 body.shell .page {
-  margin-left: 224px;                    /* clear the fixed rail */
+  margin-left: 236px;                    /* clear the fixed rail */
   padding: 1.4rem 2.2rem 3rem;
   max-width: 980px;                      /* keep line lengths readable */
   min-height: 100vh;
   box-sizing: border-box;
 }
 
-/* Home-brand block at the rail's top */
+/* Home-brand block at the rail's top; a hairline separates it from the
+   nav so the identity reads as a header, not as a fourth section. */
 .sidebar .brand {
   font-weight: 800;
-  font-size: 1.18rem;
+  font-size: 1.22rem;
   letter-spacing: -.01em;
   color: var(--text);
   text-decoration: none;
@@ -45,31 +46,35 @@ body.shell .page {
 .sidebar .brand:hover { color: var(--accent); }
 .sidebar .brand-sub {
   display: block;
-  margin-top: .15rem;
+  margin: .15rem 0 .95rem;
   font-size: .72rem;
   color: var(--text-muted);
   line-height: 1.35;
+}
+.sidebar nav {
+  border-top: 1px solid var(--border);
+  padding-top: .95rem;
 }
 
 /* ---------- one section (heading + its page links) ----------------- */
 .nav-section {
   display: block;
-  margin-bottom: 1.05rem;
+  margin-bottom: 1rem;
 }
 .nav-section:last-of-type { margin-bottom: 0; }
 
 .nav-section-head {
-  font-size: .68rem;
+  font-size: .66rem;
   font-weight: 700;
-  letter-spacing: .09em;
+  letter-spacing: .11em;
   text-transform: uppercase;
   color: var(--text-muted);
-  margin-bottom: .3rem;
+  margin: 0 0 .25rem .55rem;
   transition: color .15s ease;
 }
-/* Active section: the heading lights up in the accent colour and a
-   short brand-coloured bar sits beside it — the eye anchors on the
-   group before it reads its links. */
+/* Active section: the heading lights up and a short brand-coloured bar
+   sits beside it — the eye anchors on the group before it reads its
+   links. */
 .nav-section-head::before {
   content: '';
   display: inline-block;
@@ -87,8 +92,10 @@ body.shell .page {
 
 /* Section links: full-width rows (hover paints the row, not the word) */
 .nav-section a {
-  display: block;
-  padding: .28rem .55rem;
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+  padding: .3rem .55rem;
   margin-left: -.55rem;                  /* align text with the label */
   border-radius: 6px;
   color: var(--text-soft);
@@ -105,11 +112,28 @@ body.shell .page {
   background: var(--hover-bg);
 }
 
+/* Section bullet: a quiet dot that gives every row a shared anchor and
+   fills with the accent when that row is the current page. */
+.nav-section a::before {
+  content: '';
+  width: 5px; height: 5px;
+  border-radius: 50%;
+  background: var(--border-strong);
+  opacity: .35;
+  flex: 0 0 auto;
+  transition: background .12s ease, opacity .12s ease;
+}
+.nav-section a:hover::before { opacity: .7; }
+
 /* Current page: filled pill + accent text — unmistakable location */
 .nav-section a.active {
   background: var(--active-nav-bg);
   color: var(--accent);
   font-weight: 700;
+}
+.nav-section a.active::before {
+  background: var(--accent);
+  opacity: 1;
 }
 
 /* ---------- footer of the rail ------------------------------------ */
@@ -140,8 +164,10 @@ body.shell .page {
     margin-left: 0;
     padding: 1rem;
   }
+  .sidebar nav { border-top: none; padding-top: 0; }
   .nav-section { display: inline-block; margin-bottom: 0; }
-  .nav-section a { display: inline-block; margin-left: 0; }
+  .nav-section-head { margin-left: 0; }
+  .nav-section a { display: inline-flex; margin-left: 0; }
 }
 
 /* ---------- legacy header nav (kept for reference, no longer used) -- */

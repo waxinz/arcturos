@@ -134,7 +134,8 @@ def test_eval_suite_page_has_three_cards(client):
 
 
 def test_kickoff_page_bench_only(client):
-    # Kick off page: ONLY the benchmark card — no eval cards, no anchors.
+    # Start page (owner rename 2026-10-11, ex-"Kick off"): ONLY the
+    # benchmark card — no eval cards, no anchors.
     text = client.get("/kickoff").text
     assert 'id="bench-btn"' in text                  # bench card present
     assert 'id="eval-suite-create"' not in text      # eval cards absent
@@ -147,8 +148,8 @@ def test_kickoff_page_bench_only(client):
 
 
 def test_split_pages_served(client):
-    for path, marker in [("/kickoff", "Kick off"),
-                         ("/evals/suites/new", "Suite create")]:
+    for path, marker in [("/kickoff", "Start"),
+                         ("/evals/suites/new", "Create")]:
         res = client.get(path)
         assert res.status_code == 200, path
         assert "text/html" in res.headers["content-type"], path

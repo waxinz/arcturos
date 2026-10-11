@@ -48,8 +48,8 @@ Both personas share one SQLite store and one dashboard.
 ```
 CLI                          Dashboard (0.0.0.0:24816)
 ────────────                 ─────────────────────────
-arcturos bench               ├─ Compare Runs  (runs picker latest-first + charts; run detail)
-arcturos eval                ├─ Kick off      (bench dispatch, live progress, stop)
+arcturos bench               ├─ Compare       (runs picker, charts, A/B tables; run detail)
+arcturos eval                ├─ Start         (bench dispatch, live progress, stop)
 arcturos eval                ├─ Evals         (suites, results, drill-down)
 arcturos judge               ├─ Judge         (A/B setup, blind runs, re-judge)
 arcturos report              ├─ Reports       (win-rate matrix, exports)
@@ -138,14 +138,19 @@ the design of record after the merge)**
 - **Chart area:** Chart.js line chart, x = context length (log), y =
   selected metric, one series per run. 2dp display precision in tables
   and tooltips.
-- **Run diff:** `/diff` remains a separate A/B drill-down (linked from
-  run detail); deltas colored by direction map.
+- **A/B diff (integrated, 2026-10-11 owner call):** with exactly two
+  runs selected, an "A/B — X vs Y" table renders under the charts (same
+  payload the retired /diff page used: per-context deltas, direction
+  map, ±2% gray band). Rows whose metric is missing on either side are
+  SKIPPED — no `—` filler rows (e.g. power_watts when neither run
+  collected it). `/diff` 308-redirects here; run detail deep-links
+  `/compare?runs={id}` (pre-selects the run).
 - **Export:** compare-payload CSV (`⤓ Export CSV`) after a compare; runs
   CSV any time.
 - **Baseline mode:** when a run is pinned (J6), compare view shows a
   dashed reference series and delta column vs baseline.
 
-**States:** empty (no runs) → onboarding card pointing at the Kick off
+**States:** empty (no runs) → onboarding card pointing at the Start
 page. Compare with <2 runs selected → button disabled with a hint.
 
 ### 4.3 J3 — Run prompt evals (P2)
@@ -295,13 +300,14 @@ version, last refresh). No auth. All views URL-addressable.
   judgment history list with generation selector.
 - **Reports:** as §4.5.
 - **Models:** registry cards; alias edit inline; fingerprint copy button.
-- **Kick off (`/kickoff`, J7; `/create` is the legacy alias serving the
-  same page):** bench dispatch card — server URL, ctx targets, n_predict,
-  optional API key password field; "✔ Check target - just one ping,
-  Vasily" preflight button (owner naming, 2026-10-11); async progress
-  panel (animated bar, status line, elapsed/remaining clock, zoomable
-  per-point table) and a red **■ Stop run** button (2026-10-11) that
-  appears while a job is in flight — confirm dialog, then the sweep
+- **Start (`/kickoff`, J7; `/create` is the legacy alias serving the
+  same page; owner rename 2026-10-11, ex-"Kick off"):** bench dispatch
+  card — server URL, ctx targets, n_predict, optional API key password
+  field; "✔ Check target - just one ping, Vasily" preflight button
+  (owner naming, 2026-10-11); async progress panel (animated bar,
+  status line, elapsed/remaining clock, zoomable per-point table) and a
+  small gray **■ Stop run** ghost button (2026-10-11: red slab retired)
+  that appears while a job is in flight — confirm dialog, then the sweep
   aborts cooperatively and the partial run is linked from the status
   line. The eval cards (suite create, item editor with client-side
   validation, replay dispatch) moved to their own page
