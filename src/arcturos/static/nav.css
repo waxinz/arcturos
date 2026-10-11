@@ -52,6 +52,13 @@ body.shell .page {
   line-height: 1.35;
 }
 .sidebar nav {
+  display: block;                 /* theme.css's legacy top-bar rule
+                                     (nav { display:flex; flex-wrap:wrap })
+                                     would otherwise lay the sections out
+                                     as wrapping flex items — headers and
+                                     links overlapped. The rail nav is a
+                                     normal block; sections stack. */
+  width: 100%;
   border-top: 1px solid var(--border);
   padding-top: .95rem;
 }
@@ -59,17 +66,21 @@ body.shell .page {
 /* ---------- one section (heading + its page links) ----------------- */
 .nav-section {
   display: block;
-  margin-bottom: 1rem;
+  margin-bottom: 1.15rem;
 }
 .nav-section:last-of-type { margin-bottom: 0; }
 
 .nav-section-head {
+  display: flex;                   /* bar + label on one aligned axis;
+                                      no baseline shift when the active
+                                      bar grows from 9px to 13px */
+  align-items: center;
   font-size: .66rem;
   font-weight: 700;
   letter-spacing: .11em;
   text-transform: uppercase;
   color: var(--text-muted);
-  margin: 0 0 .25rem .55rem;
+  margin: 0 0 .3rem .55rem;
   transition: color .15s ease;
 }
 /* Active section: the heading lights up and a short brand-coloured bar
@@ -90,19 +101,21 @@ body.shell .page {
 }
 .nav-section.active .nav-section-head { color: var(--text); }
 
-/* Section links: full-width rows (hover paints the row, not the word) */
+/* Section links: full-width rows (hover paints the row, not the word).
+   Fixed row height keeps the vertical rhythm identical on every row. */
 .nav-section a {
   display: flex;
   align-items: center;
+  height: 30px;                    /* uniform row box — no per-row wobble */
   gap: .5rem;
-  padding: .3rem .55rem;
-  margin-left: -.55rem;                  /* align text with the label */
+  padding: 0 .55rem;
+  box-sizing: border-box;
   border-radius: 6px;
   color: var(--text-soft);
   text-decoration: none;
   font-weight: 600;
   font-size: .88rem;
-  line-height: 1.3;
+  line-height: 1;
   white-space: nowrap;
   transition: background .12s ease, color .12s ease;
 }

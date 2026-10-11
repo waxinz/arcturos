@@ -329,16 +329,23 @@ def test_compare_page_merged_defaults_and_order(client):
     Runs"): ttft / wall / prefill / decode checkboxes are pre-checked;
     the runs list renders latest-first (render-time reversal of the
     ascending API); the former Runs-page controls (CSV export + Hide
-    selected) live on the page; a client-side pager and a sticky action
-    bar keep Compare reachable without scrolling to the bottom of a long
-    list; the integrated A/B diff renders under the charts (skip-blank)."""
+    selected) live on the page; a client-side pager with an owner-settable
+    page size (30/50/100/All, persisted in localStorage) keeps Compare
+    reachable; the integrated A/B diff renders under the charts
+    (skip-blank)."""
     html = client.get("/compare").text
     assert "DEFAULT_METRICS = new Set(['decode_tps', 'prefill_tps', 'ttft_ms', 'wall_s'])" in html
     assert "b.id - a.id" in html            # latest up top
     assert 'id="export-runs"' in html       # runs CSV export carried over
     assert 'id="hide-selected"' in html     # bulk hide carried over
     assert "<h2>Compare</h2>" in html
-    assert "PAGE_SIZE = 25" in html         # client-side pagination
+    # Client-side pagination with a persisted page-size dropdown.
+    assert "PAGE_SIZE_KEY = 'arcturos-run-page-size'" in html
+    assert "[30, 50, 100].includes(+v)" in html
+    assert "o.value = opt[0]; o.textContent = opt[1];" in html
+    assert "['30', '30 / page'], ['50', '50 / page']" in html
+    assert "['100', '100 / page'], ['all', 'All']" in html
+    assert "localStorage.setItem(PAGE_SIZE_KEY, v)" in html
     # Compare sits in the runs toolbar (owner call: next to Hide selected,
     # not a floating bar) with a live selected-count hint beside it.
     assert 'id="compare-btn"' in html
