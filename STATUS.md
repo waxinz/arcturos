@@ -42,6 +42,28 @@ Compare, nicer menu."
   recomputed post-scale); `streams` joins `power_watts` as
   never-verdict-coloured (a config fact, not a score).
 
+## 2026-10-11 (late) — Page-size dropdown, full sidebar redesign
+
+- **Paginator dropdown:** 30 / 50 / 100 / All, persisted in
+  localStorage (`arcturos-run-page-size`); pager stays visible at one
+  page so "All" is reversible; re-page keeps the same first row in
+  view (guarded against the 0×Infinity=NaN path when leaving All —
+  that bug shipped and was fixed within the round).
+- **Sidebar full redesign (owner: third strike, "needs a full complete
+  rethink"):** rail is now its own 260px surface (`--sidebar-bg`,
+  light + dark), 1px separator to content; brand = monogram tile +
+  name + tagline row; section labels are plain small caps — no dots,
+  no bars; link rows are inline-SVG stroke icons + text, uniform 32px
+  boxes; active page = filled pill with 3px accent edge (extra left
+  padding so the icon gutter stays clear); footer pinned above a
+  hairline. Root cause of the old overlap is now guarded in CSS:
+  theme.css's legacy `nav { display:flex; flex-wrap:wrap }` out-cascades
+  a plain `display:block`, so the sidebar nav is `display:block
+  !important` with a comment forbidding bare-nav rail selectors.
+  Markup from tools/build_nav.py (NAV_ICONS table), regenerated all
+  11 pages. Verified in real browser, light + dark: no overlap, even
+  rhythm, clean active state.
+
 ## 2026-10-11 (later) — UX round: Runs rename, pagination, sticky bar, quiet stop
 
 Owner asked for three more changes after using the merged page; one
