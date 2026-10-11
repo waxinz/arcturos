@@ -6,7 +6,7 @@
   <link rel="icon" type="image/png" sizes="16x16" href="/static/icons/scorpio-favicon-16.png">
   <link rel="icon" type="image/png" sizes="32x32" href="/static/icons/scorpio-favicon-32.png">
   <link rel="icon" type="image/png" sizes="180x180" href="/static/icons/scorpio-favicon-180.png">
-  <title>Arcturos — Compare Runs</title>
+  <title>Arcturos — Runs</title>
   <link rel="stylesheet" href="/static/theme.css">
   <link rel="stylesheet" href="/static/nav.css">
   <style>
@@ -44,6 +44,32 @@
                 padding: 0; cursor: pointer; text-decoration: underline; }
     h2 button { margin-left: .5rem; font-size: .8rem; padding: .3rem .7rem; }
     .results-head { display: flex; align-items: baseline; gap: .75rem; }
+    /* Runs table polish: zebra rows + hover affordance; selected rows tint. */
+    #run-list tbody tr:nth-child(even) { background: color-mix(in srgb, var(--border) 28%, transparent); }
+    #run-list tbody tr:hover { background: color-mix(in srgb, var(--accent) 8%, transparent); }
+    #run-list tbody tr.row-selected { background: color-mix(in srgb, var(--accent) 14%, transparent); }
+    td.col-check input, th.sel-h input { accent-color: var(--accent); }
+    /* Fingerprint chip: short label, full path in the tooltip. */
+    .fp-chip { font-family: ui-monospace, monospace; font-size: .8rem;
+               background: var(--code-bg); padding: .05rem .4rem; border-radius: 4px; }
+    /* ---- sticky action bar: Compare/Export never more than a glance away.
+       Sits at the viewport bottom while the page scrolls; only rendered
+       (visibility) once a compare-capable selection exists or charts do. */
+    #action-bar { position: sticky; bottom: 0; z-index: 30; display: flex;
+                  align-items: center; gap: .8rem; flex-wrap: wrap;
+                  background: var(--surface); border: 1px solid var(--border);
+                  border-radius: 8px; padding: .55rem .9rem; margin-top: 1.2rem;
+                  box-shadow: 0 -4px 14px var(--shadow); }
+    #action-bar .abar-count { font-size: .88rem; color: var(--text-muted); }
+    #action-bar .abar-spacer { flex: 1; }
+    #action-bar button[disabled] { opacity: .45; cursor: not-allowed; }
+    #action-bar #compare-btn { font-weight: 600; }
+    /* ---- pagination ---- */
+    .pager { display: flex; align-items: center; gap: .55rem; margin-top: .55rem;
+             font-size: .85rem; color: var(--text-muted); }
+    .pager button { padding: .2rem .65rem; font-size: .82rem; }
+    .pager button[disabled] { opacity: .4; cursor: not-allowed; }
+    .pager .pg-of { font-variant-numeric: tabular-nums; }
   </style>
   <script src="/static/app-time.js"></script>
   <script src="/static/theme.js"></script>
@@ -57,7 +83,7 @@
       <div class="nav-section" data-nav-section="Benchmarks">
         <div class="nav-section-head">Benchmarks</div>
         <a href="/kickoff" data-page="kickoff">Kick off</a>
-        <a href="/compare" data-page="compare">Compare runs</a>
+        <a href="/compare" data-page="compare">Runs</a>
         <a href="/diff" data-page="diff">Run diff</a>
       </div>
       <div class="nav-section" data-nav-section="Evals">
@@ -79,8 +105,8 @@
   </aside>
 
   <main class="page">
-  <h2>Compare Runs</h2>
-  <p class="sub">Pick runs and metrics below, hit Compare — the charts land up here.
+  <h2>Runs</h2>
+  <p class="sub">Select runs, pick metrics, hit Compare — the charts land up here.
      Runs are listed latest first.</p>
 
   <!-- ================= results (charts) live at the TOP of the page ==== -->
@@ -104,15 +130,13 @@
   </div>
 
   <div class="card">
-    <h3>Metrics</h3>
+    <h3>Metrics <span class="hint">pick what to plot, then Compare in the bar below</span></h3>
     <div class="controls">
       <div style="flex: 2; min-width: 340px;">
         <div class="metric-pick" id="metric-picks"></div>
       </div>
       <div>
-        <button id="compare-btn" disabled>Compare</button>
-        <span class="hint" id="compare-hint">select ≥ 2 runs to enable</span>
-        <div style="margin-top: .7rem;">
+        <div>
           <label for="baseline-select" style="font-size:.85rem; font-weight:600;">Baseline</label>
           <select id="baseline-select" style="display:block; margin-top:.25rem; max-width: 16rem;">
             <option value="">— none —</option>
@@ -122,6 +146,16 @@
         <button id="export-btn" style="margin-top:.7rem;" disabled>⤓ Export CSV</button>
       </div>
     </div>
+  </div>
+
+  <!-- ================= sticky action bar ================================
+       Compare + selected-count pinned to the viewport bottom: on a long
+       runs list the controls never force a scroll to the end (UX round
+       2026-10-11). Visible once ≥2 runs are checked or a chart exists. -->
+  <div id="action-bar" hidden>
+    <span class="abar-count" id="abar-count">0 runs selected</span>
+    <span class="abar-spacer"></span>
+    <button id="compare-btn" disabled>Compare</button>
   </div>
 
   <script src="/static/vendor/chart.umd.min.js"></script>
@@ -162,6 +196,48 @@
     }
 
     let RUNS_INDEX = [];  // full run rows for the baseline-select builder
+
+    // ---- pagination (client-side): all rows stay in the DOM, paging only
+    // toggles visibility — cross-page selection, select-all, hide-selected
+    // and the Compare payload are untouched by the current page.
+    const PAGE_SIZE = 25;
+    let currentPage = 0;
+
+    function pageRuns() {
+      const table = document.querySelector('#run-list table');
+      if (!table) return;
+      const rows = Array.from(table.querySelectorAll('tbody tr'));
+      const pages = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));
+      currentPage = Math.min(currentPage, pages - 1);
+      rows.forEach((tr, i) => {
+        tr.hidden = Math.floor(i / PAGE_SIZE) !== currentPage;
+      });
+      let pager = document.getElementById('runs-pager');
+      if (pages <= 1) { if (pager) pager.remove(); return; }
+      if (!pager) {
+        pager = document.createElement('div');
+        pager.id = 'runs-pager';
+        pager.className = 'pager';
+        const box = document.getElementById('run-list');
+        box.parentNode.insertBefore(pager, box.nextSibling);
+      }
+      const prev = document.createElement('button');
+      prev.textContent = '‹ Prev';
+      prev.disabled = currentPage === 0;
+      prev.onclick = () => { currentPage--; pageRuns(); };
+      const label = document.createElement('span');
+      label.className = 'pg-of';
+      label.textContent = 'page ' + (currentPage + 1) + ' of ' + pages +
+        ' · ' + rows.length + ' runs';
+      const next = document.createElement('button');
+      next.textContent = 'Next ›';
+      next.disabled = currentPage >= pages - 1;
+      next.onclick = () => { currentPage++; pageRuns(); };
+      pager.textContent = '';
+      pager.appendChild(prev);
+      pager.appendChild(label);
+      pager.appendChild(next);
+    }
 
     async function loadRuns() {
       await loadAliases();
@@ -215,6 +291,7 @@
         cb.className = 'run-select';
         cb.setAttribute('aria-label', 'Select run #' + r.id);
         cb.addEventListener('change', () => {
+          tr.classList.toggle('row-selected', cb.checked);
           updateCompareBtn();
           updateHideSelected();
           rebuildBaselineSelect();
@@ -248,9 +325,21 @@
         ];
         for (let i = 0; i < cells.length; i++) {
           const td = document.createElement('td');
-          td.textContent = cells[i];
-          td.className = (cells[i] === r.server_url || cells[i] === r.model_fingerprint)
-            ? 'mono' : (cells[i] === r.created_at ? 'date' : '');
+          if (cells[i] === r.server_url && r.server_url) {
+            // Host only in the cell; full URL stays in the tooltip — keeps
+            // the row compact without hiding the port/scheme entirely.
+            td.className = 'mono';
+            td.textContent = r.server_url.replace(/^https?:\/\//, '').split('/')[0];
+            td.title = r.server_url;
+          } else if (cells[i] === r.model_fingerprint && r.model_fingerprint) {
+            // Chip shows the short model name; full fingerprint in tooltip.
+            td.className = 'fp-chip';
+            td.textContent = shortName(r.model_fingerprint);
+            td.title = r.model_fingerprint;
+          } else {
+            td.textContent = cells[i];
+            if (cells[i] === r.created_at) td.className = 'date';
+          }
           tr.appendChild(td);
         }
         // Per-row Hide (append-only flag, mirrors the old Runs page).
@@ -274,6 +363,7 @@
       box.innerHTML = '';
       box.appendChild(table);
       status.textContent = runs.length + ' run(s).';
+      pageRuns();
     }
 
     // ---- bulk selection + Hide selected (from the former Runs page) ----
@@ -454,8 +544,10 @@
             data.baseline.run_id + ')';
         }
         document.getElementById('export-btn').disabled = false;
-        // The charts live at the top of the page (owner call 2026-10-11):
-        // bring them into view after a compare.
+        // The action bar already sits at the viewport bottom (sticky); the
+        // charts live at the top (owner call 2026-10-11): bring them into
+        // view after a compare.
+        updateCompareBtn();
         document.getElementById('results').scrollIntoView(
           { behavior: 'smooth', block: 'start' });
       } catch (err) {
@@ -573,13 +665,22 @@
 
     function updateCompareBtn() {
       const n = document.querySelectorAll('#run-list input.run-select:checked').length;
-      document.getElementById('compare-btn').disabled = n < 2;
-      document.getElementById('compare-hint').textContent =
-        n < 2 ? 'select ≥ 2 runs to enable' : 'ready';
+      const btn = document.getElementById('compare-btn');
+      const bar = document.getElementById('action-bar');
+      const hasCharts = Object.keys(charts).length > 0;
+      // The sticky bar appears when the operator can act (≥2 selected) or
+      // already has results on screen; hidden otherwise to keep the page
+      // uncluttered.
+      bar.hidden = !(n >= 2 || hasCharts);
+      btn.disabled = n < 2;
+      document.getElementById('abar-count').textContent =
+        n === 0 ? 'no runs selected'
+        : n === 1 ? '1 run selected'
+        : n + ' runs selected';
       // Export follows the compare button: same ≥2-runs gate, no payload
       // exists before a compare ran, so the button is dead until then.
       document.getElementById('export-btn').disabled =
-        n < 2 || !Object.keys(charts).length;
+        n < 2 || !hasCharts;
     }
 
     let PINNED = [];  // [{id, model_fingerprint, metric_family, run_id}]
@@ -647,7 +748,10 @@
     document.getElementById('run-list').addEventListener('change', (ev) => {
       if (ev.target && ev.target.id === 'runs-select-all') {
         const want = ev.target.checked;
-        document.querySelectorAll('.run-select').forEach(b => { b.checked = want; });
+        document.querySelectorAll('.run-select').forEach(b => {
+          b.checked = want;
+          b.closest('tr').classList.toggle('row-selected', want);
+        });
         updateCompareBtn();
         updateHideSelected();
         rebuildBaselineSelect();
