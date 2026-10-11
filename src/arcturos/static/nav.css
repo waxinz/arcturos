@@ -1,22 +1,26 @@
-/* nav.css — left-rail sidebar, 2026-10-11 FULL REDESIGN.
+/* nav.css — two-level TOP navigation, 2026-10-11 final structure.
 
-   Owner verdict on the previous rail ("not aligned and overlapping and
-   just ugly", third strike): scrapped, not tweaked. What changed:
+   History that must not repeat: three rounds of restyling a LEFT RAIL
+   all failed ("the menu sucks — the structure is wrong"). The owner's
+   spec was always a hierarchy: Benchmarks → Start/Compare, Evals →
+   Create/Results/Judgments/Reports, Settings → Models/Baselines. The
+   rail forced that hierarchy into one narrow vertical column, taxing
+   260px from every data table and stressing alignment with
+   independently-positioned dots/bars/pills. THIS round changed the
+   container, not the paint:
 
-   - The rail is a distinct surface: 260px, its own background, a
-     1px separator to the content. The old rail floated on the page
-     background with no boundary, so every spacing defect read as
-     "overlapping".
-   - Brand = monogram tile + name + tagline as one aligned row.
-   - Section labels: small caps, no bars, no dots anywhere.
-   - Links: icon + text rows, fixed 32px height. Active = filled pill
-     with a 3px accent edge on the left.
-   - Root cause of the old overlap is guarded here: theme.css's legacy
-     top-bar rule `nav { display:flex; flex-wrap:wrap }` out-cascades a
-     plain `display: block` and re-flowed the sections side-by-side
-     inside a 216px rail. The sidebar nav is display:block !important;
-     never style the rail with bare `nav` selectors that theme.css can
-     out-cascade.
+     Row 1:  [A] Arcturos   |  BENCHMARKS  EVALS  SETTINGS  |  (☾)
+     Row 2:  Start  Compare            ← active section's pages only
+
+   - Top tabs: section heads; the ACTIVE section's head is filled.
+   - Sub-row pills: one section's pages; the current page is filled.
+   - Alignment: every row is one flex line with shared heights —
+     nothing to overlap by construction.
+   - Content takes the FULL viewport width; the table pages gain back
+     the 260px the rail used to eat.
+   - theme.css's legacy `nav { display:flex; flex-wrap:wrap }` is now
+     HARMLESS (the top navs want flex) — but rail-era `body.shell .page
+     { margin-left: 260px }` must never come back with the fixed rail.
 */
 
 /* ---------- shell -------------------------------------------------- */
@@ -26,186 +30,176 @@ body.shell {
   margin: 0;
 }
 
-.sidebar {
-  position: fixed;
-  top: 0; left: 0; bottom: 0;
-  width: 260px;
-  padding: 1.1rem .9rem 1rem;
+/* ---------- the bar ------------------------------------------------- */
+.topnav {
+  position: sticky;
+  top: 0;
+  z-index: 40;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+}
+.topnav-row {
   display: flex;
-  flex-direction: column;
-  overflow-y: auto;
-  background: var(--sidebar-bg, var(--code-bg));
-  border-right: 1px solid var(--border);
+  align-items: center;
+  gap: 1.1rem;
+  height: 56px;
+  padding: 0 1.4rem;
+}
+.topnav-sub {
+  display: flex;
+  align-items: center;
+  gap: .45rem;
+  height: 42px;
+  padding: 0 1.4rem;
+  border-top: 1px solid var(--border);
+  overflow-x: auto;                      /* narrow screens: scroll, not wrap */
 }
 
+/* ---------- brand ---------------------------------------------------- */
+.brand-tile {
+  flex: 0 0 auto;
+  width: 30px; height: 30px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  background: var(--accent);
+  color: #fff;
+  font-weight: 800;
+  font-size: .95rem;
+  text-decoration: none;
+  box-shadow: 0 1px 4px var(--shadow);
+}
+.topnav > .topnav-row > .brand {
+  font-weight: 800;
+  font-size: 1.06rem;
+  letter-spacing: -.01em;
+  color: var(--text);
+  text-decoration: none;
+  margin-right: .4rem;
+}
+.topnav .brand:hover { color: var(--accent); }
+
+/* ---------- section tabs (row 1) ------------------------------------- */
+.topnav-tabs {
+  display: flex;
+  align-items: center;
+  gap: .35rem;
+  flex: 1;
+}
+.nav-section { display: contents; }      /* data-nav-section lives on the
+                                            div for nav.js; the head is the
+                                            visible tab */
+.nav-section-head {
+  font-size: .72rem;
+  font-weight: 700;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  padding: .45rem .8rem;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background .12s ease, color .12s ease;
+}
+.nav-section-head:hover {
+  color: var(--text);
+  background: var(--hover-bg);
+}
+/* Active section: filled tab — unmistakable which group owns row 2. */
+.nav-section.active .nav-section-head {
+  color: var(--accent);
+  background: var(--active-nav-bg);
+  font-weight: 800;
+}
+
+/* ---------- page pills (row 2) --------------------------------------- */
+.topnav-sub a {
+  display: inline-flex;
+  align-items: center;
+  height: 29px;
+  padding: 0 .85rem;
+  border-radius: 999px;
+  color: var(--text-soft);
+  text-decoration: none;
+  font-weight: 600;
+  font-size: .855rem;
+  line-height: 1;
+  white-space: nowrap;
+  transition: background .12s ease, color .12s ease;
+}
+.topnav-sub a:visited { color: inherit; }
+.topnav-sub a:hover {
+  color: var(--text);
+  background: var(--hover-bg);
+}
+.topnav-sub a.active {
+  background: var(--active-nav-bg);
+  color: var(--accent);
+  font-weight: 700;
+}
+
+/* Hidden sections' pills: row 2 shows only the active section's pages.
+   nav.js tags matching pills .in-section; without JS row 2 is empty but
+   row 1's section tabs are real links (each to its section's first
+   page), so navigation still works. */
+.topnav-sub a { display: none; }
+.topnav-sub a.in-section { display: inline-flex; }
+
+/* ---------- theme toggle --------------------------------------------- */
+.sidebar-foot {
+  display: flex;
+  align-items: center;
+}
+.theme-toggle-inline {
+  background: var(--code-bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  cursor: pointer;
+  font-size: .82rem;
+  line-height: 1;
+  padding: .3rem .5rem;
+  transition: background .15s ease, border-color .15s ease;
+}
+.theme-toggle-inline:hover {
+  border-color: var(--border-strong);
+  background: var(--neutral-bg);
+}
+
+/* ---------- content column ------------------------------------------- */
 body.shell .page {
-  margin-left: 260px;                    /* clear the fixed rail */
-  padding: 1.6rem 2.4rem 3rem;
-  max-width: 1020px;                     /* keep line lengths readable */
+  margin-left: 0;                        /* no rail to clear anymore */
+  padding: 1.5rem 2.2rem 3rem;
+  max-width: 1280px;
   min-height: 100vh;
   box-sizing: border-box;
 }
 
-/* ---------- brand row ---------------------------------------------- */
-.brand-row {
-  display: flex;
-  align-items: center;
-  gap: .65rem;
-  padding: .2rem .35rem 1rem;
-  border-bottom: 1px solid var(--border);
-  margin-bottom: .9rem;
-}
-.brand-tile {
-  flex: 0 0 auto;
-  width: 34px; height: 34px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 9px;
-  background: var(--accent);
-  color: #fff;
+/* Page titles: ONE size for every page. Before this rule the pages
+   disagreed — Suite create was a bare <h1> (2em), Results/Judgments/
+   Reports used default <h2> (1.5em), Start had a local .page-title
+   (1.45rem) — and the owner flagged the mismatch. Any page title
+   (h1 or h2, plain or .page-title) renders at the same scale. */
+body.shell .page h1,
+body.shell .page h2,
+body.shell .page h2.page-title {
+  font-size: 1.6rem;
+  line-height: 1.2;
+  margin: 0 0 .9rem;
+  color: var(--text-heading);
   font-weight: 800;
-  font-size: 1.05rem;
-  letter-spacing: -.02em;
-  box-shadow: 0 1px 4px var(--shadow);
-}
-.brand-text {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;                          /* let the tagline ellipsize */
-}
-.sidebar .brand {
-  font-weight: 800;
-  font-size: 1.08rem;
   letter-spacing: -.01em;
-  line-height: 1.15;
-  color: var(--text);
-  text-decoration: none;
 }
-.sidebar .brand:hover { color: var(--accent); }
-.sidebar .brand-sub {
-  display: block;
-  margin-top: .1rem;
-  font-size: .68rem;
-  line-height: 1.25;
-  color: var(--text-muted);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
+body.shell .page h1 .button,
+body.shell .page h2 .button,
+body.shell .page h2 button { margin-left: .6rem; vertical-align: middle; }
 
-/* ---------- the nav block itself ------------------------------------ */
-/* display:block !important: theme.css's legacy top-bar rule
-   (nav { display:flex; flex-wrap:wrap }) out-cascades a plain rule and
-   re-flowed the sections as wrapping flex items — the overlap the owner
-   kept hitting. Nothing inside the rail may be a bare `nav` again. */
-.sidebar nav {
-  display: block !important;
-  flex-wrap: nowrap !important;
-  width: 100%;
-}
-
-/* ---------- one section (label + its page links) -------------------- */
-.nav-section { margin-bottom: 1.1rem; }
-.nav-section:last-of-type { margin-bottom: 0; }
-
-.nav-section-head {
-  font-size: .65rem;
-  font-weight: 700;
-  letter-spacing: .13em;
-  text-transform: uppercase;
-  color: var(--text-muted);
-  margin: 0 0 .35rem .55rem;
-}
-
-/* Link rows: icon + text, full-row hit target, uniform 32px box. */
-.nav-section a {
-  display: flex;
-  align-items: center;
-  height: 32px;
-  gap: .65rem;
-  padding: 0 .55rem;
-  margin-bottom: 2px;
-  box-sizing: border-box;
-  border-radius: 8px;
-  color: var(--text-soft);
-  text-decoration: none;
-  font-weight: 600;
-  font-size: .875rem;
-  line-height: 1;
-  white-space: nowrap;
-  transition: background .12s ease, color .12s ease, box-shadow .12s ease;
-}
-.nav-section a:visited { color: inherit; }
-.nav-section a:hover {
-  color: var(--text);
-  background: var(--hover-bg);
-}
-.nav-ico {
-  flex: 0 0 auto;
-  opacity: .72;
-  transition: opacity .12s ease;
-}
-.nav-section a:hover .nav-ico { opacity: 1; }
-.nav-label {
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-/* Current page: filled pill + accent edge on the left. The extra left
-   padding keeps the icon's optical gutter clear of the 3px edge —
-   without it the edge crowds the glyph (owner QA caught it). */
-.nav-section a.active {
-  background: var(--active-nav-bg);
-  color: var(--accent);
-  font-weight: 700;
-  padding-left: .82rem;
-  box-shadow: inset 3px 0 0 var(--accent);
-}
-.nav-section a.active .nav-ico { opacity: 1; }
-
-/* ---------- footer of the rail -------------------------------------- */
-.sidebar-foot {
-  margin-top: auto;
-  padding: .9rem .35rem 0;
-  border-top: 1px solid var(--border);
-  display: flex;
-  align-items: center;
-  gap: .7rem;
-}
-.sidebar-foot .version {
-  font-size: .72rem;
-  color: var(--text-muted);
-}
-
-/* ---------- narrow screens: the rail folds into a header row -------- */
+/* ---------- narrow screens ------------------------------------------- */
 @media (max-width: 720px) {
-  .sidebar {
-    position: static;
-    width: auto;
-    flex-direction: row;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: .4rem 1.2rem;
-    padding: .7rem .9rem;
-    border-right: none;
-    border-bottom: 1px solid var(--border);
-  }
-  .brand-row { border-bottom: none; padding: 0; margin-bottom: 0; }
-  .brand-tile { width: 28px; height: 28px; font-size: .9rem; border-radius: 7px; }
-  .brand-sub { display: none; }
-  body.shell .page { margin-left: 0; padding: 1rem; }
-  /* Horizontal scroll strip of sections on phones. */
-  .sidebar nav {
-    display: flex !important;
-    gap: 1rem;
-    overflow-x: auto;
-    flex: 1;
-  }
-  .nav-section { display: flex; gap: .3rem; margin-bottom: 0; }
-  .nav-section-head { display: none; }
-  .nav-section a { height: 30px; padding: 0 .6rem; }
-  .sidebar-foot { border-top: none; padding: 0; margin-top: 0; }
+  .topnav-row { gap: .7rem; padding: 0 .9rem; }
+  .topnav-sub { padding: 0 .9rem; }
+  .nav-section-head { padding: .45rem .55rem; letter-spacing: .07em; }
+  body.shell .page { padding: 1rem .9rem 2rem; }
 }
 
 /* ---------- legacy header nav (kept for reference, no longer used) -- */
@@ -224,21 +218,4 @@ nav .theme-toggle {
 nav .theme-toggle:hover {
   background: var(--neutral-bg);
   border-color: var(--border-strong);
-}
-
-/* Sidebar theme toggle: identical affordance, rail-appropriate sizing */
-.theme-toggle-inline {
-  background: var(--code-bg);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  color: var(--text);
-  cursor: pointer;
-  font-size: .82rem;
-  line-height: 1;
-  padding: .3rem .5rem;
-  transition: background .15s ease, border-color .15s ease;
-}
-.theme-toggle-inline:hover {
-  border-color: var(--border-strong);
-  background: var(--neutral-bg);
 }

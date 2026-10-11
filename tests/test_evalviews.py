@@ -80,8 +80,9 @@ def test_reports_view_contract(client):
 
 
 def test_nav_links_in_shared_views(client):
-    # 2026-09-30 round 2: sidebar rail — every page carries the three
-    # section labels and data-page/data-section identity for nav.js.
+    # 2026-10-11 top-nav round: the rail became a two-level top bar.
+    # Every page still carries the three section identities and the
+    # data-page/data-section identity for nav.js.
     for path in ("/", "/compare", "/diff", "/kickoff", "/evals",
                  "/evals/suites/new", "/judgments", "/reports",
                  "/models", "/baselines", "/runs/1"):
@@ -89,18 +90,18 @@ def test_nav_links_in_shared_views(client):
         assert 'data-nav-section="Benchmarks"' in text, path
         assert 'data-nav-section="Evals"' in text, path
         assert 'data-nav-section="Settings"' in text, path
-        assert 'class="sidebar"' in text, path
+        assert 'class="topnav"' in text, path
         assert 'data-page=' in text, path
 
 
 def test_run_detail_uses_shared_shell(client):
     # 2026-10-08: run detail was missed by the round-2 shell migration and
     # still shipped the legacy header nav (wrong menu) + <h1>Arcturos</h1>
-    # header. It now carries the sidebar rail like every other page, with
-    # drill-down identity: Benchmarks section lit, NO nav link highlighted
+    # header. It now carries the top-nav shell like every other page, with
+    # drill-down identity: Benchmarks section lit, NO page pill highlighted
     # (it is not a nav destination), and the legacy header is gone.
     text = client.get("/runs/1").text
-    assert 'class="sidebar"' in text
+    assert 'class="topnav"' in text
     assert '<body class="shell" data-page="runsdetail" ' \
            'data-section="Benchmarks">' in text
     assert 'data-nav-section="Benchmarks"' in text
@@ -108,19 +109,23 @@ def test_run_detail_uses_shared_shell(client):
     assert '<h1>Arcturos</h1>' not in text
     assert 'nav-group-label' not in text
     assert 'Grouped-nav active highlight' not in text
-    # content sits in the shell's .page container (clears the fixed rail):
+    # content sits in the shell's .page container:
     assert '<main class="page">' in text
 
 
 def test_reports_is_under_evals_nav(client):
     # Owner call (2026-09-30): Reports lives in the Evals section.
-    # 2026-10-11 redesign: link rows are icon + <span class="nav-label">.
+    # 2026-10-11 top-nav round: section membership rides on each pill's
+    # data-nav-section attribute (row 2 shows the active section's pills).
     text = client.get("/evals").text
     assert 'data-page="reports"' in text
-    assert '<span class="nav-label">Reports</span>' in text
-    # ...and sits inside the Evals group block, not elsewhere:
-    evals_block = text.split('data-nav-section="Evals"')[1].split('</div>\n      <div class="nav-section"')[0]
-    assert 'href="/reports"' in evals_block
+    assert '<a href="/reports" data-page="reports" ' \
+           'data-nav-section="Evals">Reports</a>' in text
+    # The Reports pill shares row 2 with the other Evals pills (all
+    # emitted consecutively inside .topnav-sub).
+    sub = text.split('class="topnav-sub"')[1].split('</nav>')[0]
+    for href in ('/evals/suites/new', '/evals', '/judgments', '/reports'):
+        assert f'href="{href}"' in sub, href
 
 
 def test_eval_suite_page_has_three_cards(client):
