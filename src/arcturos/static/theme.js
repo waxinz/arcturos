@@ -41,14 +41,22 @@
   }
 
   function inject() {
-    // The generated shell ships a static toggle ([data-theme-toggle]) on
-    // every page since the top-nav round; injecting the legacy one into
-    // the first <nav> duplicated it visibly (two moons, top-right).
-    if (document.querySelector('[data-theme-toggle]')) return;
-    var nav = document.querySelector('nav');
-    if (!nav) return;
-    var btn = document.createElement('button');
-    btn.className = 'theme-toggle';
+    // Prefer the shell's static toggle ([data-theme-toggle], emitted on
+    // every generated page since the top-nav round) and BIND it — the
+    // 2026-10-11 guard skipped injection without wiring the static
+    // button, leaving a dead moon in the bar. Legacy injection only for
+    // pages that ship none.
+    var btn = document.querySelector('[data-theme-toggle]');
+    if (!btn) {
+      var nav = document.querySelector('nav');
+      if (!nav) return;
+      btn = document.createElement('button');
+      btn.className = 'theme-toggle';
+      btn.type = 'button';
+      btn.setAttribute('aria-label', 'Toggle light/dark mode');
+      btn.title = 'Toggle light/dark mode';
+      nav.appendChild(btn);
+    }
     btn.type = 'button';
     btn.setAttribute('aria-label', 'Toggle light/dark mode');
     btn.title = 'Toggle light/dark mode';
@@ -63,7 +71,6 @@
       try { localStorage.setItem(STORAGE_KEY, next); } catch (e) {}
       label();
     };
-    nav.appendChild(btn);
     label();
   }
 
