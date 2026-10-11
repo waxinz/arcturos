@@ -183,14 +183,36 @@ the launch surface, not only the reading surface).
   parallel streams, i.e. true server capacity under concurrency) is
   stored per point and tracked in compare reports alongside the
   per-stream means.
-- **Multi-stream correctness (added 2026-10-08, ADR 004):** the openai
-  transport now builds a fresh cold prompt PER stream (the shared prompt
-  made streams 2..N prefix-cache hits whose TTFT was queue time);
-  combined throughput is computed over the shared wall window (Σ prompt
-  tokens / max TTFT; Σ generated / (max wall − min TTFT)) instead of
-  summing per-stream rates, which double-counted wall time whenever
-  streams queued behind a server batch limit. Pre-2026-10-08 combined
-  values on openai multi-stream runs are upper bounds (e.g. run #103).
+- **Multi-stream correctness (added 2026-10-08, ADR 004; decode amended
+  2026-10-11, ADR 005):** the openai transport builds a fresh cold prompt
+  PER stream (the shared prompt made streams 2..N prefix-cache hits whose
+  TTFT was queue time). Combined throughput: `prefill_tps_combined` =
+  Σ prompt tokens / max TTFT (the window in which every stream's prefill
+  completed); `decode_tps_combined` = **sum of the per-stream decode
+  rates** (each rate is measured over its own generation span). ADR 004's
+  original shared-window decode formula (Σ generated / (max wall − min
+  TTFT)) credited the denominator with OTHER streams' serialized prefill
+  time and produced impossible rows like run #129 (Σ decode 4.22 t/s
+  below one stream's own 9.28 t/s) — ADR 005 supersedes it. Historical
+  caveats: pre-2026-10-08 openai combined values are upper bounds (run
+  #103); ADR-004-window decode values (2026-10-08..2026-10-11) are
+  prefill-contaminated lower bounds (run #129).
+- **Stop active benchmark run (added 2026-10-11, ADR 006):** a running
+  bench job can be stopped by the operator — the Kick off page shows a
+  Stop button while a sweep is in flight, and
+  `POST /api/ops/bench/jobs/{id}/abort` sets a cooperative flag the sweep
+  checks between points and inside streaming decode loops. Completed
+  points land as a partial run (status `aborted` on the job record,
+  `partial` on the run row); points after the flag never start. No
+  thread killing, no orphaned measurements — the stop is a first-class
+  failure path through the same partial-preservation net.
+- **Merged Compare Runs page (added 2026-10-11):** the Runs list and the
+  Compare picker are ONE page at `/compare` (nav label "Compare runs").
+  The runs picker renders latest-first and keeps the Runs page's
+  capabilities (CSV export, per-row + bulk Hide); the charts render at
+  the TOP of the page; ttft/wall/prefill/decode checkboxes are pre-checked
+  so the page opens comparison-ready. `/` and `/runs` 308-redirect to
+  `/compare`; the old index.html is retired.
 - **Run visibility — soft hide (added 2026-09-21):** `PUT
   /api/runs/{id}/visibility` `{hidden: true|false, reason?}` appends a flag
   row (append-only, newest wins). Hidden runs drop out of `/api/runs` and

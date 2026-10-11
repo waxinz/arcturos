@@ -466,8 +466,12 @@ def test_combined_prefill_uses_wall_window_not_rate_sum_when_queued():
 
 
 def test_combined_decode_uses_generation_window():
-    """Decode combined = total generated tokens / (max wall - min TTFT),
-    the window in which generation actually overlapped."""
+    """ADR 005 superseded the ADR 004 window formula for decode: run #129
+    (Maya, streams=4, 32k-256k) stored Σ decode 4.22 t/s BELOW one stream's
+    own 9.28 t/s at 131k — the shared window (max wall − min TTFT) credited
+    the denominator with OTHER streams' serialized prefill time. Combined
+    decode is now the per-stream rate sum; this test pins the rate sum on
+    the exact queueing shape run #129 hit (staggered TTFT/wall)."""
     from arcturos.bench import _aggregate_stream_points
     pts = [
         _mk_ttft_point(wall=110.0, out=8, ttft_ms=105000.0),
@@ -476,8 +480,9 @@ def test_combined_decode_uses_generation_window():
         _mk_ttft_point(wall=211.0, out=8, ttft_ms=209000.0),
     ]
     agg = _aggregate_stream_points(pts, 4)
-    # 32 tokens over (211 - 105) s
-    assert agg.decode_tps_combined == round(32 / (211.0 - 105.0), 2)
+    # rate sum: 4 x 40 t/s — never below an individual stream
+    assert agg.decode_tps_combined == 4 * 40.0
+    # (the old window math gave round(32 / (211 - 105), 2) = 0.30 here)
 
 
 def test_combined_falls_back_to_rate_sum_without_ttft():
@@ -504,4 +509,6 @@ def test_combined_concurrent_streams_match_rate_sum():
     ]
     agg = _aggregate_stream_points(pts, 2)
     assert agg.prefill_tps_combined == round(64000 / 80.0, 1)  # = 400+400
-    assert agg.decode_tps_combined == round(16 / (90.0 - 80.0), 2)  # = 50+50
+    # ADR 005: decode combined is the rate sum for ALL shapes; for truly
+    # concurrent streams (this one) it equals what the window math gave.
+    assert agg.decode_tps_combined == 100.0  # = 50+50

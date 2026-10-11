@@ -8,6 +8,8 @@ resolution under the append-only model.
 
 import pytest
 
+from arcturos import ops
+
 # ---------------------------------------------------------- fixtures --------
 
 RUN_A = {
@@ -311,14 +313,39 @@ def test_run_diff_combined_metrics_direction_and_deltas(client):
 
 
 def test_compare_page_lists_combined_metric_checkboxes(client):
-    """/compare exposes the combined metrics as selectable checkboxes so
-    they can be plotted like any other metric (static source: the checkbox
-    values live in the METRICS array literal, labels in METRIC_LABELS)."""
+    """Compare Runs page exposes the combined metrics as selectable
+    checkboxes so they can be plotted like any other metric (static
+    source: the checkbox values live in the METRICS array literal,
+    labels in METRIC_LABELS)."""
     html = client.get("/compare").text
     assert "'decode_tps_combined'" in html
     assert "'prefill_tps_combined'" in html
     assert "Σ decode tok/s (combined)" in html
     assert "Σ prefill tok/s (combined)" in html
+
+
+def test_compare_page_merged_defaults_and_order(client):
+    """Merged Compare Runs page (owner call 2026-10-11): ttft / wall /
+    prefill / decode checkboxes are pre-checked; the runs list renders
+    latest-first (render-time reversal of the ascending API); the former
+    Runs-page controls (CSV export + Hide selected) live on the page."""
+    html = client.get("/compare").text
+    assert "DEFAULT_METRICS = new Set(['decode_tps', 'prefill_tps', 'ttft_ms', 'wall_s'])" in html
+    assert "b.id - a.id" in html            # latest up top
+    assert 'id="export-runs"' in html       # runs CSV export carried over
+    assert 'id="hide-selected"' in html     # bulk hide carried over
+    assert "<h2>Compare Runs</h2>" in html
+    assert 'id="charts"' in html            # results section above controls
+
+
+def test_runs_root_redirect_to_compare(client):
+    """/ and /runs redirect (308) to /compare after the merge; unknown
+    pages still 404 rather than silently redirecting."""
+    for path in ("/", "/runs"):
+        res = client.get(path, follow_redirects=False)
+        assert res.status_code == 308, path
+        assert res.headers["location"] == "/compare", path
+    assert client.get("/nope").status_code == 404
 
 
 # ------------------------------------------------- display precision -------

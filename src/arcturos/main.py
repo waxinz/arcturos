@@ -57,7 +57,7 @@ import time
 from pathlib import Path
 
 from fastapi import Depends, FastAPI, HTTPException, Request
-from fastapi.responses import FileResponse, Response
+from fastapi.responses import FileResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 from . import compare, ops, reports
@@ -133,12 +133,16 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
         return datetime.now(timezone.utc).isoformat(timespec="milliseconds")
 
     @app.get("/", include_in_schema=False)
-    def index() -> FileResponse:
-        return FileResponse(STATIC_DIR / "index.html")
+    def index():
+        # Merged Compare Runs page (2026-10-11): the former /runs list and
+        # /compare are one page now; the root lands on it.
+        return RedirectResponse("/compare", status_code=308)
 
     @app.get("/runs", include_in_schema=False)
-    def runs_page() -> FileResponse:
-        return FileResponse(STATIC_DIR / "index.html")
+    def runs_page():
+        # Runs list merged into Compare Runs (2026-10-11): permanent
+        # redirect keeps old links and bookmarks working.
+        return RedirectResponse("/compare", status_code=308)
 
     @app.get("/runs/{run_id}", include_in_schema=False)
     def run_detail_view(run_id: int):
@@ -731,6 +735,20 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
         rec.pop("started_at", None)
         rec.pop("finished_at", None)
         return rec
+
+    @app.post("/api/ops/bench/jobs/{job_id}/abort")
+    def ops_bench_job_abort(job_id: str):
+        """Operator stop for a faulty/ runaway bench job (ADR 006).
+
+        Cooperative: the sweep checks the flag between points and inside
+        streaming loops; completed points land as a partial run exactly
+        like any mid-sweep failure. 404 on unknown job; 200 otherwise —
+        aborting a finished job is an honest no-op.
+        """
+        result = ops.abort_bench_job(job_id)
+        if result is None:
+            raise HTTPException(status_code=404, detail=f"bench job {job_id} not found")
+        return result
 
     @app.post("/api/ops/eval")
     def ops_eval(body: dict):
