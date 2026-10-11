@@ -551,8 +551,12 @@
         }
         status.textContent = runIds.length + ' run(s) × ' + metrics.length +
                              ' metric(s): ' + data.runs.map(r => legendName(r)).join(' vs ');
-        if (data.baseline) {
+        // Delta tables: the A/B diff (exactly 2 runs) renders regardless of
+        // a baseline pin; the per-run baseline tables only when one is set.
+        if (runIds.length === 2 || data.baseline) {
           await renderDeltaTables(data, runIds);
+        }
+        if (data.baseline) {
           status.textContent += ' — vs 📌 baseline ' +
             data.baseline.model_fingerprint_short + ' (run ' +
             data.baseline.run_id + ')';
