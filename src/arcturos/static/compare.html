@@ -6,25 +6,27 @@
   <link rel="icon" type="image/png" sizes="16x16" href="/static/icons/scorpio-favicon-16.png">
   <link rel="icon" type="image/png" sizes="32x32" href="/static/icons/scorpio-favicon-32.png">
   <link rel="icon" type="image/png" sizes="180x180" href="/static/icons/scorpio-favicon-180.png">
-  <title>Arcturos — Compare</title>
+  <title>Arcturos — Compare Runs</title>
   <link rel="stylesheet" href="/static/theme.css">
   <link rel="stylesheet" href="/static/nav.css">
   <style>
     body { font-family: system-ui, -apple-system, sans-serif; margin: 2rem auto;
-           max-width: 1080px; color: var(--text); background: var(--bg); }
-    header { border-bottom: 2px solid var(--text-heading); padding-bottom: .5rem; margin-bottom: 1.5rem; }
-    h1 { font-size: 1.6rem; margin: 0; }
-    .sub { color: var(--text-muted); margin-top: .25rem; }
-    nav a { margin-right: 1rem; color: var(--text); text-decoration: none; font-weight: 600; }
-    nav a:visited { color: var(--text); }
-    nav a.active { text-decoration: underline; }
+           max-width: 1180px; color: var(--text); background: var(--bg); }
+    h2 { font-size: 1.45rem; margin: 0; }
+    h3 { font-size: .98rem; color: var(--text-heading); margin: 0 0 .5rem; }
+    .sub { color: var(--text-muted); margin: .25rem 0 0; font-size: .9rem; }
     table { border-collapse: collapse; width: 100%; background: var(--surface); }
     th, td { text-align: left; padding: .4rem .6rem; border-bottom: 1px solid var(--border);
              font-size: .88rem; }
     th { font-weight: 600; color: var(--text-soft); }
     td.mono { font-family: ui-monospace, monospace; font-size: .8rem; }
-    .controls { margin: 1rem 0; display: flex; gap: 2rem; flex-wrap: wrap; align-items: start; }
-    .controls h3 { font-size: .95rem; margin: 0 0 .4rem; color: var(--text-soft); }
+    td.date { font-variant-numeric: tabular-nums; }
+    .card { background: var(--surface); border: 1px solid var(--border);
+            border-radius: 8px; padding: 1rem 1.1rem; margin-bottom: 1.2rem; }
+    .controls { display: flex; gap: 2rem; flex-wrap: wrap; align-items: flex-start; }
+    .controls > div { min-width: 220px; }
+    .metric-pick { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+                   gap: .15rem .8rem; }
     .metric-pick label { display: block; font-size: .85rem; margin: .15rem 0; }
     button { padding: .45rem .9rem; font-size: .9rem; cursor: pointer; }
     .chart-card { background: var(--surface); border: 1px solid var(--border); border-radius: 6px;
@@ -32,10 +34,16 @@
     .chart-card h3 { margin: 0 0 .5rem; font-size: 1rem; color: var(--text-heading); }
     .chart-wrap { position: relative; height: 340px; }
     .status { color: var(--text-muted); font-size: .85rem; margin-top: .75rem; }
-    .empty { color: var(--text-muted); padding: 2rem; text-align: center; }
+    .empty { color: var(--text-muted); padding: 1.6rem; text-align: center; }
     .hint { color: var(--null); font-size: .82rem; margin-left: .4rem; }
     th.sel-h { width: 2rem; }
+    .col-check { width: 2rem; text-align: center; }
+    td.col-check { text-align: center; }
     code { background: var(--code-bg); padding: 0 .35rem; border-radius: 4px; }
+    .linklike { background: none; border: none; color: var(--link); font-size: .8rem;
+                padding: 0; cursor: pointer; text-decoration: underline; }
+    h2 button { margin-left: .5rem; font-size: .8rem; padding: .3rem .7rem; }
+    .results-head { display: flex; align-items: baseline; gap: .75rem; }
   </style>
   <script src="/static/app-time.js"></script>
   <script src="/static/theme.js"></script>
@@ -49,8 +57,7 @@
       <div class="nav-section" data-nav-section="Benchmarks">
         <div class="nav-section-head">Benchmarks</div>
         <a href="/kickoff" data-page="kickoff">Kick off</a>
-        <a href="/" data-page="runs">Runs</a>
-        <a href="/compare" data-page="compare">Compare</a>
+        <a href="/compare" data-page="compare">Compare runs</a>
         <a href="/diff" data-page="diff">Run diff</a>
       </div>
       <div class="nav-section" data-nav-section="Evals">
@@ -72,34 +79,50 @@
   </aside>
 
   <main class="page">
-  <h2>Compare</h2>
+  <h2>Compare Runs</h2>
+  <p class="sub">Pick runs and metrics below, hit Compare — the charts land up here.
+     Runs are listed latest first.</p>
 
-  <div class="controls">
-    <div>
-      <h3>Runs (select ≥ 2)</h3>
-      <div id="run-list"><span class="status">Loading runs…</span></div>
+  <!-- ================= results (charts) live at the TOP of the page ==== -->
+  <section id="results">
+    <div class="results-head"><h3>Charts</h3><span class="hint" id="charts-hint">nothing compared yet</span></div>
+    <div id="charts"><p class="empty">Select ≥ 2 runs and ≥ 1 metric below, then press
+      <b>Compare</b> — charts render here, at the top.</p></div>
+    <div id="delta-tables"></div>
+    <p id="status" class="status"></p>
+  </section>
+
+  <!-- ================= controls ======================================== -->
+  <div class="card">
+    <h3>Runs <span class="hint">latest first · select ≥ 2 to compare</span></h3>
+    <div style="margin: .4rem 0 .6rem;">
+      <button id="export-runs" title="Download all runs as CSV">⤓ CSV</button>
+      <button id="hide-selected" disabled title="Hide every checked run from list views (append-only flag; unhide any time)">Hide selected</button>
     </div>
-    <div>
-      <h3>Metrics</h3>
-      <div class="metric-pick" id="metric-picks"></div>
-    </div>
-    <div style="align-self: flex-end;">
-      <button id="compare-btn" disabled>Compare</button>
-      <span class="hint" id="compare-hint">select ≥ 2 runs to enable</span>
-      <div style="margin-top: .5rem;">
-        <label for="baseline-select" style="font-size:.85rem; font-weight:600;">Baseline</label>
-        <select id="baseline-select" style="display:block; margin-top:.25rem; max-width: 16rem;">
-          <option value="">— none —</option>
-        </select>
-        <span class="hint">pinned reference: dashed line + deltas</span>
-      </div>
-      <button id="export-btn" style="margin-top:.5rem;" disabled>⤓ Export CSV</button>
-    </div>
+    <div id="run-list"><span class="status">Loading runs…</span></div>
+    <p id="runs-status" class="status"></p>
   </div>
 
-  <div id="charts"></div>
-  <div id="delta-tables"></div>
-  <p id="status" class="status"></p>
+  <div class="card">
+    <h3>Metrics</h3>
+    <div class="controls">
+      <div style="flex: 2; min-width: 340px;">
+        <div class="metric-pick" id="metric-picks"></div>
+      </div>
+      <div>
+        <button id="compare-btn" disabled>Compare</button>
+        <span class="hint" id="compare-hint">select ≥ 2 runs to enable</span>
+        <div style="margin-top: .7rem;">
+          <label for="baseline-select" style="font-size:.85rem; font-weight:600;">Baseline</label>
+          <select id="baseline-select" style="display:block; margin-top:.25rem; max-width: 16rem;">
+            <option value="">— none —</option>
+          </select>
+          <span class="hint">pinned reference: dashed line + deltas</span>
+        </div>
+        <button id="export-btn" style="margin-top:.7rem;" disabled>⤓ Export CSV</button>
+      </div>
+    </div>
+  </div>
 
   <script src="/static/vendor/chart.umd.min.js"></script>
   <script>
@@ -118,6 +141,9 @@
       decode_tps_combined: 'Σ decode tok/s (combined)',
       prefill_tps_combined: 'Σ prefill tok/s (combined)'
     };
+    // Merged Compare Runs page (2026-10-11): the four headline metrics are
+    // pre-checked — the page opens comparison-ready, one click to chart.
+    const DEFAULT_METRICS = new Set(['decode_tps', 'prefill_tps', 'ttft_ms', 'wall_s']);
     const PALETTE = ['#0b6bcb', '#e07b39', '#2fa36b', '#9b59b6', '#c0392b', '#16a085'];
     const charts = {};
 
@@ -144,45 +170,159 @@
       const runs = await res.json();
       RUNS_INDEX = runs;
       const box = document.getElementById('run-list');
+      const status = document.getElementById('runs-status');
       if (!runs.length) {
-        box.innerHTML = '<p class="empty">No runs yet — run <code>arcturos bench &lt;endpoint&gt; --model M</code> first.</p>';
+        box.innerHTML = '<p class="empty">No runs yet — kick one off from the '
+          + 'Kick off page.</p>';
         return;
       }
       const table = document.createElement('table');
-      // Run Name second (2026-09-30): matches the Runs page ordering so the
-      // comparison picker reads the same as the store's list view.
-      table.innerHTML = '<thead><tr><th class="sel-h"><span class="sr">select</span></th>' +
-                         '<th>ID</th><th>Name</th><th>Model (fingerprint)</th>' +
-                         '<th>Engine</th><th>Context size</th><th>Created</th></tr></thead>';
+      // Run Name second (2026-09-30): matches the run-detail drill-down so
+      // the picker reads the same as the store's list view. Header built
+      // via DOM APIs (the select-all checkbox is wired in JS, so it must
+      // not hide inside an innerHTML template).
+      const thead = document.createElement('thead');
+      const hrow = document.createElement('tr');
+      const selTh = document.createElement('th');
+      selTh.className = 'col-check';
+      const selAll = document.createElement('input');
+      selAll.type = 'checkbox';
+      selAll.id = 'runs-select-all';
+      selAll.setAttribute('aria-label', 'Select all runs');
+      selTh.appendChild(selAll);
+      hrow.appendChild(selTh);
+      for (const h of ['ID', 'Name', 'Server', 'Model fingerprint',
+                       'Engine', 'Context size', 'Created', '']) {
+        const th = document.createElement('th');
+        th.textContent = h;
+        hrow.appendChild(th);
+      }
+      thead.appendChild(hrow);
+      table.appendChild(thead);
       const tbody = document.createElement('tbody');
-      for (const r of runs) {
+      // Latest up top (owner call 2026-10-11): the API returns ascending
+      // ids — render reversed so the freshest run is the first row.
+      const ordered = runs.slice().sort((a, b) => b.id - a.id);
+      for (const r of ordered) {
         const tr = document.createElement('tr');
+        // Selection checkbox: feeds both the Compare action and the
+        // Hide-selected bulk action in the header.
+        const checkCell = document.createElement('td');
+        checkCell.className = 'col-check';
         const cb = document.createElement('input');
-        cb.type = 'checkbox'; cb.dataset.runId = r.id;
-        const td = document.createElement('td'); td.appendChild(cb); tr.appendChild(td);
+        cb.type = 'checkbox';
+        cb.dataset.runId = String(r.id);
+        cb.className = 'run-select';
+        cb.setAttribute('aria-label', 'Select run #' + r.id);
+        cb.addEventListener('change', () => {
+          updateCompareBtn();
+          updateHideSelected();
+          rebuildBaselineSelect();
+        });
+        checkCell.appendChild(cb);
+        tr.appendChild(checkCell);
+        // ID links to the run-detail drill-down.
+        const idCell = document.createElement('td');
+        const link = document.createElement('a');
+        link.href = '/runs/' + r.id;
+        link.textContent = r.id;
+        idCell.appendChild(link);
+        // Partial runs (2026-09-22): visible marker, never hidden — a
+        // failed sweep's completed points are still real data.
+        if (r.status === 'partial') {
+          const badge = document.createElement('span');
+          badge.textContent = ' ⚠ partial';
+          badge.title = 'Sweep failed mid-way — completed points preserved';
+          badge.style.color = 'var(--warn)';
+          idCell.appendChild(badge);
+        }
+        tr.appendChild(idCell);
+        // Name: display_name = stored name when set, else a computed
+        // 'host · model' label so legacy unnamed runs show a usable label.
         const nameCell = document.createElement('td');
         nameCell.textContent = r.display_name || r.name || '—';
         tr.appendChild(nameCell);
-        for (const [k, cls] of [['id','mono'], ['model_fingerprint','mono'],
-                                ['engine',''], ['context_size',''],
-                                ['created_at','date']]) {
-          const cell = document.createElement('td');
-          cell.textContent = k === 'created_at' ? fmtLocalTime(r[k]) : r[k];
-          if (cls) cell.className = cls;
-          tr.appendChild(cell);
+        const cells = [
+          r.server_url, r.model_fingerprint,
+          r.engine, r.context_size, fmtLocalTime(r.created_at)
+        ];
+        for (let i = 0; i < cells.length; i++) {
+          const td = document.createElement('td');
+          td.textContent = cells[i];
+          td.className = (cells[i] === r.server_url || cells[i] === r.model_fingerprint)
+            ? 'mono' : (cells[i] === r.created_at ? 'date' : '');
+          tr.appendChild(td);
         }
-        cb.addEventListener('change', () => {
-          updateCompareBtn();
-          rebuildBaselineSelect();
-        });
+        // Per-row Hide (append-only flag, mirrors the old Runs page).
+        const actions = document.createElement('td');
+        const hideBtn = document.createElement('button');
+        hideBtn.className = 'linklike';
+        hideBtn.textContent = 'Hide';
+        hideBtn.onclick = async () => {
+          if (!window.confirm('Hide run #' + r.id + ' from list views? (append-only flag — nothing is deleted, unhide any time)')) return;
+          const res2 = await fetch('/api/runs/' + r.id + '/visibility', {
+            method: 'PUT', headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({hidden: true})});
+          if (res2.ok) loadRuns();
+          else status.textContent = 'Hide failed: HTTP ' + res2.status;
+        };
+        actions.appendChild(hideBtn);
+        tr.appendChild(actions);
         tbody.appendChild(tr);
       }
       table.appendChild(tbody);
       box.innerHTML = '';
       box.appendChild(table);
+      status.textContent = runs.length + ' run(s).';
     }
 
+    // ---- bulk selection + Hide selected (from the former Runs page) ----
+    const hideSelectedBtn = document.getElementById('hide-selected');
 
+    function updateHideSelected() {
+      if (!hideSelectedBtn) return;
+      const boxes = Array.from(document.querySelectorAll('.run-select'));
+      const picked = boxes.filter(b => b.checked).length;
+      hideSelectedBtn.disabled = picked === 0;
+      hideSelectedBtn.textContent = picked
+        ? 'Hide selected (' + picked + ')'
+        : 'Hide selected';
+      const all = document.getElementById('runs-select-all');
+      if (all) {
+        all.checked = boxes.length > 0 && picked === boxes.length;
+        all.indeterminate = picked > 0 && picked < boxes.length;
+      }
+    }
+
+    document.getElementById('export-runs').addEventListener('click', () => {
+      window.location = '/api/export/runs';
+    });
+
+    hideSelectedBtn.addEventListener('click', async () => {
+      const ids = Array.from(document.querySelectorAll('.run-select'))
+        .filter(b => b.checked)
+        .map(b => parseInt(b.dataset.runId, 10));
+      if (!ids.length) return;
+      const noun = ids.length === 1 ? 'run' : 'runs';
+      if (!window.confirm('Hide ' + ids.length + ' ' + noun + ' (#' + ids.join(', #') +
+          ') from list views? Append-only flag — nothing is deleted; unhide any time.')) return;
+      const results = await Promise.allSettled(ids.map(id =>
+        fetch('/api/runs/' + id + '/visibility', {
+          method: 'PUT', headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({hidden: true})}).then(r => ({id, ok: r.ok, status: r.status}))
+      ));
+      const settled = results.map(r => r.value).filter(Boolean);
+      const ok = settled.filter(r => r.ok);
+      const failed = settled.filter(r => !r.ok);
+      const status = document.getElementById('runs-status');
+      if (failed.length) {
+        status.textContent = 'Hide failed for ' + failed.map(r => '#' + r.id + ' (' + r.status + ')').join(', ') +
+          (ok.length ? ' — ' + ok.length + ' hidden.' : '');
+      } else {
+        status.textContent = '✔ Hid ' + ok.length + ' ' + noun + '.';
+      }
+      loadRuns();
+    });
 
     function buildMetricPicks() {
       const box = document.getElementById('metric-picks');
@@ -190,9 +330,7 @@
         const label = document.createElement('label');
         const cb = document.createElement('input');
         cb.type = 'checkbox'; cb.value = m;
-        // Default to decode tok/s only: 7 stacked charts on load is chart
-        // spam (UX review finding 6); the operator ticks more as needed.
-        cb.checked = (m === 'decode_tps');
+        cb.checked = DEFAULT_METRICS.has(m);
         label.appendChild(cb);
         label.appendChild(document.createTextNode(' ' + METRIC_LABELS[m]));
         box.appendChild(label);
@@ -218,7 +356,7 @@
       const status = document.getElementById('status');
       const box = document.getElementById('charts');
       const btn = document.getElementById('compare-btn');
-      const runIds = Array.from(document.querySelectorAll('#run-list input[type=checkbox]:checked'))
+      const runIds = Array.from(document.querySelectorAll('#run-list input.run-select:checked'))
         .map(cb => cb.dataset.runId).sort((a, b) => a - b);
       const metrics = Array.from(document.querySelectorAll('#metric-picks input:checked'))
         .map(cb => cb.value);
@@ -231,6 +369,7 @@
       btn.textContent = '⏳ Comparing…';
       destroyCharts();
       box.innerHTML = '';
+      document.getElementById('charts-hint').textContent = 'comparing…';
       status.textContent = 'Loading…';
       try {
         const baselineSel = document.getElementById('baseline-select').value;
@@ -242,6 +381,8 @@
         const data = await res.json();
         box.innerHTML = '';
         document.getElementById('delta-tables').textContent = '';
+        document.getElementById('charts-hint').textContent =
+          runIds.length + ' run(s) × ' + metrics.length + ' metric(s)';
         const runsById = {};
         for (const r of data.runs) runsById[r.id] = r;
         for (const metric of data.metrics) {
@@ -313,6 +454,10 @@
             data.baseline.run_id + ')';
         }
         document.getElementById('export-btn').disabled = false;
+        // The charts live at the top of the page (owner call 2026-10-11):
+        // bring them into view after a compare.
+        document.getElementById('results').scrollIntoView(
+          { behavior: 'smooth', block: 'start' });
       } catch (err) {
         status.textContent = 'Failed to compare: ' + err;
       } finally {
@@ -427,7 +572,7 @@
     }
 
     function updateCompareBtn() {
-      const n = document.querySelectorAll('#run-list input[type=checkbox]:checked').length;
+      const n = document.querySelectorAll('#run-list input.run-select:checked').length;
       document.getElementById('compare-btn').disabled = n < 2;
       document.getElementById('compare-hint').textContent =
         n < 2 ? 'select ≥ 2 runs to enable' : 'ready';
@@ -452,7 +597,7 @@
       // lists run ids — a baseline pin is per fingerprint, the run is the
       // concrete data.
       const sel = document.getElementById('baseline-select');
-      const checked = [...document.querySelectorAll('#run-list input[type=checkbox]:checked')]
+      const checked = [...document.querySelectorAll('#run-list input.run-select:checked')]
         .map(cb => parseInt(cb.dataset.runId, 10));
       const selRuns = RUNS_INDEX.filter(r => checked.includes(r.id));
       const pinnedForSelection = PINNED.filter(b =>
@@ -483,7 +628,7 @@
     document.getElementById('export-btn').addEventListener('click', () => {
       // Re-fetch with format=csv: the browser honours the attachment
       // header, so the file lands in Downloads without JS plumbing.
-      const runIds = [...document.querySelectorAll('#run-list input[type=checkbox]:checked')]
+      const runIds = [...document.querySelectorAll('#run-list input.run-select:checked')]
         .map(cb => cb.dataset.runId);
       const metrics = [...document.querySelectorAll('#metric-picks input:checked')]
         .map(cb => cb.value);
@@ -495,8 +640,18 @@
     });
     buildMetricPicks();
     loadBaselines().then(rebuildBaselineSelect);
-    loadRuns().then(rebuildBaselineSelect).catch(err => {
+    loadRuns().then(() => { updateCompareBtn(); updateHideSelected(); })
+      .then(rebuildBaselineSelect).catch(err => {
       document.getElementById('run-list').textContent = 'Failed to load runs: ' + err;
+    });
+    document.getElementById('run-list').addEventListener('change', (ev) => {
+      if (ev.target && ev.target.id === 'runs-select-all') {
+        const want = ev.target.checked;
+        document.querySelectorAll('.run-select').forEach(b => { b.checked = want; });
+        updateCompareBtn();
+        updateHideSelected();
+        rebuildBaselineSelect();
+      }
     });
   </script>
   </main>

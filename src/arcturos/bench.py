@@ -306,33 +306,29 @@ def _aggregate_stream_points(points: list[BenchPoint], streams: int) -> BenchPoi
         return int(round(m)) if m is not None else None
 
     first = points[0]
-    # Combined throughput = true server capacity under concurrency,
-    # measured over the shared wall window (ADR 004). Summing per-stream
-    # rates overstates capacity whenever streams queue behind a server
-    # batch limit: each stream's rate is computed over its own clock, so
-    # queued streams' tokens land in overlapping windows (run #103:
-    # Σ prefill 1222 T/s on a server that really computed ~640).
-    # With TTFT available: prefill combined = total prompt tokens / max
-    # TTFT (every stream's prefill has finished by then); decode
-    # combined = total generated tokens / (max wall − min TTFT).
-    # Without TTFT (native non-stream path) fall back to the rate sum.
+    # Combined prefill (ADR 004, kept): total prompt tokens over the window
+    # in which every stream's prefill has completed (max TTFT). Summing
+    # per-stream prefill rates double-counts wall time whenever streams
+    # queue behind a server batch limit (run #103: Σ 1222 T/s on a server
+    # that really computed ~640).
     prefill_combined = None
-    decode_combined = None
     ttft_vals = [p.ttft_ms for p in points if p.ttft_ms is not None]
-    walls = [p.wall_s for p in points if p.wall_s is not None]
     if len(ttft_vals) == len(points):  # every stream reported TTFT
         prompt_total = _sum([p.prompt_tokens for p in points])
         if prompt_total and max(ttft_vals) > 0:
             prefill_combined = round(prompt_total / (max(ttft_vals) / 1000.0), 1)
-        gen_total = _sum([p.output_tokens for p in points])
-        if gen_total and walls:
-            span = max(walls) - (min(ttft_vals) / 1000.0)
-            if span > 0:
-                decode_combined = round(gen_total / span, 2)
     if prefill_combined is None:
         prefill_combined = _sum([p.prefill_tps for p in points])
-    if decode_combined is None:
-        decode_combined = _sum([p.decode_tps for p in points])
+    # Combined decode = SUM of per-stream rates (ADR 005). Each stream's
+    # rate is measured over its own generation span [ttft, wall]; the sum
+    # is the server's honest decode capacity under concurrency. ADR 004's
+    # shared-window variant (Σ tokens / (max wall − min TTFT)) credited the
+    # denominator with OTHER streams' serialized prefill time — no decode
+    # runs there — and produced impossible rows like run #129 (Σ decode
+    # 4.22 t/s below one stream's own 9.28 t/s at 131k ctx). For truly
+    # concurrent streams the rate sum is algebraically identical; for
+    # serialized prefill it is the only honest number.
+    decode_combined = _sum([p.decode_tps for p in points])
     return BenchPoint(
         target_tokens=first.target_tokens,
         prefill_tps=_mean([p.prefill_tps for p in points]),
@@ -373,6 +369,7 @@ def run_benchmark(
     streams: int = 1,
     power_host: Optional[str] = None,
     power_gpu_index: int = 0,
+    abort=None,
 ) -> list[BenchPoint]:
     """Plan sizes for every target, then run each point sequentially.
 
@@ -391,6 +388,11 @@ def run_benchmark(
                               api_key=api_key)
     points: list[BenchPoint] = []
     for plan in plans:
+        # Cooperative abort (ADR 006): a stop request raised between points
+        # leaves the sweep via the caller's exception net, which preserves
+        # the points already completed as a partial run.
+        if abort is not None:
+            abort.check()
         # Opt-in power sampling (ADR 002): one SSH sampler per point,
         # started before the workstreams and stopped after — same shape
         # as the openai transport path in ops.py.

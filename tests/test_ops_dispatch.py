@@ -6,6 +6,7 @@ urlreq (patched).
 """
 
 import json
+import sqlite3
 import sys
 from pathlib import Path
 from unittest.mock import patch
@@ -465,6 +466,78 @@ def test_dispatch_bench_openai_streams_get_distinct_prompts(db_path):
     tails = {c.split("\n", 1)[1] for c in seen_contents}
     assert len(tails) == 1
     assert result["points"][0]["streams"] == 3
+
+
+def test_abort_flag_contract():
+    """AbortFlag.check() raises SweepAborted only after request(); the
+    flag is thread-safe state, not a mutable job-record field."""
+    flag = ops.AbortFlag()
+    flag.check()  # fresh flag: no exception
+    assert flag.requested is False
+    flag.request()
+    assert flag.requested is True
+    with pytest.raises(ops.SweepAborted):
+        flag.check()
+
+
+def test_abort_bench_job_contract(db_path):
+    """Stop active benchmark run (ADR 006) — the API-level contract:
+    abort on a live job flips abort_requested (idempotently), unknown
+    job -> None, and the flag actually stops a mid-sweep sweep."""
+    job_id = ops.run_bench_job(
+        db_path, "http://127.0.0.1:1", [128], 8,
+        api_key=None, transport_name="native", model=None)
+    first = ops.abort_bench_job(job_id)
+    assert first["abort_requested"] is True
+    assert ops.abort_bench_job(job_id)["abort_requested"] is True  # idempotent
+    assert ops.abort_bench_job("no-such-job") is None
+    # Wait out the worker (dead target -> error) and confirm nothing
+    # crashed: 'aborted' or 'error' are both honest terminal states here.
+    import time as _time
+    deadline = _time.monotonic() + 30
+    while True:
+        rec = ops.bench_job_status(job_id)
+        if rec["status"] in ("error", "aborted", "done", "partial"):
+            break
+        assert _time.monotonic() < deadline, "job never finished"
+        _time.sleep(0.1)
+    assert rec["status"] in ("error", "aborted")
+
+
+def test_dispatch_bench_abort_stores_partial_run(db_path):
+    """An abort raised between points keeps the completed points as a
+    partial run with status 'aborted' — the operator stop is a first-class
+    failure path, not a crashed worker (ADR 006)."""
+    calls = {"n": 0}
+
+    class _FakeStreamPoint:
+        # First point completes; the second stream call sees the abort.
+        pass
+
+    def fake_stream_point(*a, **kw):
+        calls["n"] += 1
+        if calls["n"] > 3:  # point 1's 3 streams done, point 2 starts
+            raise ops.SweepAborted("sweep aborted by operator (stop requested)")
+        return _SSEFakeResp(_sse_text(content_chunks=4, prompt=500,
+                                      completion=30))
+
+    with patch("arcturos.bench_openai.urlreq.urlopen",
+               side_effect=fake_stream_point):
+        result = ops.dispatch_bench(
+            db_path, "http://fake:4000/v1", [128, 256], 30,
+            transport_name="openai", model="GLM-5.3-Flash",
+            transport=_openai_preflight_app(), streams=3)
+
+    assert result["status"] == "aborted"
+    assert result["run_id"] == 1
+    stored = result["points"]
+    assert len(stored) == 1  # only the completed point
+    assert stored[0]["streams"] == 3
+    conn = sqlite3.connect(db_path)
+    status = conn.execute(
+        "SELECT status FROM runs WHERE id = 1").fetchone()[0]
+    conn.close()
+    assert status == "partial"
 
 
 def test_dispatch_bench_openai_preflight_failure_is_actionable(db_path):

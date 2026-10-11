@@ -58,6 +58,10 @@
     .bp-detail { display: none; margin-top: .4rem; font-size: .78rem;
                  border-top: 1px dashed var(--input-border); padding-top: .4rem; }
     .bp-detail.open { display: block; }
+    .stop-btn { display: inline-block; width: 100%; padding: .4rem 1rem;
+                font-size: .9rem; background: var(--err, #b3261e); color: #fff;
+                border: 0; border-radius: 4px; cursor: pointer; }
+    .stop-btn:disabled { opacity: .5; cursor: wait; }
     /* Wide tables must not clip or overlay the next card: the panel grows
        with content and the table scrolls horizontally inside it. */
     .bp-detail table { width: 100%; border-collapse: collapse;
@@ -92,8 +96,7 @@
       <div class="nav-section" data-nav-section="Benchmarks">
         <div class="nav-section-head">Benchmarks</div>
         <a href="/kickoff" data-page="kickoff">Kick off</a>
-        <a href="/" data-page="runs">Runs</a>
-        <a href="/compare" data-page="compare">Compare</a>
+        <a href="/compare" data-page="compare">Compare runs</a>
         <a href="/diff" data-page="diff">Run diff</a>
       </div>
       <div class="nav-section" data-nav-section="Evals">
@@ -150,9 +153,11 @@
       </label>
       <div class="row2">
         <div><button id="bench-btn" style="width:100%">▶ Kick off bench</button></div>
-        <div><button id="bench-pf-btn" style="width:100%; background:var(--pf-btn)">✔ Check target</button></div>
+        <div><button id="bench-pf-btn" style="width:100%; background:var(--pf-btn)">✔ Check target - just one ping, Vasily</button></div>
       </div>
       <div id="bench-msg" class="msg"></div>
+      <button id="bench-stop-btn" type="button" class="stop-btn" hidden
+              title="Abort the running sweep: completed points are kept as a partial run">■ Stop run</button>
       <div id="bench-progress" class="benchprog">
         <div class="bp-barwrap"><div id="bp-bar" class="bp-bar"></div>
           <div id="bp-pct" class="bp-pct"></div></div>
@@ -241,12 +246,46 @@
           setMsg(msgEl, '✘ ' + fails.map(c => c.name + ': ' + c.detail).join(' | '));
         }
       } catch (err) { setMsg(msgEl, 'Preflight failed: ' + err); }
-      finally { kindBtn.disabled = false; kindBtn.textContent = '✔ Check target'; }
+      finally { kindBtn.disabled = false; kindBtn.textContent = '✔ Check target - just one ping, Vasily'; }
     }
     $('bench-pf-btn').onclick = () => checkPreflight($('bench-pf-btn'), $('bench-url'), $('bench-msg'), $('bench-transport').value === 'openai' ? 'eval' : 'bench');
 
     // ---- async bench job + progress indicator ---------------------------
-    const bpPoll = { timer: null, zoom: false, streams: 1 };
+    const bpPoll = { timer: null, zoom: false, streams: 1, jobId: null,
+                     stopBusy: false };
+
+    // Operator stop (ADR 006): visible only while a job is in flight.
+    function bpStopBtnShow(on) {
+      const b = $('bench-stop-btn');
+      b.hidden = !on;
+      if (!on) { b.disabled = false; b.textContent = '■ Stop run'; }
+    }
+
+    $('bench-stop-btn').onclick = async () => {
+      if (!bpPoll.jobId || bpPoll.stopBusy) return;
+      if (!window.confirm('Stop the running bench sweep? Points already ' +
+                          'completed are kept as a partial run.')) return;
+      bpPoll.stopBusy = true;
+      const btn = $('bench-stop-btn');
+      btn.disabled = true;
+      btn.textContent = '⏳ Stopping…';
+      try {
+        const res = await fetch('/api/ops/bench/jobs/' + bpPoll.jobId + '/abort',
+                                {method: 'POST'});
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}));
+          setMsg($('bench-msg'), 'Stop failed: ' +
+                 (data.detail || ('HTTP ' + res.status)));
+          bpStopBtnShow(true);   // allow retry on transient failure
+        }
+        // On success the poller flips the UI when the job reports 'aborted'.
+      } catch (err) {
+        setMsg($('bench-msg'), 'Stop failed: ' + err);
+        bpStopBtnShow(true);
+      } finally {
+        bpPoll.stopBusy = false;
+      }
+    };
 
     // Live detail table adapts to the job: single-stream jobs keep the
     // compact 7-column table; multi-stream jobs add a Σ prefill/decode pair
@@ -339,6 +378,7 @@
         bpRender(st);
         if (st.status === 'done') {
           bpStop();
+          bpStopBtnShow(false);
           const okEl = $('bench-msg');
           okEl.innerHTML = '✔ <a href="/runs/' + st.run_id + '">Run #' +
             st.run_id + '</a> stored — ' + st.points_done + ' point(s)';
@@ -349,8 +389,26 @@
           $('bp-status').innerHTML = 'Complete — <a href="/runs/' +
             st.run_id + '">run #' + st.run_id + '</a>';
           $('bp-clock').textContent = 'elapsed ' + bpFmtSecs(st.elapsed_s);
+        } else if (st.status === 'aborted') {
+          // Operator stop (ADR 006): completed points were kept.
+          bpStop();
+          bpStopBtnShow(false);
+          setMsg($('bench-msg'), '■ Sweep stopped by operator', true);
+          $('bp-bar').classList.remove('indeterminate');
+          const done = st.points_done || 0, total = st.targets_total || 0;
+          $('bp-bar').style.width = total ? ((done / total) * 100).toFixed(1) + '%' : '0%';
+          $('bp-pct').textContent = 'stopped';
+          if (st.run_id) {
+            $('bp-status').innerHTML = 'Stopped after ' + done +
+              ' point(s) — <a href="/runs/' + st.run_id + '">run #' +
+              st.run_id + '</a> (partial) stored';
+          } else {
+            $('bp-status').textContent = 'Stopped after ' + done + ' point(s)';
+          }
+          $('bp-clock').textContent = 'elapsed ' + bpFmtSecs(st.elapsed_s);
         } else if (st.status === 'error') {
           bpStop();
+          bpStopBtnShow(false);
           setMsg($('bench-msg'), '✘ Bench failed: ' + (st.error || 'unknown'), false);
           $('bp-status').textContent = 'Failed';
           // Partial-run preservation (2026-09-22): completed points were
@@ -424,12 +482,14 @@
         // job accepted — hand over to the progress indicator
         $('bench-progress').classList.add('active');
         bpPoll.streams = parseInt($('bench-streams').value, 10) || 1;
+        bpPoll.jobId = data.job_id;
         bpColumns(bpPoll.streams);
         $('bp-rows').innerHTML = '';
         $('bp-events').innerHTML = '';
         $('bp-bar').style.width = '0%';
         $('bp-status').textContent = 'queued…';
         $('bp-clock').textContent = '';
+        bpStopBtnShow(true);
         setMsg($('bench-msg'), 'Job ' + data.job_id + ' accepted — sweep running', true);
         bpPoll.retries = 0;  // fresh job: full retry budget for its poller
         bpPollLoop(data.job_id);

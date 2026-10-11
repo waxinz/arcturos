@@ -228,10 +228,16 @@ def test_create_view_detail_table_scroll_container(client):
 
 
 def test_runs_view_name_column(client):
-    """/runs page renders the Name column header (second column) and the
-    row template reads r.name with an honest '—' fallback."""
-    html = client.get("/runs").text
-    assert "<th>Name</th>" in html
+    """Runs list merged into Compare Runs (2026-10-11): /runs redirects
+    (308) to the merged page, whose picker renders the Name column header
+    and the row template reads r.name with an honest '—' fallback."""
+    res = client.get("/runs")
+    assert res.status_code == 200  # TestClient follows the redirect
+    assert res.url.path == "/compare"
+    html = res.text
+    # The picker header is DOM-built; the source-level pin is the header
+    # array literal plus the row template's honest fallback.
+    assert "'ID', 'Name', 'Server'" in html
     assert "r.name || '—'" in html
 
 

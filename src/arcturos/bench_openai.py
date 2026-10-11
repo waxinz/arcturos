@@ -62,7 +62,8 @@ def _normalize_base(url: str) -> str:
 def run_openai_stream_point(base_url: str, model: str, messages: list,
                             api_key: str | None = None,
                             max_tokens: int = 128,
-                            timeout_s: float = 300.0) -> OpenAIBenchPoint:
+                            timeout_s: float = 300.0,
+                            abort=None) -> OpenAIBenchPoint:
     body = {
         "model": model, "messages": messages,
         "max_tokens": max_tokens, "temperature": 0.0,
@@ -91,6 +92,12 @@ def run_openai_stream_point(base_url: str, model: str, messages: list,
     try:
         with urlreq.urlopen(req, timeout=timeout_s) as resp:
             for line in resp:
+                # Mid-stream abort (ADR 006): a stop requested while the
+                # stream is decoding raises here — the point is abandoned
+                # (its partial counts are NOT stored as a completed point;
+                # only whole points land in the store).
+                if abort is not None:
+                    abort.check()
                 line = line.decode("utf-8", "replace").strip()
                 if not line.startswith("data: "):
                     continue
