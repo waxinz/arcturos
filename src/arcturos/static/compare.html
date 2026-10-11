@@ -61,6 +61,8 @@
     .pager button { padding: .2rem .65rem; font-size: .82rem; }
     .pager button[disabled] { opacity: .4; cursor: not-allowed; }
     .pager .pg-of { font-variant-numeric: tabular-nums; }
+    .pager select { padding: .18rem .4rem; font-size: .82rem;
+                    margin-left: auto; cursor: pointer; }
     /* ---- A/B delta tables (integrated Run Diff, 2026-10-11) ---- */
     .delta-head { display: flex; align-items: baseline; gap: .75rem;
                   margin: 1.4rem 0 .5rem; }
@@ -194,7 +196,14 @@
     // ---- pagination (client-side): all rows stay in the DOM, paging only
     // toggles visibility — cross-page selection, select-all, hide-selected
     // and the Compare payload are untouched by the current page.
-    const PAGE_SIZE = 25;
+    // Page size is owner-settable (30/50/100/All) and persisted, so the
+    // choice survives reloads and carries to any future paginated page.
+    const PAGE_SIZE_KEY = 'arcturos-run-page-size';
+    let PAGE_SIZE = (() => {
+      const v = localStorage.getItem(PAGE_SIZE_KEY);
+      if (v === 'all') return Infinity;
+      return [30, 50, 100].includes(+v) ? +v : 30;
+    })();
     let currentPage = 0;
 
     function pageRuns() {
@@ -207,7 +216,11 @@
         tr.hidden = Math.floor(i / PAGE_SIZE) !== currentPage;
       });
       let pager = document.getElementById('runs-pager');
-      if (pages <= 1) { if (pager) pager.remove(); return; }
+      // Keep the pager (and with it the page-size dropdown) visible even
+      // at one page: with 'All' selected the only way back is the dropdown.
+      if (rows.length <= 25 && PAGE_SIZE === 30) {
+        if (pager) pager.remove(); return;
+      }
       if (!pager) {
         pager = document.createElement('div');
         pager.id = 'runs-pager';
@@ -227,10 +240,35 @@
       next.textContent = 'Next ›';
       next.disabled = currentPage >= pages - 1;
       next.onclick = () => { currentPage++; pageRuns(); };
+      const sizeSel = document.createElement('select');
+      sizeSel.id = 'page-size';
+      sizeSel.title = 'Rows shown per page';
+      sizeSel.setAttribute('aria-label', 'Rows shown per page');
+      for (const opt of [['30', '30 / page'], ['50', '50 / page'],
+                         ['100', '100 / page'], ['all', 'All']]) {
+        const o = document.createElement('option');
+        o.value = opt[0]; o.textContent = opt[1];
+        sizeSel.appendChild(o);
+      }
+      sizeSel.value = PAGE_SIZE === Infinity ? 'all' : String(PAGE_SIZE);
+      sizeSel.onchange = () => {
+        const firstVisible = currentPage * PAGE_SIZE;   // keep context:
+        const v = sizeSel.value;                        // re-page so the
+        PAGE_SIZE = v === 'all' ? Infinity : +v;        // same first row
+        if (PAGE_SIZE !== Infinity) {                   // stays in view
+          currentPage = Math.min(Math.floor(firstVisible / PAGE_SIZE),
+                                 Math.max(1, Math.ceil(rows.length / PAGE_SIZE)) - 1);
+        } else {
+          currentPage = 0;
+        }
+        localStorage.setItem(PAGE_SIZE_KEY, v);
+        pageRuns();
+      };
       pager.textContent = '';
       pager.appendChild(prev);
       pager.appendChild(label);
       pager.appendChild(next);
+      pager.appendChild(sizeSel);
     }
 
     async function loadRuns() {
