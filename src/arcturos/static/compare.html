@@ -252,10 +252,14 @@
       }
       sizeSel.value = PAGE_SIZE === Infinity ? 'all' : String(PAGE_SIZE);
       sizeSel.onchange = () => {
-        const firstVisible = currentPage * PAGE_SIZE;   // keep context:
-        const v = sizeSel.value;                        // re-page so the
-        PAGE_SIZE = v === 'all' ? Infinity : +v;        // same first row
-        if (PAGE_SIZE !== Infinity) {                   // stays in view
+        // Same first row stays in view when re-paging. Guard: leaving
+        // 'All' the old PAGE_SIZE is Infinity and 0 * Infinity is NaN —
+        // pin the anchor to row 0 on that path (All shows from row 0
+        // anyway).
+        const firstVisible = PAGE_SIZE === Infinity ? 0 : currentPage * PAGE_SIZE;
+        const v = sizeSel.value;
+        PAGE_SIZE = v === 'all' ? Infinity : +v;
+        if (PAGE_SIZE !== Infinity) {
           currentPage = Math.min(Math.floor(firstVisible / PAGE_SIZE),
                                  Math.max(1, Math.ceil(rows.length / PAGE_SIZE)) - 1);
         } else {
