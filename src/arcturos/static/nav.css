@@ -1,10 +1,22 @@
-/* nav.css — persistent left-rail sidebar (2026-09-30 UX round 2).
+/* nav.css — left-rail sidebar, 2026-10-11 FULL REDESIGN.
 
-   The desktop dashboard paradigm: a fixed rail of grouped sections —
-   BENCHMARKS / EVALS / SETTINGS — with the page content beside it.
-   The active group's label gets a brand-coloured kicker; the current
-   page link is filled. Layout: sidebar = fixed left column, .page = the
-   shifted content area (max-width preserved for readability).
+   Owner verdict on the previous rail ("not aligned and overlapping and
+   just ugly", third strike): scrapped, not tweaked. What changed:
+
+   - The rail is a distinct surface: 260px, its own background, a
+     1px separator to the content. The old rail floated on the page
+     background with no boundary, so every spacing defect read as
+     "overlapping".
+   - Brand = monogram tile + name + tagline as one aligned row.
+   - Section labels: small caps, no bars, no dots anywhere.
+   - Links: icon + text rows, fixed 32px height. Active = filled pill
+     with a 3px accent edge on the left.
+   - Root cause of the old overlap is guarded here: theme.css's legacy
+     top-bar rule `nav { display:flex; flex-wrap:wrap }` out-cascades a
+     plain `display: block` and re-flowed the sections side-by-side
+     inside a 216px rail. The sidebar nav is display:block !important;
+     never style the rail with bare `nav` selectors that theme.css can
+     out-cascade.
 */
 
 /* ---------- shell -------------------------------------------------- */
@@ -17,142 +29,143 @@ body.shell {
 .sidebar {
   position: fixed;
   top: 0; left: 0; bottom: 0;
-  width: 236px;
-  padding: 1.2rem 1rem 1.2rem;
+  width: 260px;
+  padding: 1.1rem .9rem 1rem;
   display: flex;
   flex-direction: column;
-  gap: .2rem;
   overflow-y: auto;
+  background: var(--sidebar-bg, var(--code-bg));
+  border-right: 1px solid var(--border);
 }
 
 body.shell .page {
-  margin-left: 236px;                    /* clear the fixed rail */
-  padding: 1.4rem 2.2rem 3rem;
-  max-width: 980px;                      /* keep line lengths readable */
+  margin-left: 260px;                    /* clear the fixed rail */
+  padding: 1.6rem 2.4rem 3rem;
+  max-width: 1020px;                     /* keep line lengths readable */
   min-height: 100vh;
   box-sizing: border-box;
 }
 
-/* Home-brand block at the rail's top; a hairline separates it from the
-   nav so the identity reads as a header, not as a fourth section. */
+/* ---------- brand row ---------------------------------------------- */
+.brand-row {
+  display: flex;
+  align-items: center;
+  gap: .65rem;
+  padding: .2rem .35rem 1rem;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: .9rem;
+}
+.brand-tile {
+  flex: 0 0 auto;
+  width: 34px; height: 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 9px;
+  background: var(--accent);
+  color: #fff;
+  font-weight: 800;
+  font-size: 1.05rem;
+  letter-spacing: -.02em;
+  box-shadow: 0 1px 4px var(--shadow);
+}
+.brand-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;                          /* let the tagline ellipsize */
+}
 .sidebar .brand {
   font-weight: 800;
-  font-size: 1.22rem;
+  font-size: 1.08rem;
   letter-spacing: -.01em;
+  line-height: 1.15;
   color: var(--text);
   text-decoration: none;
-  line-height: 1.15;
 }
 .sidebar .brand:hover { color: var(--accent); }
 .sidebar .brand-sub {
   display: block;
-  margin: .15rem 0 .95rem;
-  font-size: .72rem;
+  margin-top: .1rem;
+  font-size: .68rem;
+  line-height: 1.25;
   color: var(--text-muted);
-  line-height: 1.35;
-}
-.sidebar nav {
-  display: block;                 /* theme.css's legacy top-bar rule
-                                     (nav { display:flex; flex-wrap:wrap })
-                                     would otherwise lay the sections out
-                                     as wrapping flex items — headers and
-                                     links overlapped. The rail nav is a
-                                     normal block; sections stack. */
-  width: 100%;
-  border-top: 1px solid var(--border);
-  padding-top: .95rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-/* ---------- one section (heading + its page links) ----------------- */
-.nav-section {
-  display: block;
-  margin-bottom: 1.15rem;
+/* ---------- the nav block itself ------------------------------------ */
+/* display:block !important: theme.css's legacy top-bar rule
+   (nav { display:flex; flex-wrap:wrap }) out-cascades a plain rule and
+   re-flowed the sections as wrapping flex items — the overlap the owner
+   kept hitting. Nothing inside the rail may be a bare `nav` again. */
+.sidebar nav {
+  display: block !important;
+  flex-wrap: nowrap !important;
+  width: 100%;
 }
+
+/* ---------- one section (label + its page links) -------------------- */
+.nav-section { margin-bottom: 1.1rem; }
 .nav-section:last-of-type { margin-bottom: 0; }
 
 .nav-section-head {
-  display: flex;                   /* bar + label on one aligned axis;
-                                      no baseline shift when the active
-                                      bar grows from 9px to 13px */
-  align-items: center;
-  font-size: .66rem;
+  font-size: .65rem;
   font-weight: 700;
-  letter-spacing: .11em;
+  letter-spacing: .13em;
   text-transform: uppercase;
   color: var(--text-muted);
-  margin: 0 0 .3rem .55rem;
-  transition: color .15s ease;
+  margin: 0 0 .35rem .55rem;
 }
-/* Active section: the heading lights up and a short brand-coloured bar
-   sits beside it — the eye anchors on the group before it reads its
-   links. */
-.nav-section-head::before {
-  content: '';
-  display: inline-block;
-  width: 3px; height: 9px;
-  margin-right: .45rem;
-  border-radius: 2px;
-  background: transparent;
-  transition: background .15s ease, height .15s ease;
-}
-.nav-section.active .nav-section-head::before {
-  background: var(--accent);
-  height: 13px;
-}
-.nav-section.active .nav-section-head { color: var(--text); }
 
-/* Section links: full-width rows (hover paints the row, not the word).
-   Fixed row height keeps the vertical rhythm identical on every row. */
+/* Link rows: icon + text, full-row hit target, uniform 32px box. */
 .nav-section a {
   display: flex;
   align-items: center;
-  height: 30px;                    /* uniform row box — no per-row wobble */
-  gap: .5rem;
+  height: 32px;
+  gap: .65rem;
   padding: 0 .55rem;
+  margin-bottom: 2px;
   box-sizing: border-box;
-  border-radius: 6px;
+  border-radius: 8px;
   color: var(--text-soft);
   text-decoration: none;
   font-weight: 600;
-  font-size: .88rem;
+  font-size: .875rem;
   line-height: 1;
   white-space: nowrap;
-  transition: background .12s ease, color .12s ease;
+  transition: background .12s ease, color .12s ease, box-shadow .12s ease;
 }
 .nav-section a:visited { color: inherit; }
 .nav-section a:hover {
   color: var(--text);
   background: var(--hover-bg);
 }
-
-/* Section bullet: a quiet dot that gives every row a shared anchor and
-   fills with the accent when that row is the current page. */
-.nav-section a::before {
-  content: '';
-  width: 5px; height: 5px;
-  border-radius: 50%;
-  background: var(--border-strong);
-  opacity: .35;
+.nav-ico {
   flex: 0 0 auto;
-  transition: background .12s ease, opacity .12s ease;
+  opacity: .72;
+  transition: opacity .12s ease;
 }
-.nav-section a:hover::before { opacity: .7; }
+.nav-section a:hover .nav-ico { opacity: 1; }
+.nav-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 
-/* Current page: filled pill + accent text — unmistakable location */
+/* Current page: filled pill + accent edge on the left. */
 .nav-section a.active {
   background: var(--active-nav-bg);
   color: var(--accent);
   font-weight: 700;
+  box-shadow: inset 3px 0 0 var(--accent);
 }
-.nav-section a.active::before {
-  background: var(--accent);
-  opacity: 1;
-}
+.nav-section a.active .nav-ico { opacity: 1; }
 
-/* ---------- footer of the rail ------------------------------------ */
+/* ---------- footer of the rail -------------------------------------- */
 .sidebar-foot {
   margin-top: auto;
-  padding-top: 1rem;
+  padding: .9rem .35rem 0;
+  border-top: 1px solid var(--border);
   display: flex;
   align-items: center;
   gap: .7rem;
@@ -162,25 +175,34 @@ body.shell .page {
   color: var(--text-muted);
 }
 
-/* ---------- narrow screens: the rail folds up into the header ------ */
+/* ---------- narrow screens: the rail folds into a header row -------- */
 @media (max-width: 720px) {
   .sidebar {
     position: static;
     width: auto;
     flex-direction: row;
     flex-wrap: wrap;
-    align-items: baseline;
-    gap: .4rem 1.4rem;
-    padding: .8rem 1rem;
+    align-items: center;
+    gap: .4rem 1.2rem;
+    padding: .7rem .9rem;
+    border-right: none;
+    border-bottom: 1px solid var(--border);
   }
-  body.shell .page {
-    margin-left: 0;
-    padding: 1rem;
+  .brand-row { border-bottom: none; padding: 0; margin-bottom: 0; }
+  .brand-tile { width: 28px; height: 28px; font-size: .9rem; border-radius: 7px; }
+  .brand-sub { display: none; }
+  body.shell .page { margin-left: 0; padding: 1rem; }
+  /* Horizontal scroll strip of sections on phones. */
+  .sidebar nav {
+    display: flex !important;
+    gap: 1rem;
+    overflow-x: auto;
+    flex: 1;
   }
-  .sidebar nav { border-top: none; padding-top: 0; }
-  .nav-section { display: inline-block; margin-bottom: 0; }
-  .nav-section-head { margin-left: 0; }
-  .nav-section a { display: inline-flex; margin-left: 0; }
+  .nav-section { display: flex; gap: .3rem; margin-bottom: 0; }
+  .nav-section-head { display: none; }
+  .nav-section a { height: 30px; padding: 0 .6rem; }
+  .sidebar-foot { border-top: none; padding: 0; margin-top: 0; }
 }
 
 /* ---------- legacy header nav (kept for reference, no longer used) -- */

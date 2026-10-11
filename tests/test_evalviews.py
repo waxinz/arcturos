@@ -114,9 +114,10 @@ def test_run_detail_uses_shared_shell(client):
 
 def test_reports_is_under_evals_nav(client):
     # Owner call (2026-09-30): Reports lives in the Evals section.
+    # 2026-10-11 redesign: link rows are icon + <span class="nav-label">.
     text = client.get("/evals").text
     assert 'data-page="reports"' in text
-    assert 'href="/reports" data-page="reports">Reports</a>' in text
+    assert '<span class="nav-label">Reports</span>' in text
     # ...and sits inside the Evals group block, not elsewhere:
     evals_block = text.split('data-nav-section="Evals"')[1].split('</div>\n      <div class="nav-section"')[0]
     assert 'href="/reports"' in evals_block
