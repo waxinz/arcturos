@@ -575,13 +575,15 @@
     }
 
     // Higher-is-better metrics for A/B colouring; everything else
-    // (TTFT, wall time) is lower-is-better; power_watts is informational
-    // (the API marks it neutral) and must never get a verdict colour.
+    // (TTFT, wall time) is lower-is-better. Neutral columns (no verdict
+    // colour ever): power_watts is informational per ADR 002, streams is
+    // a configuration fact, not a score.
     const HIGHER_BETTER = ['decode_tps', 'prefill_tps', 'output_tokens',
       'mtp_acceptance', 'decode_tps_combined', 'prefill_tps_combined'];
+    const NEUTRAL_AB = ['power_watts', 'streams'];
 
     function abDeltaClass(metric, pct) {
-      if (pct === null || pct === undefined || metric === 'power_watts') return 'gray';
+      if (pct === null || pct === undefined || NEUTRAL_AB.includes(metric)) return 'gray';
       if (Math.abs(pct) < 2) return 'gray';              // within ±2%
       const good = HIGHER_BETTER.includes(metric) ? pct > 0 : pct < 0;
       return good ? 'good' : 'bad';
@@ -637,13 +639,19 @@
                 d.b === null || d.b === undefined) continue;
             any = true;
             const cls = abDeltaClass(m, d.pct);
+            // ttft_ms is displayed in seconds everywhere else on this
+            // page (chart + label) — the table must agree (UX rule).
+            const scale = m === 'ttft_ms' ? 1000 : 1;
+            const fmtVal = v => v === null || v === undefined
+              ? null : (m === 'ttft_ms' ? v / scale : v);
+            const aV = fmtVal(d.a), bV = fmtVal(d.b);
             const tr = document.createElement('tr');
             const cells = [
               { t: row.context_tokens, c: 'ctx' },
               { t: METRIC_LABELS[m] || m, c: 'metric' },
-              { t: fmtNum(d.a), c: 'num' },
-              { t: fmtNum(d.b), c: 'num' },
-              { t: d.delta === null ? '—' : fmtNum(d.delta), c: 'num ' + cls },
+              { t: aV === null ? null : fmtNum(aV), c: 'num' },
+              { t: bV === null ? null : fmtNum(bV), c: 'num' },
+              { t: d.delta === null ? '—' : fmtNum((bV - aV)), c: 'num ' + cls },
               { t: d.pct === null ? '—' : fmtNum(d.pct) + '%', c: 'num ' + cls },
             ];
             for (const cell of cells) {
