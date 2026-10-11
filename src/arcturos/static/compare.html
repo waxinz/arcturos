@@ -60,6 +60,9 @@
                   background: var(--surface); border: 1px solid var(--border);
                   border-radius: 8px; padding: .55rem .9rem; margin-top: 1.2rem;
                   box-shadow: 0 -4px 14px var(--shadow); }
+    /* [hidden] must win over the display rule (author display:flex would
+       otherwise override the UA hidden rule — same trap as .stop-btn). */
+    #action-bar[hidden] { display: none; }
     #action-bar .abar-count { font-size: .88rem; color: var(--text-muted); }
     #action-bar .abar-spacer { flex: 1; }
     #action-bar button[disabled] { opacity: .45; cursor: not-allowed; }
