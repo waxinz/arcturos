@@ -48,9 +48,17 @@
     .bp-detail { display: none; margin-top: .4rem; font-size: .78rem;
                  border-top: 1px dashed var(--input-border); padding-top: .4rem; }
     .bp-detail.open { display: block; }
-    .stop-btn { display: inline-block; width: 100%; padding: .4rem 1rem;
-                font-size: .9rem; background: var(--err, #b3261e); color: #fff;
-                border: 0; border-radius: 4px; cursor: pointer; }
+    /* Stop: a quiet ghost button in the row with Kick off / Check target —
+       small and gray; danger is conveyed by the label, not a big red slab.
+       [hidden] must WIN over the class (author display rules override the
+       UA hidden rule otherwise — shipped once as a permanently-visible
+       stop button). */
+    .stop-btn { display: inline-block; padding: .28rem .7rem; font-size: .8rem;
+                background: var(--neutral-bg); color: var(--neutral-text);
+                border: 1px solid var(--border); border-radius: 4px;
+                cursor: pointer; margin-top: .5rem; }
+    .stop-btn:not([hidden]) { display: inline-block; }
+    .stop-btn[hidden] { display: none; }
     .stop-btn:disabled { opacity: .5; cursor: wait; }
       </style>
   <script src="/static/app-time.js"></script>
@@ -74,7 +82,7 @@
       <div class="nav-section" data-nav-section="Benchmarks">
         <div class="nav-section-head">Benchmarks</div>
         <a href="/kickoff" data-page="kickoff">Kick off</a>
-        <a href="/compare" data-page="compare">Compare runs</a>
+        <a href="/compare" data-page="compare">Runs</a>
         <a href="/diff" data-page="diff">Run diff</a>
       </div>
       <div class="nav-section" data-nav-section="Evals">
@@ -130,7 +138,7 @@
       <label>Parallel streams (identical runs per target, 1-16)
         <input id="bench-streams" value="1">
       </label>
-      <div class="row2">
+      <div class="row2" style="margin-top:.5rem;">
         <div><button id="bench-btn" style="width:100%">▶ Kick off bench</button></div>
         <div><button id="bench-pf-btn" style="width:100%; background:var(--pf-btn)">✔ Check target - just one ping, Vasily</button></div>
       </div>
