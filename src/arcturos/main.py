@@ -152,9 +152,12 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
     def compare_page() -> FileResponse:
         return FileResponse(STATIC_DIR / "compare.html")
 
+    # Run Diff integrated into the Compare page (owner call 2026-10-11):
+    # the A/B tables render under the charts, so /diff is a permanent
+    # redirect — old links and the run-detail deep-link keep working.
     @app.get("/diff", include_in_schema=False)
-    def diff_page() -> FileResponse:
-        return FileResponse(STATIC_DIR / "diff.html")
+    def diff_page() -> RedirectResponse:
+        return RedirectResponse("/compare", status_code=308)
 
     # Split pages (2026-09-30 UX round 2): every kick-off form is its own
     # URL so the sidebar can link it directly — no anchor fragments.

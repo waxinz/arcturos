@@ -5,6 +5,30 @@ stays the conventions/ground-truth file; this file is the living status).
 Newest first. Read AGENTS.md first for conventions; read this file to
 resume work.
 
+## 2026-10-11 (evening) — Nav renames, Run Diff integrated, rail polish
+
+Owner round: "Kick Off → Start, Runs → Compare, Run Diff inside
+Compare, nicer menu."
+
+- **Renames:** Kick off → **Start** (rail + page h2 + titles on
+  /kickoff and /create), Runs → **Compare** (rail + h2 + title),
+  Suite create → **Create**. Page ids, routes, and file names are
+  unchanged — only labels moved.
+- **Run Diff retired as a page:** with exactly 2 runs selected, the
+  Compare page renders "A/B — X vs Y" under the charts (same
+  run-diff payload; deltas B−A, % vs A, ±2% gray band, power never
+  verdict-coloured). **Skip-blank rule (owner):** a metric missing on
+  either side shows NO row — no `—` filler (power_watts case).
+  `/diff` 308-redirects to `/compare`; run detail's "Diff against…"
+  deep-links `/compare?runs={id}`, which pre-selects the run
+  (`?runs=` support added to the page).
+- **Rail polish:** brand block + hairline divider; per-row bullet
+  dots (accent-filled on the current page); section heads aligned
+  with links; tighter vertical rhythm; 236px rail. Desktop rail +
+  mobile fold both preserved.
+- Tests: 247 green (pins moved to the integrated diff + renames);
+  static gates clean.
+
 ## 2026-10-11 (later) — UX round: Runs rename, pagination, sticky bar, quiet stop
 
 Owner asked for three more changes after using the merged page; one
@@ -43,13 +67,19 @@ in a live browser.
 All four owner items landed in one round; 247 tests green; deployed to
 the lab working repo and verified live.
 
-1. **Merged Compare page (`/compare`, nav "Compare runs").** The Runs
+- **Merged Compare page (`/compare`, nav "Compare").** The Runs
    list and the Compare picker are one page: charts at the TOP, runs
    picker below (LATEST FIRST — render-time reversal of the ascending
    API), metrics card at the bottom with decode/prefill/TTFT/wall
    PRE-CHECKED. Runs-page capabilities carried over: runs CSV export,
    per-row Hide, bulk Hide-selected. `/` and `/runs` 308-redirect to
    `/compare`; `index.html` retired; run detail stays at `/runs/{id}`.
+   Same-day owner renames: the page label is "Compare" (ex-"Runs",
+   ex-"Compare Runs") and the dispatch page is "Start" (ex-"Kick off");
+   the standalone Run Diff page was retired — its A/B table renders
+   under the charts when exactly two runs are selected (rows with a
+   metric missing on either side are skipped), and `/diff` 308s to
+   `/compare`.
    `tools/build_nav.py` sidebar injection is now replace-based (the
    generator OWNS the rail — a NAV_MODEL change rewrites every page);
    `create.html` added to the generator's PAGES so the legacy alias

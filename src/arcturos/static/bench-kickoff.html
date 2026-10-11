@@ -5,10 +5,13 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <link rel="icon" type="image/png" sizes="16x16" href="/static/icons/scorpio-favicon-16.png">
   <link rel="icon" type="image/png" sizes="32x32" href="/static/icons/scorpio-favicon-32.png">
+    <title>Arcturos — Start</title>
   <link rel="stylesheet" href="/static/theme.css">
   <link rel="stylesheet" href="/static/nav.css">
   <style>
     h1 { font-size: 1.6rem; margin: 0; }
+    h2.page-title { font-size: 1.45rem; margin: 0; color: var(--text-heading); }
+    .page-sub { color: var(--text-muted); margin: .25rem 0 1rem; font-size: .9rem; }
     .card { background: var(--surface); border: 1px solid var(--border);
             border-radius: 6px; padding: 1.1rem; }
     .card h2 { margin: 0 0 .8rem; font-size: 1.15rem; }
@@ -81,13 +84,12 @@
     <nav>
       <div class="nav-section" data-nav-section="Benchmarks">
         <div class="nav-section-head">Benchmarks</div>
-        <a href="/kickoff" data-page="kickoff">Kick off</a>
-        <a href="/compare" data-page="compare">Runs</a>
-        <a href="/diff" data-page="diff">Run diff</a>
+        <a href="/kickoff" data-page="kickoff">Start</a>
+        <a href="/compare" data-page="compare">Compare</a>
       </div>
       <div class="nav-section" data-nav-section="Evals">
         <div class="nav-section-head">Evals</div>
-        <a href="/evals/suites/new" data-page="evalsuite">Suite create</a>
+        <a href="/evals/suites/new" data-page="evalsuite">Create</a>
         <a href="/evals" data-page="evals">Results</a>
         <a href="/judgments" data-page="judgments">Judgments</a>
         <a href="/reports" data-page="reports">Reports</a>
@@ -105,7 +107,9 @@
 
   
   <main class="page">
-    <h1>Arcturos</h1>
+    <h2 class="page-title">Start</h2>
+    <p class="page-sub">Dispatch a benchmark sweep against a target server, watch it
+       run, stop it if it goes sideways.</p>
     <div class="card">
       <h3>Benchmark run — kick off</h3>
       <p class="hint">Runs a cold-cache sweep. Transport <b>native</b> targets a llama.cpp server (/completion); <b>openai</b> targets any OpenAI-compatible chat server (tabbyAPI, vLLM, litellm — needs a model name). Stores a run + one benchmark row per context target.</p>

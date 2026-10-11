@@ -249,9 +249,12 @@ def test_compare_view_legend_prefers_run_name(client):
 
 
 def test_diff_view_headers_use_run_name(client):
-    """diff.html 'Metrics — A vs B' headers prefer run names."""
-    html = client.get("/diff").text
-    assert "data.run_a.name || data.run_a.model_fingerprint_short" in html
+    """The integrated A/B diff (compare.html, 2026-10-11) prefers run
+    names in its 'A/B — X vs Y' header via legendName(); the standalone
+    /diff page is retired (308 to /compare)."""
+    html = client.get("/compare").text
+    assert "renderAbDiff" in html
+    assert "legendName(data.runs.find(r => r.id === +a))" in html
 
 
 def test_bench_job_endpoint_validation_errors(client):

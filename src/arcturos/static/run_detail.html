@@ -56,13 +56,12 @@
     <nav>
       <div class="nav-section" data-nav-section="Benchmarks">
         <div class="nav-section-head">Benchmarks</div>
-        <a href="/kickoff" data-page="kickoff">Kick off</a>
-        <a href="/compare" data-page="compare">Runs</a>
-        <a href="/diff" data-page="diff">Run diff</a>
+        <a href="/kickoff" data-page="kickoff">Start</a>
+        <a href="/compare" data-page="compare">Compare</a>
       </div>
       <div class="nav-section" data-nav-section="Evals">
         <div class="nav-section-head">Evals</div>
-        <a href="/evals/suites/new" data-page="evalsuite">Suite create</a>
+        <a href="/evals/suites/new" data-page="evalsuite">Create</a>
         <a href="/evals" data-page="evals">Results</a>
         <a href="/judgments" data-page="judgments">Judgments</a>
         <a href="/reports" data-page="reports">Reports</a>
@@ -255,7 +254,9 @@
         a1.textContent = 'Compare from this run';
         acts.appendChild(a1);
         const a2 = document.createElement('a');
-        a2.href = '/diff?run_a=' + run.id;
+        // Diff is integrated into the Compare page (2026-10-11): the deep
+        // link pre-selects the run there instead of the retired /diff page.
+        a2.href = '/compare?runs=' + run.id + '#delta-tables';
         a2.textContent = 'Diff against…';
         acts.appendChild(a2);
         const b1 = document.createElement('button');
