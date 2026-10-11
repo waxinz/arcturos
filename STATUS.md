@@ -60,8 +60,11 @@ Compare, nicer menu."
   (1.6rem) — previously Suite create was a bare h1 (2em),
   Results/Judgments/Reports default h2 (1.5em), Start a local 1.45rem
   (owner flagged the mismatch); "Suite create" heading/title unified
-  to "Create" to match the nav. theme.js no longer injects its legacy
-  toggle when the shell ships a static one (was doubling up).
+  to "Create" to match the nav. Theme toggle: theme.js now BINDS the
+  shell's static [data-theme-toggle] (the interim skip-injection guard
+  left the visible moon unwired/dead); legacy injection only for pages
+  without a static toggle. Verified live: single toggle, flips
+  light↔dark both ways, persists via localStorage.
   Verified in real browser across Benchmarks/Evals/Settings pages:
   single-line rows, uniform pill heights, correct active states,
   full-width table.
