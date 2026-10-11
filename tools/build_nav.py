@@ -72,63 +72,35 @@ NAV_MODEL = [
     ]),
 ]
 
-FOOT = '<div class="sidebar-foot">\n      <button class="theme-toggle-inline" data-theme-toggle>☾</button>\n    </div>'
-
-
-# Inline stroke icons per page (16px, currentColor — they inherit the
-# row's text colour, so hover/active states recolour them for free).
-NAV_ICONS = {
-    "kickoff":   '<path d="M7 4.5l12 7.5-12 7.5z"/>',                      # play
-    "compare":   '<path d="M5 20v-9M12 20V4M19 20v-5"/>',                  # bars
-    "evalsuite": '<rect x="3.5" y="3.5" width="17" height="17" rx="3.5"/>'
-                 '<path d="M12 8.5v7M8.5 12h7"/>',                         # plus-square
-    "evals":     '<path d="M8.5 6H21M8.5 12H21M8.5 18H21"/>'
-                 '<path d="M3.5 6h1M3.5 12h1M3.5 18h1"/>',                 # list
-    "judgments": '<path d="M12 3.5l2.7 5.4 6 .9-4.3 4.2 1 6L12 17.2l-5.4 2.8 1-6L3.3 9.8l6-.9z"/>',  # star
-    "reports":   '<path d="M14 3.5H7a2 2 0 00-2 2v13a2 2 0 002 2h10a2 2 0 002-2V8.5z"/>'
-                 '<path d="M14 3.5v5h5M9.5 13h5M9.5 16.5h5"/>',            # document
-    "models":    '<rect x="6.5" y="6.5" width="11" height="11" rx="2"/>'
-                 '<path d="M9.5 3v3.5M14.5 3v3.5M9.5 17.5V21M14.5 17.5V21'
-                 'M3 9.5h3.5M3 14.5h3.5M17.5 9.5H21M17.5 14.5H21"/>',      # chip
-    "baselines": '<path d="M12 3.5l8.5 4.75L12 13 3.5 8.25z"/>'
-                 '<path d="M4.5 12.5l7.5 4.25 7.5-4.25"/>'
-                 '<path d="M4.5 16.5l7.5 4.25 7.5-4.25"/>',                # layers
-}
-
-
-def _icon(page_id: str) -> str:
-    body = NAV_ICONS.get(page_id, '')
-    if not body:
-        return ''
-    return ('<svg class="nav-ico" viewBox="0 0 24 24" width="16" height="16"'
-            ' fill="none" stroke="currentColor" stroke-width="1.8"'
-            ' stroke-linecap="round" stroke-linejoin="round"'
-            ' aria-hidden="true">' + body + '</svg>')
-
 
 def sidebar_html() -> str:
-    # 2026-10-11 full redesign (owner: "needs a full complete rethink"):
-    # brand monogram tile + name row; plain uppercase section labels;
-    # icon + text link rows. No dots, no decorative bars.
-    parts = ['  <aside class="sidebar">\n',
-             '    <div class="brand-row">\n'
-             '      <span class="brand-tile" aria-hidden="true">A</span>\n'
-             '      <span class="brand-text">\n'
-             '        <a class="brand" href="/">Arcturos</a>\n'
-             '        <span class="brand-sub">LLM benchmark &amp; eval dashboard</span>\n'
-             '      </span>\n'
-             '    </div>\n'
-             '    <nav>\n']
+    # 2026-10-11 FIFTH-ROUND REWRITE (owner: left rail is wrong, period).
+    # Two-level TOP navigation: row 1 = brand + section tabs + theme
+    # toggle; row 2 = the active section's pages as pills. The section
+    # divs keep data-nav-section and the links keep data-page, so nav.js
+    # keeps painting the active states.
+    parts = ['  <header class="topnav">\n',
+             '    <div class="topnav-row">\n'
+             '      <a class="brand-tile" href="/" aria-hidden="true">A</a>\n'
+             '      <a class="brand" href="/">Arcturos</a>\n'
+             '      <nav class="topnav-tabs">\n']
     for section, links in NAV_MODEL:
-        parts.append(f'      <div class="nav-section" data-nav-section="{section}">\n')
-        parts.append(f'        <div class="nav-section-head">{section}</div>\n')
+        first = links[0][1]
+        parts.append(f'        <div class="nav-section" data-nav-section="{section}">\n')
+        parts.append(f'          <a class="nav-section-head" href="{first}">{section}</a>\n')
+        parts.append('        </div>\n')
+    parts.append('      </nav>\n'
+                 '      <div class="sidebar-foot">\n'
+                 '        <button class="theme-toggle-inline" data-theme-toggle>☾</button>\n'
+                 '      </div>\n'
+                 '    </div>\n'
+                 '    <nav class="topnav-sub">\n')
+    for section, links in NAV_MODEL:
         for page_id, href, label in links:
-            parts.append(f'        <a href="{href}" data-page="{page_id}">'
-                         f'{_icon(page_id)}<span class="nav-label">{label}</span></a>\n')
-        parts.append('      </div>\n')
-    parts.append('    </nav>\n')
-    parts.append('    ' + FOOT + '\n')
-    parts.append('  </aside>\n')
+            parts.append(f'      <a href="{href}" data-page="{page_id}" '
+                         f'data-nav-section="{section}">{label}</a>\n')
+    parts.append('    </nav>\n'
+                 '  </header>\n')
     return ''.join(parts)
 
 
