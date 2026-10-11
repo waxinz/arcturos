@@ -42,27 +42,29 @@ Compare, nicer menu."
   recomputed post-scale); `streams` joins `power_watts` as
   never-verdict-coloured (a config fact, not a score).
 
-## 2026-10-11 (late) — Page-size dropdown, full sidebar redesign
+## 2026-10-11 (late) — Page-size dropdown, sidebar redesign → REPLACED by top nav
 
 - **Paginator dropdown:** 30 / 50 / 100 / All, persisted in
   localStorage (`arcturos-run-page-size`); pager stays visible at one
   page so "All" is reversible; re-page keeps the same first row in
   view (guarded against the 0×Infinity=NaN path when leaving All —
   that bug shipped and was fixed within the round).
-- **Sidebar full redesign (owner: third strike, "needs a full complete
-  rethink"):** rail is now its own 260px surface (`--sidebar-bg`,
-  light + dark), 1px separator to content; brand = monogram tile +
-  name + tagline row; section labels are plain small caps — no dots,
-  no bars; link rows are inline-SVG stroke icons + text, uniform 32px
-  boxes; active page = filled pill with 3px accent edge (extra left
-  padding so the icon gutter stays clear); footer pinned above a
-  hairline. Root cause of the old overlap is now guarded in CSS:
-  theme.css's legacy `nav { display:flex; flex-wrap:wrap }` out-cascades
-  a plain `display:block`, so the sidebar nav is `display:block
-  !important` with a comment forbidding bare-nav rail selectors.
-  Markup from tools/build_nav.py (NAV_ICONS table), regenerated all
-  11 pages. Verified in real browser, light + dark: no overlap, even
-  rhythm, clean active state.
+- **Navigation: left rail → two-level TOP BAR (final structure).**
+  Three rounds of restyling the rail failed ("the structure is
+  wrong"); the fourth round changed the container:
+  row 1 = brand tile + section tabs (each a link to its section's
+  first page) + theme toggle; row 2 = the active section's pages as
+  pills (nav.js tags `.in-section` on the active section's pills and
+  `.active` on the current page; CSS hides the rest). Content
+  reclaims the rail's 260px. Page titles standardized to one size
+  (1.6rem) — previously Suite create was a bare h1 (2em),
+  Results/Judgments/Reports default h2 (1.5em), Start a local 1.45rem
+  (owner flagged the mismatch); "Suite create" heading/title unified
+  to "Create" to match the nav. theme.js no longer injects its legacy
+  toggle when the shell ships a static one (was doubling up).
+  Verified in real browser across Benchmarks/Evals/Settings pages:
+  single-line rows, uniform pill heights, correct active states,
+  full-width table.
 
 ## 2026-10-11 (later) — UX round: Runs rename, pagination, sticky bar, quiet stop
 
