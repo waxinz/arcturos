@@ -557,10 +557,16 @@ def test_rename_run_cannot_touch_measurements(client):
 
 
 def test_runs_list_page_shows_name_column(client):
-    """/runs second column is the run name (2026-09-22 naming feature);
-    unset names render the honest `—` placeholder."""
-    html = client.get("/runs").text
-    assert "<th>Name</th>" in html
+    """Runs list merged into Compare Runs (2026-10-11): /runs redirects
+    there (308), and the merged picker keeps the Name column with the
+    honest `—` fallback (2026-09-22 naming feature)."""
+    res = client.get("/runs")
+    assert res.status_code == 200  # TestClient follows the redirect
+    assert res.url.path == "/compare"
+    html = res.text
+    # The picker header is DOM-built; the source-level pin is the header
+    # array literal plus the row template's honest fallback.
+    assert "'ID', 'Name', 'Server'" in html
     assert "r.name || '—'" in html          # honest fallback, never blank
 
 
@@ -678,8 +684,12 @@ def test_theme_assets_served(client):
     assert "color-scheme: dark" in css.text
     # Visited links keep the theme hue — no browser-default purple.
     assert "a:visited { color: var(--link); }" in css.text
+    # Merged page (2026-10-11): /runs redirects to /compare. The old page's
+    # inline `nav a:visited` rule was legacy header-nav CSS (dead since the
+    # sidebar shell); the rail's styling now lives in nav.css, so the pin
+    # is the shared stylesheet wiring.
     runs = client.get("/runs").text
-    assert "nav a:visited { color: var(--text); }" in runs
+    assert '/static/nav.css' in runs
 
 
 def test_theme_toggle_on_every_page(client):
@@ -694,6 +704,8 @@ def test_theme_toggle_on_every_page(client):
 def test_datetime_surfaces_use_local_time(client):
     """Datetime cells render via fmtLocalTime (viewer timezone, Pacific
     fallback); the '(UTC)' header claim is gone."""
+    # /runs redirects to the merged Compare Runs page (2026-10-11); the
+    # picker renders created_at through fmtLocalTime there.
     runs = client.get("/runs").text
     assert "fmtLocalTime(r.created_at)" in runs
     assert "Created (UTC)" not in runs
@@ -701,7 +713,7 @@ def test_datetime_surfaces_use_local_time(client):
     assert "fmtLocalTime(run.created_at)" in detail
     assert "fmtLocalTime(p.created_at)" in detail
     compare = client.get("/compare").text
-    assert "fmtLocalTime(r[k])" in compare
+    assert "fmtLocalTime(r.created_at)" in compare
     baselines = client.get("/baselines").text
     assert "fmtLocalTime(b.run_created_at)" in baselines
     models = client.get("/models").text

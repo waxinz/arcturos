@@ -53,6 +53,39 @@ class DispatchFailure(RuntimeError):
     """
 
 
+class SweepAborted(RuntimeError):
+    """Raised between points when the operator stops a faulty sweep.
+
+    Subclasses RuntimeError so every existing failure net (dispatch's
+    partial-run preservation, the async job's error path) handles it
+    unchanged: points completed before the abort are kept as a partial
+    run, points after it never start.
+    """
+
+
+class AbortFlag:
+    """Thread-safe cooperative-abort switch for a bench sweep.
+
+    The async job owns one; the UI's Stop button flips it via
+    ``ops.abort_bench_job``. ``check()`` raises SweepAborted — cheap to
+    call between points and inside streaming loops, never swallowed.
+    """
+
+    def __init__(self) -> None:
+        self._event = threading.Event()
+
+    def request(self) -> None:
+        self._event.set()
+
+    @property
+    def requested(self) -> bool:
+        return self._event.is_set()
+
+    def check(self) -> None:
+        if self._event.is_set():
+            raise SweepAborted("sweep aborted by operator (stop requested)")
+
+
 def default_run_name(server_url: str, model_fingerprint: str,
                      targets: list[int]) -> str:
     """Humanized default run name (2026-09-22 naming feature).
@@ -106,6 +139,7 @@ def dispatch_bench(
     power_host: str | None = None,
     power_gpu_index: int = 0,
     name: str | None = None,
+    abort: "AbortFlag | None" = None,
 ) -> dict:
     """Run a cold-cache bench sweep; store run + points; return run payload.
 
@@ -183,7 +217,13 @@ def dispatch_bench(
                 timeout=timeout, transport=transport,
                 on_point=_collecting_on_point,
                 api_key=api_key, streams=streams,
-                power_host=power_host, power_gpu_index=power_gpu_index)
+                power_host=power_host, power_gpu_index=power_gpu_index,
+                abort=abort)
+        except SweepAborted as exc:
+            return _aborted_result(db_path, server_url, targets,
+                                   partial_points, exc, engine="native",
+                                   name=name, transport=transport,
+                                   api_key=api_key)
         except (RuntimeError, ValueError, httpx.HTTPError) as exc:
             # httpx.HTTPError: connection-level failure (server died
             # mid-sweep) — previously escaped as an unhandled 500.
@@ -218,7 +258,11 @@ def dispatch_bench(
                 server_url, model, targets, n_predict,
                 timeout=timeout, on_point=_collecting_on_point,
                 api_key=api_key, streams=streams, power_host=power_host,
-                power_gpu_index=power_gpu_index)
+                power_gpu_index=power_gpu_index, abort=abort)
+        except SweepAborted as exc:
+            return _aborted_result(db_path, server_url, targets,
+                                   partial_points, exc, engine="openai",
+                                   name=name, model=model)
         except (RuntimeError, ValueError, httpx.HTTPError) as exc:
             if not partial_points:
                 raise DispatchFailure(
@@ -316,6 +360,7 @@ def _run_openai_bench_points(
     streams: int = 1,
     power_host: str | None = None,
     power_gpu_index: int = 0,
+    abort: "AbortFlag | None" = None,
 ) -> list[bench.BenchPoint]:
     """Sweep one OpenAI-compatible target over the given context lengths.
 
@@ -330,6 +375,12 @@ def _run_openai_bench_points(
     """
     points: list[bench.BenchPoint] = []
     for plan in _plan_openai_points(targets):
+        # Cooperative abort (ADR 006): a stop request raised between points
+        # leaves the sweep via SweepAborted — the dispatch failure net keeps
+        # the points already stored as a partial run.
+        if abort is not None:
+            abort.check()
+
         def _one_stream():
             # Fresh prompt PER STREAM (ADR 004). The OpenAI API exposes no
             # cache_prompt:false, so the UUID prefix is the only defence
@@ -343,8 +394,7 @@ def _run_openai_bench_points(
                 server_url, model,
                 [{"role": "user", "content": prompt}],
                 api_key=api_key, max_tokens=n_predict,
-                timeout_s=timeout,
-            )
+                timeout_s=timeout, abort=abort)
             if op.error:
                 raise RuntimeError(f"openai bench point failed at "
                                    f"{plan.target_tokens} tokens: {op.error}")
@@ -380,6 +430,39 @@ def _run_openai_bench_points(
     return points
 
 
+def _aborted_result(db_path, server_url: str, targets: list[int],
+                    partial_points: list, exc: "SweepAborted",
+                    engine: str, name: str | None,
+                    model: str | None = None,
+                    transport=None, api_key: str | None = None) -> dict:
+    """Store an operator-stopped sweep as a partial run (ADR 006).
+
+    Same shape as the failure partial path, with an honest status line:
+    the stop was commanded, not a server fault. Zero completed points ->
+    nothing is stored and DispatchFailure propagates (contract: no empty
+    run rows).
+    """
+    if not partial_points:
+        raise DispatchFailure(
+            f"sweep aborted before any point completed: {exc}") from exc
+    if engine == "native":
+        engine_meta = bench.capture_engine_metadata(
+            server_url, transport=transport, api_key=api_key)
+    else:
+        engine_meta = _openai_engine_meta(model)
+    run_id = bench.store_benchmark_run(
+        db_path, server_url, engine_meta, partial_points,
+        engine=None if engine == "native" else "openai",
+        status="partial", name=name)
+    return {
+        "run_id": run_id,
+        "status": "aborted",
+        "error": str(exc),
+        "engine_metadata": engine_meta,
+        "points": [_point_payload(p) for p in partial_points],
+    }
+
+
 def _openai_engine_meta(model: str) -> dict:
     """Engine metadata for an OpenAI-compatible run.
 
@@ -404,16 +487,46 @@ def _openai_engine_meta(model: str) -> dict:
 # the live progress view — never data. Bounded: finished jobs older than
 # _JOB_TTL are dropped on each new submission.
 _JOBS: dict[str, dict[str, Any]] = {}
+# Abort switches for RUNNING jobs (ADR 006): job_id -> AbortFlag. Kept out
+# of the job record (a live threading.Event would leak into the JSON
+# snapshot); popped when the abort fires or the job is pruned.
+_ABORT_FLAGS: dict[str, "AbortFlag"] = {}
 _JOBS_LOCK = threading.Lock()
 _JOB_TTL_S = 3600.0
+
+
+def abort_bench_job(job_id: str) -> dict[str, Any] | None:
+    """Request a cooperative abort of a running bench job (faulty-run stop).
+
+    Sets the flag the sweep checks between points (and inside streaming
+    decode loops): the CURRENT point is abandoned, points after it never
+    start, and the partial-run preservation path stores whatever completed
+    — an aborted run keeps its data, like any other mid-sweep failure.
+    Returns a snapshot for the API response, or None for an unknown job.
+    Aborting an already-finished job is a no-op (the flag just stays set).
+    """
+    with _JOBS_LOCK:
+        rec = _JOBS.get(job_id)
+        if rec is None:
+            return None
+        rec["abort_requested"] = True
+        flag = _ABORT_FLAGS.pop(job_id, None)
+    if flag is not None:
+        flag.request()
+    return {
+        "job_id": job_id,
+        "status": rec["status"],
+        "abort_requested": True,
+    }
 
 
 def _prune_jobs() -> None:
     now = time.monotonic()
     for job_id in [j for j, rec in _JOBS.items()
-                   if rec["status"] in ("done", "error")
+                   if rec["status"] in ("done", "error", "partial", "aborted")
                    and now - rec["finished_at"] > _JOB_TTL_S]:
         _JOBS.pop(job_id, None)
+        _ABORT_FLAGS.pop(job_id, None)
 
 
 def bench_job_status(job_id: str) -> dict[str, Any] | None:
@@ -498,6 +611,7 @@ def run_bench_job(
 
     _prune_jobs()
     job_id = uuid.uuid4().hex[:12]
+    abort_flag = AbortFlag()
     job: dict[str, Any] = {
         "job_id": job_id,
         "status": "preflight",          # preflight | running | done | error
@@ -514,9 +628,11 @@ def run_bench_job(
         "finished_at": None,
         "run_id": None,
         "error": None,
+        "abort_requested": False,
     }
     with _JOBS_LOCK:
         _JOBS[job_id] = job
+        _ABORT_FLAGS[job_id] = abort_flag
 
     def _worker() -> None:
         try:
@@ -534,9 +650,19 @@ def run_bench_job(
                 transport_name=transport_name, model=model,
                 on_point=on_point, streams=streams,
                 power_host=power_host, power_gpu_index=power_gpu_index,
-                name=name)
+                name=name, abort=abort_flag)
             with _JOBS_LOCK:
-                if result.get("status") == "partial":
+                if result.get("status") == "aborted":
+                    # Operator stop (ADR 006): completed points were kept
+                    # as a partial run — same reporting as a failure, with
+                    # an honest "stopped" line instead of a server error.
+                    job["status"] = "aborted"
+                    job["run_id"] = result["run_id"]
+                    job["status_line"] = (
+                        f"stopped by operator after "
+                        f"{job['points_done']} point(s) — partial run "
+                        f"#{result['run_id']} stored")
+                elif result.get("status") == "partial":
                     # Partial-run preservation (2026-09-22): the sweep failed
                     # mid-way but the completed points were stored — surface
                     # the partial run so the UI can link to the data that

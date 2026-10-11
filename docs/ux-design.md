@@ -48,11 +48,11 @@ Both personas share one SQLite store and one dashboard.
 ```
 CLI                          Dashboard (0.0.0.0:24816)
 ────────────                 ─────────────────────────
-arcturos bench               ├─ Runs          (list, filters, run detail)
-arcturos eval                ├─ Compare       (models × metrics; run diff)
-arcturos judge               ├─ Evals         (suites, results, drill-down)
-arcturos report              ├─ Judge         (A/B setup, blind runs, re-judge)
-arcturos models              ├─ Reports       (win-rate matrix, exports)
+arcturos bench               ├─ Compare Runs  (runs picker latest-first + charts; run detail)
+arcturos eval                ├─ Kick off      (bench dispatch, live progress, stop)
+arcturos eval                ├─ Evals         (suites, results, drill-down)
+arcturos judge               ├─ Judge         (A/B setup, blind runs, re-judge)
+arcturos report              ├─ Reports       (win-rate matrix, exports)
 arcturos export              ├─ Models        (registry, fingerprints)
 arcturos health              └─ Baselines     (pin reference runs)
 arcturos serve
@@ -113,30 +113,40 @@ into compare/baseline commands. CLI suggests: `arcturos report compare <run-id>`
 
 ### 4.2 J2 — Visual comparison (P1)
 
-**View: `/compare`**
+**View: `/compare` — "Compare Runs" (merged 2026-10-11; this section is
+the design of record after the merge)**
 
-- **Selector bar (top):** model multi-select (registry-backed, fingerprint
-  shown under label), metric multi-select (decode_tps, prefill_tps, ttft,
-  wall_time, acceptance, power_w, mtp_accepted; 2026-09-22 addition:
-  decode_tps_combined / prefill_tps_combined — the Σ across parallel
-  streams — selectable as their own checkboxes and plottable like any
-  other metric), context-point range slider
-  (log-scale awareness for 4k→250k).
-- **Chart area (center):** Chart.js line chart, x = context length,
-  y = selected metric, one series per model. Metric switch = tabs above chart
-  (not page reload). Bar mode available for wall_time.
-- **Run diff (below, collapsible):** pick two runs of the same model →
-  side-by-side table: flags/cmdline/quant on the left column pair, metrics
-  with deltas on the right. Deltas colored: green ≥ +2% improvement,
-  red ≤ −2%, gray otherwise. Absolute and % delta shown.
-- **Export:** `PNG`, `SVG`, `Shareable JSON` buttons top-right. JSON export
-  carries series data + run IDs + fingerprints so a chart can be rebuilt.
-- **Baseline mode:** when a run is pinned (J6), compare view shows a dashed
-  reference series and delta column vs baseline.
+- **Merged page (owner call 2026-10-11):** the former Runs list and the
+  Compare picker are ONE page. Layout top-to-bottom:
+  1. **Charts (top):** results render HERE, above the controls — the
+     operator never scrolls down to see what they just compared. The page
+     auto-scrolls to the charts after Compare fires.
+  2. **Runs picker (card):** every run, LATEST FIRST, columns
+     checkbox / ID (link to run detail) / Name / Server / Model
+     fingerprint / Engine / Context size / Created / Hide. The former
+     Runs-page capabilities ride along: runs CSV export button, per-row
+     Hide, bulk Hide-selected with confirm.
+  3. **Metrics card:** metric checkboxes — decode / prefill / TTFT (s) /
+     wall (s) PRE-CHECKED (the page opens comparison-ready; combined
+     t/s, tokens, acceptance, power opt-in), baseline select, Compare
+     button, compare-payload CSV export.
+- **Old routes:** `/` and `/runs` 308-redirect to `/compare`; run detail
+  stays at `/runs/{id}` (NOT redirected — it is a drill-down, not the list).
+- **Selector bar (historical, 2026-09-17):** model multi-select
+  (registry-backed, fingerprint shown under label), metric multi-select,
+  context-point range slider (log-scale awareness for 4k→250k).
+- **Chart area:** Chart.js line chart, x = context length (log), y =
+  selected metric, one series per run. 2dp display precision in tables
+  and tooltips.
+- **Run diff:** `/diff` remains a separate A/B drill-down (linked from
+  run detail); deltas colored by direction map.
+- **Export:** compare-payload CSV (`⤓ Export CSV`) after a compare; runs
+  CSV any time.
+- **Baseline mode:** when a run is pinned (J6), compare view shows a
+  dashed reference series and delta column vs baseline.
 
-**States:** empty (no runs) → onboarding card with the exact `bench` command
-template. Filtered-empty → "No runs match: model X, metric Y, ctx ≥ 128k"
-with a "clear filters" link. Superseded runs are toggleable ("show history").
+**States:** empty (no runs) → onboarding card pointing at the Kick off
+page. Compare with <2 runs selected → button disabled with a hint.
 
 ### 4.3 J3 — Run prompt evals (P2)
 
@@ -276,21 +286,29 @@ version, last refresh). No auth. All views URL-addressable.
   timestamps; metric table (nulls show `—` + reason tooltip); engine
   environment collapsible; actions: compare-from-here, pin as baseline,
   export, view artifacts.
-- **Compare:** as §4.2. Chart tabs = metrics; legend = model labels with
-  fingerprint tooltip.
+- **Compare Runs:** as §4.2 — merged page, charts on top, runs picker
+  latest-first with CSV/Hide, metrics card with the four headline metrics
+  pre-checked.
 - **Evals:** suite list → result sets → item table → drill-down (J3/J5
   share this hierarchy to avoid two navigations for the same data).
 - **Judge:** setup panel (models, judge, template) + live run status +
   judgment history list with generation selector.
 - **Reports:** as §4.5.
 - **Models:** registry cards; alias edit inline; fingerprint copy button.
-- **Create & Run (`/create`, J7):** four form cards in a responsive grid —
-  (1) bench dispatch (server URL, ctx targets, n_predict, optional API key
-   password field), (2) eval suite create, (3) suite item JSON editor with
-   client-side validation, (4) eval replay dispatch (target, fingerprint,
-   optional API key password field). 2026-09-30: manual benchmark point and
-   judgment record cards were removed (unused; API surfaces remain).
-   Every card posts to the API synchronously;
+- **Kick off (`/kickoff`, J7; `/create` is the legacy alias serving the
+  same page):** bench dispatch card — server URL, ctx targets, n_predict,
+  optional API key password field; "✔ Check target - just one ping,
+  Vasily" preflight button (owner naming, 2026-10-11); async progress
+  panel (animated bar, status line, elapsed/remaining clock, zoomable
+  per-point table) and a red **■ Stop run** button (2026-10-11) that
+  appears while a job is in flight — confirm dialog, then the sweep
+  aborts cooperatively and the partial run is linked from the status
+  line. The eval cards (suite create, item editor with client-side
+  validation, replay dispatch) moved to their own page
+  (`/evals/suites/new`, 2026-09-30 split). 2026-09-30: manual benchmark
+  point and judgment record cards were removed (unused; API surfaces
+  remain).
+  Every card posts to the API synchronously;
   busy state disables the button with a spinner label; result messages are
   green (success + stored ids echoed for the next form) or red (422/502
   detail shown verbatim). Suite-create echoes the new id into the replay

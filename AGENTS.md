@@ -110,6 +110,22 @@ arcturos/
 
 ### Log (newest first)
 
+> **2026-10-11 — convention change (owner call):** this log is FROZEN as
+> of this entry. Progress tracking moves to `STATUS.md` (newest-first,
+> same style); AGENTS.md remains the ground truth for conventions,
+> architecture, and environment facts only. Do not append new log
+> entries here — read `STATUS.md` to resume work.
+
+- 2026-10-11 — **Final round under this log; full details in STATUS.md
+  (2026-10-11 entry).** Compare Runs page merged (charts top, runs
+  latest-first, headline metrics pre-checked; `/` + `/runs` 308 to
+  `/compare`; index.html retired; build_nav owns the sidebar
+  replace-based); Kick off preflight renamed "✔ Check target - just one
+  ping, Vasily"; operator Stop run added (ADR 006: cooperative abort
+  flag, mid-SSE checks, partial-run preservation, `POST
+  /api/ops/bench/jobs/{id}/abort`); run #129 combined-decode math fixed
+  (ADR 005: decode Σ = per-stream rate sum; prefill keeps window
+  formula); PRD/ux-design amended; 247 tests green.
 - 2026-10-08 — Run detail shell fix: /runs/{id} was the one page the
   2026-09-30 round-2 shell migration missed — it still shipped the legacy
   header nav (old flat menu, stale /create#anchor eval links) under an

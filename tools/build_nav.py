@@ -24,12 +24,17 @@ STATIC = Path(__file__).resolve().parent.parent / "src" / "arcturos" / "static"
 # Existing file -> (page-id, section, <h1> title)
 PAGES: list[tuple[str, str, str, str]] = [
     ("bench-kickoff.html",   "kickoff",   "Benchmarks", "Kick off"),
-    ("index.html",           "runs",      "Benchmarks", "Runs"),
+    # Legacy alias (2026-09-30 split): /create serves the same bench
+    # kick-off card as /kickoff — same page identity, kept in the shell
+    # sync so its rail never drifts.
+    ("create.html",          "kickoff",   "Benchmarks", "Kick off"),
+    # Merged Compare Runs page (2026-10-11): the former /runs list merged
+    # into /compare — index.html retired, / and /runs redirect (main.py).
+    ("run_detail.html",      "runsdetail", "Benchmarks", "Run detail"),
     # Run detail is a drill-down, not a nav destination: it carries the
     # shell identity (Benchmarks section lit, no link highlighted) but
     # gets no NAV_MODEL entry.
-    ("run_detail.html",      "runsdetail", "Benchmarks", "Run detail"),
-    ("compare.html",         "compare",   "Benchmarks", "Compare"),
+    ("compare.html",         "compare",   "Benchmarks", "Compare Runs"),
     ("diff.html",            "diff",      "Benchmarks", "Run Diff"),
     ("eval-suite-new.html",  "evalsuite", "Evals",      "Suite create"),
     ("evals.html",           "evals",     "Evals",      "Results"),
@@ -43,8 +48,7 @@ PAGES: list[tuple[str, str, str, str]] = [
 NAV_MODEL = [
     ("Benchmarks", [
         ("kickoff", "/kickoff", "Kick off"),
-        ("runs",    "/",        "Runs"),
-        ("compare", "/compare", "Compare"),
+        ("compare", "/compare", "Compare runs"),
         ("diff",    "/diff",    "Run diff"),
     ]),
     ("Evals", [
@@ -113,8 +117,14 @@ def build_pages() -> None:
                       '', m.group(0)[len('<body'):-1]).rstrip()),
             t, count=1)
 
-        # ---- 4) sidebar injection right after <body …> --------------
-        if 'class="sidebar"' not in t:
+        # ---- 4) sidebar injection / refresh right after <body …> ------
+        # Replace-based (2026-10-11): the nav model is owned HERE, so a
+        # changed NAV_MODEL (e.g. the Runs+Compare merge) must rewrite the
+        # rail on every page, not just inject into pages missing one.
+        if 'class="sidebar"' in t:
+            t = re.sub(r'  <aside class="sidebar">.*?</aside>\n',
+                       sidebar, t, count=1, flags=re.S)
+        else:
             m = re.search(r'<body[^>]*>', t)
             assert m, f"{fname}: <body> not found"
             t = t[:m.end()] + "\n" + sidebar + t[m.end():]
