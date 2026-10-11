@@ -339,7 +339,11 @@ def test_compare_page_merged_defaults_and_order(client):
     assert 'id="hide-selected"' in html     # bulk hide carried over
     assert "<h2>Compare</h2>" in html
     assert "PAGE_SIZE = 25" in html         # client-side pagination
-    assert 'id="action-bar"' in html        # sticky Compare bar
+    # Compare sits in the runs toolbar (owner call: next to Hide selected,
+    # not a floating bar) with a live selected-count hint beside it.
+    assert 'id="compare-btn"' in html
+    assert 'id="abar-count"' in html
+    assert 'id="action-bar"' not in html
     assert 'id="charts"' in html            # results section above controls
     assert "renderAbDiff" in html           # integrated Run Diff
     assert "run-diff/" in html              # …fed by the run-diff payload

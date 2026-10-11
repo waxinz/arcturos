@@ -52,21 +52,9 @@
     /* Fingerprint chip: short label, full path in the tooltip. */
     .fp-chip { font-family: ui-monospace, monospace; font-size: .8rem;
                background: var(--code-bg); padding: .05rem .4rem; border-radius: 4px; }
-    /* ---- sticky action bar: Compare/Export never more than a glance away.
-       Sits at the viewport bottom while the page scrolls; only rendered
-       (visibility) once a compare-capable selection exists or charts do. */
-    #action-bar { position: sticky; bottom: 0; z-index: 30; display: flex;
-                  align-items: center; gap: .8rem; flex-wrap: wrap;
-                  background: var(--surface); border: 1px solid var(--border);
-                  border-radius: 8px; padding: .55rem .9rem; margin-top: 1.2rem;
-                  box-shadow: 0 -4px 14px var(--shadow); }
-    /* [hidden] must win over the display rule (author display:flex would
-       otherwise override the UA hidden rule — same trap as .stop-btn). */
-    #action-bar[hidden] { display: none; }
-    #action-bar .abar-count { font-size: .88rem; color: var(--text-muted); }
-    #action-bar .abar-spacer { flex: 1; }
-    #action-bar button[disabled] { opacity: .45; cursor: not-allowed; }
-    #action-bar #compare-btn { font-weight: 600; }
+    /* Runs toolbar: Compare / CSV / Hide-selected share one row next to
+       the list they act on (owner call 2026-10-11 — no floating bar). */
+    #run-list + .pager { margin-bottom: .2rem; }
     /* ---- pagination ---- */
     .pager { display: flex; align-items: center; gap: .55rem; margin-top: .55rem;
              font-size: .85rem; color: var(--text-muted); }
@@ -135,16 +123,18 @@
   <!-- ================= controls ======================================== -->
   <div class="card">
     <h3>Runs <span class="hint">latest first · select ≥ 2 to compare</span></h3>
-    <div style="margin: .4rem 0 .6rem;">
+    <div style="margin: .4rem 0 .6rem; display: flex; align-items: center; gap: .5rem; flex-wrap: wrap;">
+      <button id="compare-btn" disabled title="Chart the selected runs">Compare</button>
       <button id="export-runs" title="Download all runs as CSV">⤓ CSV</button>
       <button id="hide-selected" disabled title="Hide every checked run from list views (append-only flag; unhide any time)">Hide selected</button>
+      <span class="hint" id="abar-count"></span>
     </div>
     <div id="run-list"><span class="status">Loading runs…</span></div>
     <p id="runs-status" class="status"></p>
   </div>
 
   <div class="card">
-    <h3>Metrics <span class="hint">pick what to plot, then Compare in the bar below</span></h3>
+    <h3>Metrics <span class="hint">pick what to plot, then press Compare above</span></h3>
     <div class="controls">
       <div style="flex: 2; min-width: 340px;">
         <div class="metric-pick" id="metric-picks"></div>
@@ -160,16 +150,6 @@
         <button id="export-btn" style="margin-top:.7rem;" disabled>⤓ Export CSV</button>
       </div>
     </div>
-  </div>
-
-  <!-- ================= sticky action bar ================================
-       Compare + selected-count pinned to the viewport bottom: on a long
-       runs list the controls never force a scroll to the end (UX round
-       2026-10-11). Visible once ≥2 runs are checked or a chart exists. -->
-  <div id="action-bar" hidden>
-    <span class="abar-count" id="abar-count">0 runs selected</span>
-    <span class="abar-spacer"></span>
-    <button id="compare-btn" disabled>Compare</button>
   </div>
 
   <script src="/static/vendor/chart.umd.min.js"></script>
@@ -790,12 +770,7 @@
     function updateCompareBtn() {
       const n = document.querySelectorAll('#run-list input.run-select:checked').length;
       const btn = document.getElementById('compare-btn');
-      const bar = document.getElementById('action-bar');
       const hasCharts = Object.keys(charts).length > 0;
-      // The sticky bar appears when the operator can act (≥2 selected) or
-      // already has results on screen; hidden otherwise to keep the page
-      // uncluttered.
-      bar.hidden = !(n >= 2 || hasCharts);
       btn.disabled = n < 2;
       document.getElementById('abar-count').textContent =
         n === 0 ? 'no runs selected'
