@@ -28,10 +28,9 @@ PAGES: list[tuple[str, str, str, str]] = [
     # the Compare page). Page ids / routes / file names are stable — only
     # labels change.
     ("bench-kickoff.html",   "kickoff",   "Benchmarks", "Start"),
-    # Legacy alias (2026-09-30 split): /create serves the same bench
-    # start card as /kickoff — same page identity, kept in the shell
-    # sync so its rail never drifts.
-    ("create.html",          "kickoff",   "Benchmarks", "Start"),
+    # /create (legacy alias) serves bench-kickoff.html straight from
+    # main.py — no separate file, so no shell drift between the two
+    # routes (create.html deleted 2026-10-11 after its copy went stale).
     # Compare page (2026-10-11): the former /runs list merged into
     # /compare — index.html retired, / and /runs redirect (main.py).
     # Owner rename (same day): the page is "Compare".
@@ -138,11 +137,16 @@ def build_pages() -> None:
                       '', m.group(0)[len('<body'):-1]).rstrip()),
             t, count=1)
 
-        # ---- 4) sidebar injection / refresh right after <body …> ------
+        # ---- 4) nav injection / refresh right after <body …> ---------
         # Replace-based (2026-10-11): the nav model is owned HERE, so a
-        # changed NAV_MODEL (e.g. the Runs+Compare merge) must rewrite the
-        # rail on every page, not just inject into pages missing one.
-        if 'class="sidebar"' in t:
+        # changed NAV_MODEL must rewrite the nav on every page, not just
+        # inject into pages missing one. The topnav container is matched
+        # FIRST — matching only the legacy aside made every re-run after
+        # the top-nav round inject a second header.
+        if '<header class="topnav">' in t:
+            t = re.sub(r'[ \t]*<header class="topnav">.*?</header>\n',
+                       sidebar, t, count=1, flags=re.S)
+        elif 'class="sidebar"' in t:
             t = re.sub(r'  <aside class="sidebar">.*?</aside>\n',
                        sidebar, t, count=1, flags=re.S)
         else:

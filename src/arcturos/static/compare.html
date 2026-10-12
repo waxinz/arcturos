@@ -308,7 +308,7 @@
       selTh.appendChild(selAll);
       hrow.appendChild(selTh);
       for (const h of ['ID', 'Name', 'Server', 'Model fingerprint',
-                       'Engine', 'Context size', 'Created', '']) {
+                       'Created', '']) {
         const th = document.createElement('th');
         th.textContent = h;
         hrow.appendChild(th);
@@ -359,9 +359,11 @@
         const nameCell = document.createElement('td');
         nameCell.textContent = r.display_name || r.name || '—';
         tr.appendChild(nameCell);
+        // Engine / Context size dropped (owner call): surplus — the
+        // fingerprint chip already identifies the model build, and the
+        // engine/ctx live in the run's detail page.
         const cells = [
-          r.server_url, r.model_fingerprint,
-          r.engine, r.context_size, fmtLocalTime(r.created_at)
+          r.server_url, r.model_fingerprint, fmtLocalTime(r.created_at)
         ];
         for (let i = 0; i < cells.length; i++) {
           const td = document.createElement('td');
