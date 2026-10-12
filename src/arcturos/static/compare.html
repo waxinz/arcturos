@@ -307,7 +307,10 @@
       selAll.setAttribute('aria-label', 'Select all runs');
       selTh.appendChild(selAll);
       hrow.appendChild(selTh);
-      for (const h of ['ID', 'Name', 'Server', 'Model fingerprint',
+      // Engine column (owner request 2026-10-11): the freeform engine tag
+      // stored on the run row — placed before Model. "Model fingerprint"
+      // is now just "Model" (owner: shorter label, same data).
+      for (const h of ['ID', 'Name', 'Server', 'Engine', 'Model',
                        'Created', '']) {
         const th = document.createElement('th');
         th.textContent = h;
@@ -359,28 +362,32 @@
         const nameCell = document.createElement('td');
         nameCell.textContent = r.display_name || r.name || '—';
         tr.appendChild(nameCell);
-        // Engine / Context size dropped (owner call): surplus — the
-        // fingerprint chip already identifies the model build, and the
-        // engine/ctx live in the run's detail page.
+        // Engine (operator tag) before Model; legacy rows carry
+        // engine='llama.cpp'/'openai' from their transport. Cells render
+        // index-based (value-equality broke once engine could equal the
+        // server host string).
         const cells = [
-          r.server_url, r.model_fingerprint, fmtLocalTime(r.created_at)
+          { v: r.engine },
+          { v: r.server_url, kind: 'host' },
+          { v: r.model_fingerprint, kind: 'model' },
+          { v: fmtLocalTime(r.created_at), kind: 'date' },
         ];
-        for (let i = 0; i < cells.length; i++) {
+        for (const c of cells) {
           const td = document.createElement('td');
-          if (cells[i] === r.server_url && r.server_url) {
+          if (c.kind === 'host' && c.v) {
             // Host only in the cell; full URL stays in the tooltip — keeps
             // the row compact without hiding the port/scheme entirely.
             td.className = 'mono';
-            td.textContent = r.server_url.replace(/^https?:\/\//, '').split('/')[0];
-            td.title = r.server_url;
-          } else if (cells[i] === r.model_fingerprint && r.model_fingerprint) {
+            td.textContent = c.v.replace(/^https?:\/\//, '').split('/')[0];
+            td.title = c.v;
+          } else if (c.kind === 'model' && c.v) {
             // Chip shows the short model name; full fingerprint in tooltip.
             td.className = 'fp-chip';
-            td.textContent = shortName(r.model_fingerprint);
-            td.title = r.model_fingerprint;
+            td.textContent = shortName(c.v);
+            td.title = c.v;
           } else {
-            td.textContent = cells[i];
-            if (cells[i] === r.created_at) td.className = 'date';
+            td.textContent = c.v;
+            if (c.kind === 'date') td.className = 'date';
           }
           tr.appendChild(td);
         }

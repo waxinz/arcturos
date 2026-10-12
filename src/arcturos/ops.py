@@ -87,18 +87,24 @@ class AbortFlag:
 
 
 def default_run_name(server_url: str, model_fingerprint: str,
-                     targets: list[int]) -> str:
+                     targets: list[int], engine: str | None = None) -> str:
     """Humanized default run name (2026-09-22 naming feature).
 
-    'host · model · 64k/128k' — host from the URL, model as given
-    (registry alias rendering happens at display time), context targets
-    humanized (32768 -> 64k, 1500 -> 1500). Used when the operator does
-    not name a run explicitly.
+    Owner chain (2026-10-11): when the operator leaves the run name
+    blank AND an engine label was given, the name is
+    'Engine / Model / 64k/128k'; without an engine (or with an unknown
+    fingerprint) it falls back to the original 'host · model ·
+    64k/128k'. Model is rendered short (registry alias rendering
+    happens at display time), context targets humanized (32768 -> 64k,
+    1500 -> 1500).
     """
     host = compare.host_label(server_url)
     humanized = "/".join(
         f"{t // 1024}k" if t >= 1024 and t % 1024 == 0 else str(t)
         for t in targets)
+    short_model = compare.short_fingerprint(model_fingerprint)
+    if engine and short_model and short_model != "?":
+        return f"{engine} / {short_model} / {humanized}"
     return f"{host} · {model_fingerprint} · {humanized}"
 
 
@@ -135,6 +141,7 @@ def dispatch_bench(
     api_key: str | None = None,
     transport_name: str | None = None,
     model: str | None = None,
+    engine: str | None = None,
     streams: int = 1,
     power_host: str | None = None,
     power_gpu_index: int = 0,
@@ -172,6 +179,12 @@ def dispatch_bench(
     """
     if transport_name is None:
         transport_name = "native"
+    if transport_name == "auto":
+        # UI autodetect (2026-10-11): the operator no longer picks a
+        # transport; probe the target (openai first — the usual case —
+        # native fallback) and dispatch on what answers.
+        transport_name = preflight.detect_transport(
+            server_url, model=model, transport=transport, api_key=api_key)
     if transport_name not in _BENCH_TRANSPORTS:
         raise DispatchError(
             f"unknown transport {transport_name!r} — expected one of "
@@ -223,7 +236,7 @@ def dispatch_bench(
             return _aborted_result(db_path, server_url, targets,
                                    partial_points, exc, engine="native",
                                    name=name, transport=transport,
-                                   api_key=api_key)
+                                   api_key=api_key, engine_label=engine)
         except (RuntimeError, ValueError, httpx.HTTPError) as exc:
             # httpx.HTTPError: connection-level failure (server died
             # mid-sweep) — previously escaped as an unhandled 500.
@@ -247,11 +260,16 @@ def dispatch_bench(
                                                     transport=transport,
                                                     api_key=api_key)
         if name is None:
-            name = default_run_name(server_url,
-                                    engine_meta.get("model_fingerprint", "?"),
-                                    targets)
+            # Name chain (owner 2026-10-11): operator engine given ->
+            # 'Engine / Model / targets'; engine omitted (bare API call)
+            # keeps the classic 'host · model · targets'. Storage still
+            # records the llama.cpp default engine for the run row.
+            name = default_run_name(
+                server_url, engine_meta.get("model_fingerprint", "?"),
+                targets, engine=engine)
         run_id = bench.store_benchmark_run(db_path, server_url, engine_meta, points,
-                                           engine=None, name=name)
+                                           engine=engine or "llama.cpp",
+                                           name=name)
     else:
         try:
             points = _run_openai_bench_points(
@@ -262,7 +280,8 @@ def dispatch_bench(
         except SweepAborted as exc:
             return _aborted_result(db_path, server_url, targets,
                                    partial_points, exc, engine="openai",
-                                   name=name, model=model)
+                                   name=name, model=model,
+                                   engine_label=engine)
         except (RuntimeError, ValueError, httpx.HTTPError) as exc:
             if not partial_points:
                 raise DispatchFailure(
@@ -281,12 +300,14 @@ def dispatch_bench(
             }
         engine_meta = _openai_engine_meta(model)
         if name is None:
-            name = default_run_name(server_url,
-                                    engine_meta.get("model_fingerprint", "?"),
-                                    targets)
+            # Same chain as the native branch: engine given -> 'Engine /
+            # Model / targets', else classic host fallback. Storage
+            # records the openai default engine.
+            name = default_run_name(
+                server_url, engine_meta.get("model_fingerprint", "?"),
+                targets, engine=engine)
         run_id = bench.store_benchmark_run(db_path, server_url, engine_meta, points,
-                                       engine="openai"
-                                       if transport_name == "openai" else None,
+                                       engine=engine or "openai",
                                        name=name)
     return {
         "run_id": run_id,
@@ -434,13 +455,16 @@ def _aborted_result(db_path, server_url: str, targets: list[int],
                     partial_points: list, exc: "SweepAborted",
                     engine: str, name: str | None,
                     model: str | None = None,
-                    transport=None, api_key: str | None = None) -> dict:
+                    transport=None, api_key: str | None = None,
+                    engine_label: str | None = None) -> dict:
     """Store an operator-stopped sweep as a partial run (ADR 006).
 
     Same shape as the failure partial path, with an honest status line:
     the stop was commanded, not a server fault. Zero completed points ->
     nothing is stored and DispatchFailure propagates (contract: no empty
-    run rows).
+    run rows). ``engine_label`` carries the operator's freeform engine
+    tag (2026-10-11) so a stopped run records the same engine as a
+    complete one would.
     """
     if not partial_points:
         raise DispatchFailure(
@@ -452,7 +476,7 @@ def _aborted_result(db_path, server_url: str, targets: list[int],
         engine_meta = _openai_engine_meta(model)
     run_id = bench.store_benchmark_run(
         db_path, server_url, engine_meta, partial_points,
-        engine=None if engine == "native" else "openai",
+        engine=engine_label or (None if engine == "native" else "openai"),
         status="partial", name=name)
     return {
         "run_id": run_id,
@@ -580,6 +604,7 @@ def run_bench_job(
     api_key: str | None,
     transport_name: str,
     model: str | None,
+    engine: str | None = None,
     streams: int = 1,
     power_host: str | None = None,
     power_gpu_index: int = 0,
@@ -594,10 +619,10 @@ def run_bench_job(
     """
     if transport_name is None:
         transport_name = "native"
-    if transport_name not in _BENCH_TRANSPORTS:
+    if transport_name not in _BENCH_TRANSPORTS + ("auto",):
         raise DispatchError(
             f"unknown transport {transport_name!r} — expected one of "
-            f"{', '.join(_BENCH_TRANSPORTS)}")
+            f"{', '.join(_BENCH_TRANSPORTS)}, auto")
     if transport_name == "openai" and not (isinstance(model, str) and model):
         raise DispatchError(
             "transport 'openai' requires 'model' (the chat model name the "
@@ -647,7 +672,7 @@ def run_bench_job(
             result = dispatch_bench(
                 db_path=db_path, server_url=server_url, targets=targets,
                 n_predict=n_predict, api_key=api_key,
-                transport_name=transport_name, model=model,
+                transport_name=transport_name, model=model, engine=engine,
                 on_point=on_point, streams=streams,
                 power_host=power_host, power_gpu_index=power_gpu_index,
                 name=name, abort=abort_flag)

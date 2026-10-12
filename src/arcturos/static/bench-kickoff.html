@@ -161,45 +161,57 @@
     <p class="page-sub">Dispatch a benchmark sweep against a target server, watch it
        run, stop it if it goes sideways.</p>
     <div class="card">
-      <p class="hint">Runs a cold-cache sweep. Transport <b>native</b> targets a llama.cpp server (/completion); <b>openai</b> targets any OpenAI-compatible chat server (tabbyAPI, vLLM, litellm — needs a model name). Stores a run + one benchmark row per context target.</p>
+      <p class="hint">Runs a cold-cache sweep against the target and stores a run + one
+        benchmark row per context target. The wire protocol is autodetected
+        (OpenAI-compatible chat first, llama.cpp native fallback) — just name
+        the engine (vLLM, tabbyAPI, llama.cpp, …) so the run is labelled.</p>
       <form id="bench-form" autocomplete="off" onsubmit="return false;">
+        <div class="field wide">
+          <label for="bench-name">Run name (optional — default: Engine / Model / targets)</label>
+          <input id="bench-name" placeholder="e.g. GLM 192k sweep">
+        </div>
         <div class="field">
           <label for="bench-url">Server URL</label>
           <input id="bench-url" list="prev-urls" value="http://localhost:8000">
           <datalist id="prev-urls"></datalist>
         </div>
         <div class="field">
-          <label for="bench-model">Model (openai transport)</label>
-          <input id="bench-model" list="prev-models" value="">
+          <label for="bench-key">API key (optional, for auth-protected servers)</label>
+          <input id="bench-key" type="password" placeholder="sk-…">
+        </div>
+        <div class="field">
+          <label for="bench-model">Model</label>
+          <input id="bench-model" list="prev-models" value="" placeholder="e.g. GLM-5.3-Flash or a GGUF path">
           <datalist id="prev-models"></datalist>
+        </div>
+        <div class="field">
+          <label for="bench-engine">Engine</label>
+          <input id="bench-engine" list="prev-engines" value="" placeholder="e.g. vLLM, tabbyAPI, llama.cpp">
+          <datalist id="prev-engines"></datalist>
         </div>
         <div class="field wide">
           <label for="bench-targets">Context targets (tokens, comma-separated)</label>
           <input id="bench-targets" value="32768, 65536, 131072, 196608, 256256">
         </div>
-        <div class="field">
-          <label for="bench-transport">Transport</label>
-          <select id="bench-transport">
-            <option value="openai" selected>openai (tabbyAPI / vLLM / litellm)</option>
-            <option value="native">native (llama.cpp)</option>
-          </select>
-        </div>
-        <div class="field">
-          <label for="bench-key">API key (optional, for auth-protected servers)</label>
-          <input id="bench-key" type="password" placeholder="sk-…">
-        </div>
-        <div class="field wide">
-          <label for="bench-name">Run name (optional — default: host · model · targets)</label>
-          <input id="bench-name" placeholder="e.g. GLM 192k sweep">
-        </div>
         <div class="field wide minors">
           <div>
             <label for="bench-npredict">n_predict (tokens per point)</label>
-            <input id="bench-npredict" value="256">
+            <select id="bench-npredict">
+              <option>256</option><option>512</option><option>1024</option>
+              <option>2048</option><option>4096</option><option>8192</option>
+              <option>16384</option><option>32768</option><option>65535</option>
+            </select>
           </div>
           <div>
             <label for="bench-streams">Parallel streams (identical runs per target, 1-16)</label>
-            <input id="bench-streams" value="1">
+            <select id="bench-streams">
+              <option>1</option><option>2</option><option>3</option>
+              <option>4</option><option>5</option><option>6</option>
+              <option>7</option><option>8</option><option>9</option>
+              <option>10</option><option>11</option><option>12</option>
+              <option>13</option><option>14</option><option>15</option>
+              <option>16</option>
+            </select>
           </div>
         </div>
         <div class="field wide actions">
@@ -252,8 +264,8 @@ function $(id) { return document.getElementById(id); }
       return detail || ('HTTP ' + status);
     }
 
-    // ---- type-it or pick-it history (owner request): Server URL and
-    // Model are plain text inputs with a <datalist> fed from the run
+    // ---- type-it or pick-it history (owner request): Server URL, Model
+    // and Engine are plain text inputs with a <datalist> fed from the run
     // store, so typing a new value works exactly as before AND a click
     // / ▼ offers everything already used, freshest first.
     function fillDatalist(id, values) {
@@ -271,13 +283,21 @@ function $(id) { return document.getElementById(id); }
         if (!res.ok) return;
         const data = await res.json();
         const runs = Array.isArray(data) ? data : (data.runs || []);
-        const urls = [], models = [];
+        const urls = [], models = [], engines = [];
+        const push = (arr, v) => {
+          if (v && !arr.includes(v)) arr.push(v);
+        };
         for (const r of runs) {
-          if (r.server_url && !urls.includes(r.server_url)) urls.push(r.server_url);
-          if (r.model_fingerprint && !models.includes(r.model_fingerprint)) models.push(r.model_fingerprint);
+          push(urls, r.server_url);
+          push(models, r.model_fingerprint);
+          // Run rows store the engine that served them ('llama.cpp',
+          // 'openai', or the operator's freeform tag) — exactly the
+          // history the Engine field wants.
+          push(engines, r.engine);
         }
         fillDatalist('prev-urls', urls);
         fillDatalist('prev-models', models);
+        fillDatalist('prev-engines', engines);
       } catch (err) { /* history is a nicety — never block the form */ }
     })();
 
@@ -287,10 +307,10 @@ function $(id) { return document.getElementById(id); }
       try {
         // POST: the API key travels in the body, never in a URL (GET query
         // strings leak into access logs / history / proxies — UX review).
-        // bench / eval listeners pass their own key element; the page only
-        // ships bench-key, so anything else falls back to null (no key).
+        // kind='auto' (2026-10-11): the page no longer picks a transport;
+        // the server probes openai first, native fallback.
         const keyEl = document.getElementById('bench-key');
-        const body = {target: targetEl.value.trim(), kind: kind};
+        const body = {target: targetEl.value.trim(), kind: 'auto'};
         if (keyEl && keyEl.value.trim()) body.api_key = keyEl.value.trim();
         const res = await fetch('/api/ops/preflight', {method: 'POST',
           headers: {'Content-Type': 'application/json'},
@@ -306,7 +326,7 @@ function $(id) { return document.getElementById(id); }
       } catch (err) { setMsg(msgEl, 'Preflight failed: ' + err); }
       finally { kindBtn.disabled = false; kindBtn.textContent = '✔ Check target - just one ping, Vasily'; }
     }
-    $('bench-pf-btn').onclick = () => checkPreflight($('bench-pf-btn'), $('bench-url'), $('bench-msg'), $('bench-transport').value === 'openai' ? 'eval' : 'bench');
+    $('bench-pf-btn').onclick = () => checkPreflight($('bench-pf-btn'), $('bench-url'), $('bench-msg'));
 
     // ---- async bench job + progress indicator ---------------------------
     const bpPoll = { timer: null, zoom: true, streams: 1, jobId: null,
@@ -523,9 +543,11 @@ function $(id) { return document.getElementById(id); }
       }
       if (dropped.length) setMsg($('bench-msg'),
         'Ignored non-numeric target(s): ' + dropped.join(', '));
-      const transport = $('bench-transport').value;
-      if (transport === 'openai' && !$('bench-model').value.trim()) {
-        setMsg($('bench-msg'), 'The openai transport needs a model name (e.g. GLM-5.3-Flash)');
+      const transport = 'auto';
+      // The autodetected openai path needs a model name; the native path
+      // doesn't. A blank Model with a filled Engine is legal (native).
+      if (!$('bench-model').value.trim() && !$('bench-engine').value.trim()) {
+        setMsg($('bench-msg'), 'Fill in Model (OpenAI-compatible server) or Engine (e.g. llama.cpp) — or both');
         return;
       }
       busy($('bench-btn'), true, 'Kick off bench');
@@ -542,6 +564,7 @@ function $(id) { return document.getElementById(id); }
             api_key: $('bench-key').value.trim() || null,
             transport: transport,
             model: $('bench-model').value.trim() || null,
+            engine: $('bench-engine').value.trim() || null,
           })});
         const data = await res.json().catch(() => ({}));
         if (!res.ok) { setMsg($('bench-msg'), 'Kick off failed: ' + fmtDetail(data.detail, res.status)); return; }
