@@ -91,12 +91,12 @@ def default_run_name(server_url: str, model_fingerprint: str,
     """Humanized default run name (2026-09-22 naming feature).
 
     Owner chain (2026-10-11): when the operator leaves the run name
-    blank AND an engine label was given, the name is
-    'Engine / Model / 64k/128k'; without an engine (or with an unknown
-    fingerprint) it falls back to the original 'host · model ·
-    64k/128k'. Model is rendered short (registry alias rendering
-    happens at display time), context targets humanized (32768 -> 64k,
-    1500 -> 1500).
+    blank AND an engine label was given, the name is just
+    'Engine / Model' (owner: drop the targets part); without an engine
+    (or with an unknown fingerprint) it falls back to the original
+    'host · model · 64k/128k'. Model is rendered short (registry alias
+    rendering happens at display time); the host fallback keeps
+    humanized targets (32768 -> 64k, 1500 -> 1500).
     """
     host = compare.host_label(server_url)
     humanized = "/".join(
@@ -104,7 +104,7 @@ def default_run_name(server_url: str, model_fingerprint: str,
         for t in targets)
     short_model = compare.short_fingerprint(model_fingerprint)
     if engine and short_model and short_model != "?":
-        return f"{engine} / {short_model} / {humanized}"
+        return f"{engine} / {short_model}"
     return f"{host} · {model_fingerprint} · {humanized}"
 
 

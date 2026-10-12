@@ -111,8 +111,8 @@ second header on all pages; now rewrites `<header class="topnav">`
 - **Start form**: Run name on top; one field per line (only
   n_predict + Parallel streams share a line, both dropdowns now —
   256..65535 default 256; 1-16 default 1); API key follows Server URL.
-  Blank name + engine given -> 'Engine / Model / targets' (short
-  model); no engine -> classic 'host · model · targets' (pinned).
+  Blank name + engine given -> 'Engine / Model' (short
+  model; owner later trimmed the targets part off); no engine -> classic 'host · model · targets' (pinned).
 - Gotchas hit and fixed: .actions is also .field (flex-direction:
   column by default — the buttons stacked until flex-direction: row
   was explicit); compare cell renderer was value-equality based
