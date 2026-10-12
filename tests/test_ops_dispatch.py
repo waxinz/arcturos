@@ -1061,3 +1061,35 @@ def test_dispatch_eval_replay_failure_rolls_back_transactionally(db_path):
     assert conn.execute("SELECT COUNT(*) FROM eval_runs").fetchone()[0] == 0
     assert conn.execute("SELECT COUNT(*) FROM eval_results").fetchone()[0] == 0
     conn.close()
+
+
+def test_dispatch_bench_engine_label_and_name_chain(db_path):
+    """Owner 2026-10-11: the operator's freeform engine tag is stored on
+    the run row, and an unnamed run is named 'Engine / Model / targets'.
+    A bare API call (no engine) keeps the classic host · model name."""
+    transport = _bench_app()
+    result = ops.dispatch_bench(db_path, "http://fake:8000", [128], 8,
+                                transport=transport, engine="vLLM")
+    from arcturos.bench import export_run_json
+    exported = export_run_json(db_path, result["run_id"])
+    assert exported["run"]["engine"] == "vLLM"
+    assert exported["run"]["name"] == "vLLM / test / 128"
+    # no engine -> classic fallback name, llama.cpp default engine
+    result2 = ops.dispatch_bench(db_path, "http://fake:8000", [128], 8,
+                                 transport=transport)
+    exported2 = export_run_json(db_path, result2["run_id"])
+    assert exported2["run"]["engine"] == "llama.cpp"
+    assert exported2["run"]["name"] == "fake · /models/test.gguf · 128"
+
+
+def test_dispatch_bench_transport_auto_detects_native(db_path):
+    """transport='auto' probes the target: a llama.cpp server (tokenize
+    answers, no chat) is detected native and the sweep runs the native
+    path — the Start page no longer asks the operator to pick."""
+    transport = _bench_app()
+    result = ops.dispatch_bench(db_path, "http://fake:8000", [128], 8,
+                                transport=transport, transport_name="auto")
+    from arcturos.bench import export_run_json
+    exported = export_run_json(db_path, result["run_id"])
+    assert exported["run"]["engine"] == "llama.cpp"   # native path ran
+    assert len(exported["benchmarks"]) == 1

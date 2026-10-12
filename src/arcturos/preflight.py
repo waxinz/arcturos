@@ -109,6 +109,31 @@ def _check_chat(base_url: str, client: httpx.Client, model: str | None) -> dict:
         return {"name": "chat", "ok": False, "detail": f"POST /v1/chat/completions failed: {exc}"}
 
 
+def detect_transport(base_url: str, model: str | None = None,
+                     transport=None, timeout: float = 8.0,
+                     api_key: str | None = None) -> str:
+    """Autodetect the wire protocol for a bench target (2026-10-11).
+
+    The Start page no longer asks the operator to pick a transport —
+    the server tells us: a llama.cpp server answers GET /tokenize, an
+    OpenAI-compatible server (tabbyAPI, vLLM, litellm) answers the chat
+    probe. 'openai' first (it is the usual case per the owner), native
+    on fallback. Returns 'openai' | 'native' — never raises; an
+    unreachable target surfaces through the subsequent preflight with
+    real check details.
+    """
+    for kind in ("eval", "bench"):
+        try:
+            pf = preflight(base_url, kind=kind, model=model,
+                           transport=transport, timeout=timeout,
+                           api_key=api_key)
+            if pf.ok():
+                return "openai" if kind == "eval" else "native"
+        except (httpx.HTTPError, ValueError):
+            continue
+    return "openai"
+
+
 def preflight(base_url: str, kind: str = "bench", model: str | None = None,
               transport=None, timeout: float = 20.0,
               api_key: str | None = None) -> PreflightResult:

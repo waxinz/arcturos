@@ -605,7 +605,7 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
     @app.post("/api/ops/bench")
     def ops_bench(body: dict, db=Depends(get_db)):
         """Kick off a bench sweep: {server_url, targets: [...], n_predict,
-        api_key?, transport?, model?}.
+        api_key?, transport?, model?, engine?, name?}.
 
         Synchronous: returns the stored run_id + per-point metrics. The UI
         shows a spinner for the duration; long sweeps use a small target
@@ -618,7 +618,17 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
         ``openai`` transport runs preflight as reachable + chat (these
         servers have no /tokenize) and streams each point for client-side
         TTFT + decode; it requires ``model`` (the chat model name).
-        ``model`` is ignored for the native transport.
+        ``model`` is ignored for the native transport. The UI no longer
+        sends ``transport`` (2026-10-11): it autodetects server-side —
+        llama.cpp /tokenize first, OpenAI chat fallback — but the
+        parameter stays valid for API users.
+
+        ``engine`` (owner request 2026-10-11) is the operator's freeform
+        engine tag stored on the run row ('llama.cpp', 'vLLM',
+        'tabbyAPI'…); when set AND the run is unnamed, the default run
+        name becomes 'Engine / Model / targets' (falling back to
+        'host · model · targets' when the engine or fingerprint is
+        unknown).
         """
         server_url = body.get("server_url")
         targets = body.get("targets")
@@ -626,6 +636,7 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
         api_key = body.get("api_key")
         transport = body.get("transport", "native")
         model = body.get("model")
+        engine = body.get("engine")
         streams = body.get("streams", 1)
         power_host = body.get("power_host")
         power_gpu_index = body.get("power_gpu_index", 0)
@@ -637,11 +648,15 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
             raise HTTPException(status_code=422, detail="targets must be a list of ints >= 1")
         if not isinstance(n_predict, int) or n_predict < 1:
             raise HTTPException(status_code=422, detail="n_predict must be an int >= 1")
-        if not isinstance(transport, str) or transport not in ("native", "openai"):
+        if not isinstance(transport, str) or transport not in ("native", "openai", "auto"):
             raise HTTPException(status_code=422,
-                                detail="transport must be 'native' or 'openai'")
+                                detail="transport must be 'native', 'openai' or 'auto'")
         if model is not None and not isinstance(model, str):
             raise HTTPException(status_code=422, detail="model must be a string")
+        if engine is not None and (not isinstance(engine, str)
+                                   or not engine.strip()):
+            raise HTTPException(status_code=422,
+                                detail="engine must be a non-empty string when set")
         if not isinstance(streams, int) or isinstance(streams, bool) \
                 or not (1 <= streams <= 16):
             raise HTTPException(status_code=422,
@@ -661,7 +676,9 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
             return ops.dispatch_bench(
                 db_path=db_path, server_url=server_url,
                 targets=targets, n_predict=n_predict, api_key=api_key,
-                transport_name=transport, model=model, streams=streams,
+                transport_name=transport, model=model,
+                engine=engine.strip() if isinstance(engine, str) else None,
+                streams=streams,
                 power_host=power_host, power_gpu_index=power_gpu_index,
                 name=name.strip() if isinstance(name, str) else None)
         except ops.DispatchError as exc:
@@ -687,6 +704,7 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
         api_key = body.get("api_key")
         transport = body.get("transport", "native")
         model = body.get("model")
+        engine = body.get("engine")
         streams = body.get("streams", 1)
         power_host = body.get("power_host")
         power_gpu_index = body.get("power_gpu_index", 0)
@@ -698,11 +716,15 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
             raise HTTPException(status_code=422, detail="targets must be a list of ints >= 1")
         if not isinstance(n_predict, int) or n_predict < 1:
             raise HTTPException(status_code=422, detail="n_predict must be an int >= 1")
-        if not isinstance(transport, str) or transport not in ("native", "openai"):
+        if not isinstance(transport, str) or transport not in ("native", "openai", "auto"):
             raise HTTPException(status_code=422,
-                                detail="transport must be 'native' or 'openai'")
+                                detail="transport must be 'native', 'openai' or 'auto'")
         if model is not None and not isinstance(model, str):
             raise HTTPException(status_code=422, detail="model must be a string")
+        if engine is not None and (not isinstance(engine, str)
+                                   or not engine.strip()):
+            raise HTTPException(status_code=422,
+                                detail="engine must be a non-empty string when set")
         if not isinstance(streams, int) or isinstance(streams, bool) \
                 or not (1 <= streams <= 16):
             raise HTTPException(status_code=422,
@@ -722,7 +744,9 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
             job_id = ops.run_bench_job(
                 db_path=db_path, server_url=server_url, targets=targets,
                 n_predict=n_predict, api_key=api_key,
-                transport_name=transport, model=model, streams=streams,
+                transport_name=transport, model=model,
+                engine=engine.strip() if isinstance(engine, str) else None,
+                streams=streams,
                 power_host=power_host, power_gpu_index=power_gpu_index,
                 name=name.strip() if isinstance(name, str) else None)
         except ops.DispatchError as exc:
@@ -815,8 +839,23 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
         api_key = body.get("api_key")
         if not isinstance(target, str) or not target.startswith("http"):
             raise HTTPException(status_code=422, detail="target must be an http(s) URL")
-        if kind not in ("bench", "eval"):
-            raise HTTPException(status_code=422, detail="kind must be 'bench' or 'eval'")
+        if kind not in ("bench", "eval", "auto"):
+            raise HTTPException(status_code=422,
+                                detail="kind must be 'bench', 'eval' or 'auto'")
+        if kind == "auto":
+            # UI autodetect (2026-10-11): the Start page no longer picks a
+            # transport, so the interactive check probes openai first (the
+            # usual case) and falls back to native. On total failure the
+            # openai result is returned — its check details are the ones
+            # the operator can act on. Worst case is 2 probes (~32s) on a
+            # dead target; the button is explicitly a "check" action.
+            pf_eval = ops.preflight.preflight(target, kind="eval", model=model,
+                                              api_key=api_key, timeout=8.0)
+            if pf_eval.ok():
+                return pf_eval
+            pf_bench = ops.preflight.preflight(target, kind="bench", model=model,
+                                               api_key=api_key, timeout=8.0)
+            return pf_bench if pf_bench.ok() else pf_eval
         try:
             return ops.preflight.preflight(target, kind=kind, model=model,
                                            api_key=api_key, timeout=8.0)
