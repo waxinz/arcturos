@@ -212,7 +212,7 @@
         </div>
         <div class="field wide actions">
           <button id="bench-btn">▶ Kick off bench</button>
-          <button id="bench-pf-btn" style="background:var(--pf-btn)">✔ Check target - just one ping, Vasily</button>
+          <button id="bench-pf-btn" style="background:var(--pf-btn)"></button>
           <button id="bench-stop-btn" type="button" class="stop-btn" hidden
                   title="Abort the running sweep: completed points are kept as a partial run">■ Stop run</button>
         </div>
@@ -297,6 +297,12 @@ function $(id) { return document.getElementById(id); }
       } catch (err) { /* history is a nicety — never block the form */ }
     })();
 
+    // Check-target button label lives in ONE constant — the button markup
+    // is empty and filled here, so the busy-state restore can never drift
+    // from the initial label (owner renamed it 2026-10-11: Hunt for Red
+    // October, not 'Check target').
+    const PF_LABEL = '✔ Give me a ping, Vasily. One ping only, please.';
+    $('bench-pf-btn').textContent = PF_LABEL;
     async function checkPreflight(kindBtn, targetEl, msgEl, kind) {
       kindBtn.disabled = true; kindBtn.textContent = '⏳ Checking…';
       setMsg(msgEl, 'Preflight…');
@@ -320,7 +326,7 @@ function $(id) { return document.getElementById(id); }
           setMsg(msgEl, '✘ ' + fails.map(c => c.name + ': ' + c.detail).join(' | '));
         }
       } catch (err) { setMsg(msgEl, 'Preflight failed: ' + err); }
-      finally { kindBtn.disabled = false; kindBtn.textContent = '✔ Check target - just one ping, Vasily'; }
+      finally { kindBtn.disabled = false; kindBtn.textContent = PF_LABEL; }
     }
     $('bench-pf-btn').onclick = () => checkPreflight($('bench-pf-btn'), $('bench-url'), $('bench-msg'));
 
