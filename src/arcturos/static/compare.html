@@ -40,8 +40,6 @@
     .col-check { width: 2rem; text-align: center; }
     td.col-check { text-align: center; }
     code { background: var(--code-bg); padding: 0 .35rem; border-radius: 4px; }
-    .linklike { background: none; border: none; color: var(--link); font-size: .8rem;
-                padding: 0; cursor: pointer; text-decoration: underline; }
     h2 button { margin-left: .5rem; font-size: .8rem; padding: .3rem .7rem; }
     .results-head { display: flex; align-items: baseline; gap: .75rem; }
     /* Runs table polish: zebra rows + hover affordance; selected rows tint. */
@@ -309,9 +307,11 @@
       hrow.appendChild(selTh);
       // Engine column (owner request 2026-10-11): the freeform engine tag
       // stored on the run row — placed before Model. "Model fingerprint"
-      // is now just "Model" (owner: shorter label, same data).
+      // is now just "Model" (owner: shorter label, same data). This list
+      // MUST stay positionally aligned with the cells array below
+      // (pinned by test_compare_table_column_order_matches_cells).
       for (const h of ['ID', 'Name', 'Server', 'Engine', 'Model',
-                       'Created', '']) {
+                       'Created']) {
         const th = document.createElement('th');
         th.textContent = h;
         hrow.appendChild(th);
@@ -362,13 +362,14 @@
         const nameCell = document.createElement('td');
         nameCell.textContent = r.display_name || r.name || '—';
         tr.appendChild(nameCell);
-        // Engine (operator tag) before Model; legacy rows carry
-        // engine='llama.cpp'/'openai' from their transport. Cells render
-        // index-based (value-equality broke once engine could equal the
-        // server host string).
+        // Cells are INDEX-ALIGNED with the header list above:
+        // ['ID', 'Name', 'Server', 'Engine', 'Model', 'Created'].
+        // kind tags drive rendering (host/model chip/date); engine is a
+        // plain cell. (Shipped once misaligned — server/engine swapped —
+        // because header and cells were verified separately.)
         const cells = [
-          { v: r.engine },
           { v: r.server_url, kind: 'host' },
+          { v: r.engine, kind: 'engine' },
           { v: r.model_fingerprint, kind: 'model' },
           { v: fmtLocalTime(r.created_at), kind: 'date' },
         ];
@@ -391,21 +392,8 @@
           }
           tr.appendChild(td);
         }
-        // Per-row Hide (append-only flag, mirrors the old Runs page).
-        const actions = document.createElement('td');
-        const hideBtn = document.createElement('button');
-        hideBtn.className = 'linklike';
-        hideBtn.textContent = 'Hide';
-        hideBtn.onclick = async () => {
-          if (!window.confirm('Hide run #' + r.id + ' from list views? (append-only flag — nothing is deleted, unhide any time)')) return;
-          const res2 = await fetch('/api/runs/' + r.id + '/visibility', {
-            method: 'PUT', headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({hidden: true})});
-          if (res2.ok) loadRuns();
-          else status.textContent = 'Hide failed: HTTP ' + res2.status;
-        };
-        actions.appendChild(hideBtn);
-        tr.appendChild(actions);
+        // Per-row Hide removed (owner call 2026-10-11): redundant with
+        // the toolbar's bulk "Hide selected". Selection drives hiding.
         tbody.appendChild(tr);
       }
       table.appendChild(tbody);
