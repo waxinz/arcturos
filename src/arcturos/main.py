@@ -626,7 +626,7 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
         ``engine`` (owner request 2026-10-11) is the operator's freeform
         engine tag stored on the run row ('llama.cpp', 'vLLM',
         'tabbyAPI'…); when set AND the run is unnamed, the default run
-        name becomes 'Engine / Model / targets' (falling back to
+        name becomes 'Engine / Model' (falling back to
         'host · model · targets' when the engine or fingerprint is
         unknown).
         """
