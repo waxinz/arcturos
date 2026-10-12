@@ -69,6 +69,33 @@ Compare, nicer menu."
   single-line rows, uniform pill heights, correct active states,
   full-width table.
 
+## 2026-10-11 (later) — Theme toggle fix; compare columns; Start page rebuild
+
+- **Theme toggle was dead**: the skip-injection guard stopped creating
+the legacy button without binding the shell's static one. theme.js
+now prefers the static `[data-theme-toggle]` and binds the handler
+(legacy injection only when a page ships none). Verified live:
+single toggle, flips both ways, persists.
+- **Compare runs table**: Engine and Context size columns removed
+(owner: surplus — fingerprint chip + run detail carry them).
+- **Start page rebuilt** (owner brief): redundant "Benchmark run —
+kick off" card heading deleted (menu Start + page title Start is
+enough); form is a 2-column grid on desktop / 1 column ≤640px;
+n_predict + streams share a line; Server URL & Model gained
+`<datalist>` history from the run store (type-or-pick, freshest
+first); Stop moved into the actions row; progress panel auto-opens
+with a per-context stage-pill strip (pill fills when its point
+lands) above the details table — glanceable on mobile where the
+wide table only scrolls (research pattern: W&B sweep progress grid /
+MLflow run status pills).
+- **/create fork killed**: main.py now serves bench-kickoff.html for
+both routes; create.html (stale copy: old headings/form) deleted.
+- **build_nav.py fixed to rewrite topnav**: it only matched the legacy
+`aside.sidebar`, so any post-topnav re-run would have injected a
+second header on all pages; now rewrites `<header class="topnav">`
+(verified: full regen produces zero diffs).
+- Tests 247 green; static gates clean (10 pages — create.html gone).
+
 ## 2026-10-11 (later) — UX round: Runs rename, pagination, sticky bar, quiet stop
 
 Owner asked for three more changes after using the merged page; one
