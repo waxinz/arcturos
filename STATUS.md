@@ -96,6 +96,31 @@ second header on all pages; now rewrites `<header class="topnav">`
 (verified: full regen produces zero diffs).
 - Tests 247 green; static gates clean (10 pages — create.html gone).
 
+## 2026-10-11 (evening) — Engine field, transport autodetect, dropdowns
+
+- **Engine is now an operator field** (owner brief): freeform
+  type-or-pick on the Start page (history from runs.engine), stored on
+  the run row, shown on the Compare page in a new column before Model
+  ("Model fingerprint" relabeled "Model"). Legacy runs keep their
+  transport-derived engine (llama.cpp / openai).
+- **Transport removed from the UI**: wire protocol autodetected —
+  OpenAI chat probe first (usual case), llama.cpp /tokenize fallback
+  (preflight.detect_transport; endpoints accept transport='auto';
+  Check-target probes kind='auto'). API default stays 'native' for
+  compat.
+- **Start form**: Run name on top; one field per line (only
+  n_predict + Parallel streams share a line, both dropdowns now —
+  256..65535 default 256; 1-16 default 1); API key follows Server URL.
+  Blank name + engine given -> 'Engine / Model / targets' (short
+  model); no engine -> classic 'host · model · targets' (pinned).
+- Gotchas hit and fixed: .actions is also .field (flex-direction:
+  column by default — the buttons stacked until flex-direction: row
+  was explicit); compare cell renderer was value-equality based
+  (engine === host string would have misrendered) — now index-based;
+  default-name pin caught the first engine-or-default attempt (the
+  'Engine / …' name applies only when the OPERATOR gave an engine —
+  bare API calls keep the host chain).
+
 ## 2026-10-11 (later) — UX round: Runs rename, pagination, sticky bar, quiet stop
 
 Owner asked for three more changes after using the merged page; one
