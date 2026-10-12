@@ -1073,7 +1073,7 @@ def test_dispatch_bench_engine_label_and_name_chain(db_path):
     from arcturos.bench import export_run_json
     exported = export_run_json(db_path, result["run_id"])
     assert exported["run"]["engine"] == "vLLM"
-    assert exported["run"]["name"] == "vLLM / test / 128"
+    assert exported["run"]["name"] == "vLLM / test"
     # no engine -> classic fallback name, llama.cpp default engine
     result2 = ops.dispatch_bench(db_path, "http://fake:8000", [128], 8,
                                  transport=transport)
