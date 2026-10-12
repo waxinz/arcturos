@@ -121,6 +121,19 @@ second header on all pages; now rewrites `<header class="topnav">`
   'Engine / …' name applies only when the OPERATOR gave an engine —
   bare API calls keep the host chain).
 
+## 2026-10-11 (evening, follow-up) — column swap fix, per-row Hide gone
+
+- Owner caught a shipped defect: the cells array listed engine before
+  server while the header said Server, Engine — headers and rows were
+  verified separately, never against each other, so every row was
+  shifted one column from its header. Fixed by index-aligning cells to
+  the header list (every cell carries a kind tag) and adding
+  test_compare_table_column_order_matches_cells, which extracts BOTH
+  literals from compare.html and asserts they correspond positionally —
+  drift now fails CI. Per-row Hide button removed (redundant with the
+  toolbar's bulk Hide selected); trailing empty actions header and the
+  unused .linklike rule went with it.
+
 ## 2026-10-11 (later) — UX round: Runs rename, pagination, sticky bar, quiet stop
 
 Owner asked for three more changes after using the merged page; one
