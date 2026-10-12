@@ -191,8 +191,11 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
 
     @app.get("/create", include_in_schema=False)
     def create_page() -> FileResponse:
-        # Legacy path (2026-09-30 split): serves the bench kick-off page.
-        return FileResponse(STATIC_DIR / "create.html")
+        # Legacy path (2026-09-30 split): serves the bench start page.
+        # 2026-10-11: was serving a frozen create.html copy that drifted
+        # from bench-kickoff.html (old headings, old form) — both routes
+        # now serve the one canonical page.
+        return FileResponse(STATIC_DIR / "bench-kickoff.html")
 
     @app.get("/health")
     def health() -> dict:

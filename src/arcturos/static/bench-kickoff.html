@@ -9,29 +9,45 @@
   <link rel="stylesheet" href="/static/theme.css">
   <link rel="stylesheet" href="/static/nav.css">
   <style>
-    h1 { font-size: 1.6rem; margin: 0; }
-    h2.page-title { font-size: 1.45rem; margin: 0; color: var(--text-heading); }
     .page-sub { color: var(--text-muted); margin: .25rem 0 1rem; font-size: .9rem; }
     .card { background: var(--surface); border: 1px solid var(--border);
             border-radius: 6px; padding: 1.1rem; }
-    .card h2 { margin: 0 0 .8rem; font-size: 1.15rem; }
-    label { display: block; font-size: .85rem; font-weight: 600; color: var(--text-soft);
-            margin: .55rem 0 .2rem; }
-    input, select { width: 100%; box-sizing: border-box; padding: .35rem;
-            font-size: .9rem; border: 1px solid var(--input-border); border-radius: 4px; }
+    /* Form: two fields per line on desktop (desktop-waste fix), single
+       column on phones (mobile fix). Minor fields share a line via
+       .row2 inside the grid. */
+    form#bench-form { display: grid; grid-template-columns: 1fr 1fr;
+                      gap: .4rem .9rem; }
+    .field { display: flex; flex-direction: column; }
+    .field label { display: block; font-size: .85rem; font-weight: 600;
+                   color: var(--text-soft); margin: 0 0 .2rem; }
+    .field input, .field select { width: 100%; box-sizing: border-box;
+                   padding: .38rem .45rem; font-size: .9rem;
+                   border: 1px solid var(--input-border); border-radius: 4px;
+                   background: var(--bg); color: var(--text); }
+    .wide { grid-column: 1 / -1; }
+    /* n_predict + streams: minor knobs, one shared line (owner call). */
+    .minors { display: grid; grid-template-columns: 1fr 1fr; gap: .9rem; }
     button { margin-top: .6rem; padding: .45rem 1rem; font-size: .9rem;
              background: var(--btn-bg); color: var(--btn-text); border: 0;
              border-radius: 4px; cursor: pointer; }
     button:disabled { background: var(--disabled); cursor: wait; }
+    .actions { display: flex; gap: .6rem; flex-wrap: wrap;
+               align-items: center; margin-top: .7rem; }
+    .actions button { margin-top: 0; flex: 1 1 auto; }
     .msg { margin-top: .5rem; font-size: .85rem; min-height: 1.1em; }
     .bp-status a, .msg a { color: inherit; text-decoration: underline;
                            font-weight: 600; }
     .msg.err { color: var(--err); }
     .msg.ok { color: var(--ok); }
     .hint { color: var(--hint); font-size: .78rem; margin: .3rem 0; }
-    .row2 { display: flex; gap: .6rem; } .row2 > div { flex: 1; }
-.benchprog { margin-top: .7rem; display: none; }
+    /* ---------- run panel (visible while a sweep runs) ------------------ */
+    .benchprog { margin-top: .7rem; display: none; }
     .benchprog.active { display: block; }
+    .bp-head2 { display: flex; align-items: baseline; gap: .6rem;
+                flex-wrap: wrap; margin: 0 0 .35rem; }
+    .bp-status { font-size: .85rem; font-weight: 600; margin: 0; }
+    .bp-clock { font-size: .78rem; color: var(--clock);
+                font-variant-numeric: tabular-nums; margin: 0; }
     .bp-barwrap { position: relative; height: 18px; background: var(--bar-track);
                   border-radius: 9px; overflow: hidden; }
     .bp-bar { height: 100%; width: 0%; background: linear-gradient(90deg,var(--bar-fill-a),var(--bar-fill-b));
@@ -43,9 +59,6 @@
     .bp-pct { position: absolute; inset: 0; display: flex; align-items: center;
               justify-content: center; font-size: .72rem; font-weight: 700;
               color: var(--bar-text); text-shadow: 0 0 3px rgba(255,255,255,.7); }
-    .bp-status { font-size: .82rem; margin-top: .35rem; }
-    .bp-clock { font-size: .78rem; color: var(--clock); margin-top: .1rem;
-                font-variant-numeric: tabular-nums; }
     .bp-toggle { background: none; border: none; color: var(--link); font-size: .78rem;
                  padding: 0; margin-top: .3rem; cursor: pointer; text-decoration: underline; }
     .bp-detail { display: none; margin-top: .4rem; font-size: .78rem;
@@ -59,11 +72,45 @@
     .stop-btn { display: inline-block; padding: .28rem .7rem; font-size: .8rem;
                 background: var(--neutral-bg); color: var(--neutral-text);
                 border: 1px solid var(--border); border-radius: 4px;
-                cursor: pointer; margin-top: .5rem; }
+                cursor: pointer; }
     .stop-btn:not([hidden]) { display: inline-block; }
     .stop-btn[hidden] { display: none; }
     .stop-btn:disabled { opacity: .5; cursor: wait; }
-      </style>
+    /* Per-context stage strip (W&B-sweep style): one pill per target,
+       filled when its point completes — progress you can read at a
+       glance on mobile, where the wide table only scrolls. */
+    .bp-stages { display: flex; gap: .35rem; flex-wrap: wrap; margin-top: .5rem; }
+    .bp-stage { font-size: .7rem; padding: .14rem .5rem; border-radius: 9px;
+                background: var(--bar-track); color: var(--clock);
+                border: 1px solid var(--border); font-variant-numeric: tabular-nums; }
+    .bp-stage.done { background: var(--good-bg); color: var(--good-text);
+                     border-color: transparent; font-weight: 600; }
+    /* Wide tables must not clip or overlay the next card: the panel grows
+       with content and the table scrolls horizontally inside it. */
+    .bp-detail table { width: 100%; border-collapse: collapse;
+                       min-width: 480px; }
+    .bp-detail .table-scroll { overflow-x: auto; }
+    .bp-detail th, .bp-detail td { text-align: left; padding: 2px 4px;
+                                   border-bottom: 1px solid var(--border);
+                                   white-space: nowrap; }
+    .bp-detail th { color: var(--text-muted); font-weight: 600; }
+    .bp-ev { color: var(--text-soft); font-family: ui-monospace, monospace; font-size: .72rem;
+             margin: 2px 0; white-space: nowrap; overflow: hidden;
+             text-overflow: ellipsis; }
+    /* ---- narrow screens: one field per line, nav rows wrap ------------- */
+    @media (max-width: 640px) {
+      form#bench-form { grid-template-columns: 1fr; }
+      .wide { grid-column: auto; }
+      .bp-head2 { align-items: flex-start; flex-direction: column; gap: .1rem; }
+      .bp-clock { text-align: left; }
+    }
+    @media (max-width: 800px) {
+      .topnav-row { flex-wrap: wrap; row-gap: .4rem; }
+      .topnav-row .sidebar-foot { margin-left: auto; }
+      .topnav-tabs { order: 3; width: 100%; }
+      .topnav-sub { flex-wrap: wrap; }
+    }
+  </style>
   <script src="/static/app-time.js"></script>
   <script src="/static/theme.js"></script>
   <script src="/static/nav.js"></script>
@@ -109,56 +156,69 @@
     </nav>
   </header>
 
-  
   <main class="page">
-    <h2 class="page-title">Start</h2>
+    <h1 class="page-title">Start</h1>
     <p class="page-sub">Dispatch a benchmark sweep against a target server, watch it
        run, stop it if it goes sideways.</p>
     <div class="card">
-      <h3>Benchmark run — kick off</h3>
       <p class="hint">Runs a cold-cache sweep. Transport <b>native</b> targets a llama.cpp server (/completion); <b>openai</b> targets any OpenAI-compatible chat server (tabbyAPI, vLLM, litellm — needs a model name). Stores a run + one benchmark row per context target.</p>
-      <label>Server URL
-        <input id="bench-url" value="http://localhost:8000">
-      </label>
-      <label>Context targets (tokens, comma-separated)
-        <input id="bench-targets" value="32768, 65536, 131072, 196608, 256256">
-      </label>
-      <div class="row2">
-        <div><label>Transport
+      <form id="bench-form" autocomplete="off" onsubmit="return false;">
+        <div class="field">
+          <label for="bench-url">Server URL</label>
+          <input id="bench-url" list="prev-urls" value="http://localhost:8000">
+          <datalist id="prev-urls"></datalist>
+        </div>
+        <div class="field">
+          <label for="bench-model">Model (openai transport)</label>
+          <input id="bench-model" list="prev-models" value="">
+          <datalist id="prev-models"></datalist>
+        </div>
+        <div class="field wide">
+          <label for="bench-targets">Context targets (tokens, comma-separated)</label>
+          <input id="bench-targets" value="32768, 65536, 131072, 196608, 256256">
+        </div>
+        <div class="field">
+          <label for="bench-transport">Transport</label>
           <select id="bench-transport">
             <option value="openai" selected>openai (tabbyAPI / vLLM / litellm)</option>
             <option value="native">native (llama.cpp)</option>
           </select>
-        </label></div>
-        <div><label>Model (openai transport)
-          <input id="bench-model" value="">
-        </label></div>
-      </div>
-      <label>API key (optional, for auth-protected servers)
-        <input id="bench-key" type="password" placeholder="sk-…">
-      </label>
-      <label>n_predict (tokens per point)
-        <input id="bench-npredict" value="256">
-      </label>
-      <label>Run name (optional — default: host · model · targets)
-        <input id="bench-name" placeholder="e.g. GLM 192k sweep">
-      </label>
-      <label>Parallel streams (identical runs per target, 1-16)
-        <input id="bench-streams" value="1">
-      </label>
-      <div class="row2" style="margin-top:.5rem;">
-        <div><button id="bench-btn" style="width:100%">▶ Kick off bench</button></div>
-        <div><button id="bench-pf-btn" style="width:100%; background:var(--pf-btn)">✔ Check target - just one ping, Vasily</button></div>
-      </div>
+        </div>
+        <div class="field">
+          <label for="bench-key">API key (optional, for auth-protected servers)</label>
+          <input id="bench-key" type="password" placeholder="sk-…">
+        </div>
+        <div class="field wide">
+          <label for="bench-name">Run name (optional — default: host · model · targets)</label>
+          <input id="bench-name" placeholder="e.g. GLM 192k sweep">
+        </div>
+        <div class="field wide minors">
+          <div>
+            <label for="bench-npredict">n_predict (tokens per point)</label>
+            <input id="bench-npredict" value="256">
+          </div>
+          <div>
+            <label for="bench-streams">Parallel streams (identical runs per target, 1-16)</label>
+            <input id="bench-streams" value="1">
+          </div>
+        </div>
+        <div class="field wide actions">
+          <button id="bench-btn">▶ Kick off bench</button>
+          <button id="bench-pf-btn" style="background:var(--pf-btn)">✔ Check target - just one ping, Vasily</button>
+          <button id="bench-stop-btn" type="button" class="stop-btn" hidden
+                  title="Abort the running sweep: completed points are kept as a partial run">■ Stop run</button>
+        </div>
+      </form>
       <div id="bench-msg" class="msg"></div>
-      <button id="bench-stop-btn" type="button" class="stop-btn" hidden
-              title="Abort the running sweep: completed points are kept as a partial run">■ Stop run</button>
       <div id="bench-progress" class="benchprog">
+        <div class="bp-head2">
+          <div id="bp-status" class="bp-status"></div>
+          <div id="bp-clock" class="bp-clock"></div>
+        </div>
         <div class="bp-barwrap"><div id="bp-bar" class="bp-bar"></div>
           <div id="bp-pct" class="bp-pct"></div></div>
-        <div id="bp-status" class="bp-status"></div>
-        <div id="bp-clock" class="bp-clock"></div>
-        <button id="bp-zoom" class="bp-toggle" type="button">▸ details</button>
+        <div id="bp-stages" class="bp-stages"></div>
+        <button id="bp-zoom" class="bp-toggle" type="button">▾ details</button>
         <div id="bp-detail" class="bp-detail">
           <div class="table-scroll">
           <table><thead id="bp-head"><tr><th>#</th><th>ctx</th><th>prefill</th><th>decode</th>
@@ -192,32 +252,34 @@ function $(id) { return document.getElementById(id); }
       return detail || ('HTTP ' + status);
     }
 
-    async function post(url, body, btn, msg, label, confirmText) {
-      // Destructive-adjacent posts (append-only records that pair with
-      // existing rows) get a confirm dialog per ux-design principle 5.
-      if (confirmText && !window.confirm(confirmText)) {
-        setMsg(msg, 'Cancelled.');
-        return null;
-      }
-      busy(btn, true, label);
-      setMsg(msg, 'Working…');
-      try {
-        const res = await fetch(url, {method: 'POST',
-          headers: {'Content-Type': 'application/json'},
-          body: JSON.stringify(body)});
-        const data = await res.json().catch(() => ({}));
-        if (!res.ok) {
-          setMsg(msg, 'Failed: ' + fmtDetail(data.detail, res.status));
-          return null;
-        }
-        return data;
-      } catch (err) {
-        setMsg(msg, 'Failed: ' + err);
-        return null;
-      } finally {
-        busy(btn, false, label);
+    // ---- type-it or pick-it history (owner request): Server URL and
+    // Model are plain text inputs with a <datalist> fed from the run
+    // store, so typing a new value works exactly as before AND a click
+    // / ▼ offers everything already used, freshest first.
+    function fillDatalist(id, values) {
+      const dl = $(id);
+      dl.innerHTML = '';
+      for (const v of values) {
+        const opt = document.createElement('option');
+        opt.value = v;
+        dl.appendChild(opt);
       }
     }
+    (async function loadHistory() {
+      try {
+        const res = await fetch('/api/runs');
+        if (!res.ok) return;
+        const data = await res.json();
+        const runs = Array.isArray(data) ? data : (data.runs || []);
+        const urls = [], models = [];
+        for (const r of runs) {
+          if (r.server_url && !urls.includes(r.server_url)) urls.push(r.server_url);
+          if (r.model_fingerprint && !models.includes(r.model_fingerprint)) models.push(r.model_fingerprint);
+        }
+        fillDatalist('prev-urls', urls);
+        fillDatalist('prev-models', models);
+      } catch (err) { /* history is a nicety — never block the form */ }
+    })();
 
     async function checkPreflight(kindBtn, targetEl, msgEl, kind) {
       kindBtn.disabled = true; kindBtn.textContent = '⏳ Checking…';
@@ -247,7 +309,7 @@ function $(id) { return document.getElementById(id); }
     $('bench-pf-btn').onclick = () => checkPreflight($('bench-pf-btn'), $('bench-url'), $('bench-msg'), $('bench-transport').value === 'openai' ? 'eval' : 'bench');
 
     // ---- async bench job + progress indicator ---------------------------
-    const bpPoll = { timer: null, zoom: false, streams: 1, jobId: null,
+    const bpPoll = { timer: null, zoom: true, streams: 1, jobId: null,
                      stopBusy: false };
 
     // Operator stop (ADR 006): visible only while a job is in flight.
@@ -354,6 +416,14 @@ function $(id) { return document.getElementById(id); }
         if (!rows.rows[i]) rows.insertRow(i).innerHTML = bpRow(p, i);
         else rows.rows[i].innerHTML = bpRow(p, i);
       });
+      // Stage strip: fill the pill whose point just landed (idempotent —
+      // safe to re-check every poll).
+      for (const p of (st.points || [])) {
+        const pill = document.querySelector(
+          '.bp-stage[data-ctx="' + p.context_tokens + '"]');
+        if (pill && (p.decode_tps != null || p.wall_s != null))
+          pill.classList.add('done');
+      }
       if (st.zoom_events && st.zoom_events.length)
         $('bp-events').innerHTML = st.zoom_events.map(e => '<div class="bp-ev">' + e + '</div>').join('');
     }
@@ -475,7 +545,9 @@ function $(id) { return document.getElementById(id); }
           })});
         const data = await res.json().catch(() => ({}));
         if (!res.ok) { setMsg($('bench-msg'), 'Kick off failed: ' + fmtDetail(data.detail, res.status)); return; }
-        // job accepted — hand over to the progress indicator
+        // job accepted — hand over to the progress indicator. The detail
+        // table starts OPEN (owner call: status should surface itself;
+        // the toggle can still collapse it).
         $('bench-progress').classList.add('active');
         bpPoll.streams = parseInt($('bench-streams').value, 10) || 1;
         bpPoll.jobId = data.job_id;
@@ -485,6 +557,10 @@ function $(id) { return document.getElementById(id); }
         $('bp-bar').style.width = '0%';
         $('bp-status').textContent = 'queued…';
         $('bp-clock').textContent = '';
+        $('bp-detail').classList.add('open');
+        // Stage pills: one per context target, filled as its point lands.
+        $('bp-stages').innerHTML = targets.map(t =>
+          '<span class="bp-stage" data-ctx="' + t + '">' + t + '</span>').join('');
         bpStopBtnShow(true);
         setMsg($('bench-msg'), 'Job ' + data.job_id + ' accepted — sweep running', true);
         bpPoll.retries = 0;  // fresh job: full retry budget for its poller
