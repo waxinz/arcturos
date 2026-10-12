@@ -6,6 +6,8 @@ for known fixture values, engine metadata diff, and latest-point-per-context
 resolution under the append-only model.
 """
 
+import re
+
 import pytest
 
 from arcturos import ops
@@ -432,3 +434,31 @@ def test_compare_payload_carries_run_names(client):
     diff = client.get(f"/api/compare/run-diff/{a}/{b}").json()
     assert diff["run_a"]["name"] == "alpha sweep"
     assert diff["run_b"]["name"] == "beta sweep"
+
+
+def test_compare_table_column_order_matches_cells(client):
+    """The runs-table header list and the per-row cells array are two
+    literals in compare.html that MUST correspond positionally — they
+    shipped misaligned once (server/engine swapped) because they were
+    verified separately. This pin extracts both and asserts the header
+    sequence (sans the selection column) equals the cell kinds, where
+    a bare { v: r.<field> } cell maps to its field name title-cased."""
+    html = client.get("/compare").text
+    hdr = re.search(
+        r"for \(const h of \[(.*?)\]\) \{", html, re.S).group(1)
+    headers = re.findall(r"'([^']*)'", hdr)
+    cells_m = re.search(r"const cells = \[(.*?)\];", html, re.S).group(1)
+    kinds = re.findall(r"kind:\s*'(\w+)'", cells_m)
+    bare = re.findall(r"\{ v: r\.(\w+) \}", cells_m)
+    # Positional cells each carry a kind tag; map kind -> header label and
+    # rebuild the expected header list from the cells literal.
+    label = {"host": "Server", "engine": "Engine", "model": "Model",
+             "date": "Created"}
+    rebuilt = [label[k] for k in kinds]
+    # headers: ['ID', 'Name', ...] — the cells cover everything after
+    # the ID + Name prefix columns.
+    assert headers[:2] == ["ID", "Name"]
+    assert headers[2:] == rebuilt, (headers, rebuilt)
+    assert "linklike" not in html or "hide-selected" in html  # per-row Hide is gone
+    assert "hideBtn" not in html
+    assert "'Created', '']" not in html  # no trailing empty header (actions col)
