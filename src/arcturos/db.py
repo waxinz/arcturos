@@ -70,6 +70,8 @@ CREATE TABLE IF NOT EXISTS eval_runs (
     suite_id          INTEGER NOT NULL REFERENCES eval_suites(id),
     model_fingerprint TEXT    NOT NULL,
     name              TEXT,
+    status            TEXT    NOT NULL DEFAULT 'complete'
+                      CHECK (status IN ('complete', 'partial')),
     created_at        TEXT    NOT NULL
 );
 
@@ -218,7 +220,8 @@ BEFORE UPDATE ON models BEGIN
 END;
 
 -- eval_runs: the replay batch is a stored fact (append-only), but name is
--- a LABEL the owner may set/rename. Everything else stays immutable.
+-- a LABEL the owner may set/rename and status is lifecycle state set by
+-- the dispatch path (partial preservation). Everything else stays immutable.
 CREATE TRIGGER IF NOT EXISTS trg_eval_runs_no_update
 BEFORE UPDATE ON eval_runs BEGIN
     SELECT CASE WHEN
@@ -307,6 +310,7 @@ _MIGRATIONS = (
     ("runs", "status", "TEXT NOT NULL DEFAULT 'complete'"),
     ("runs", "name", "TEXT"),
     ("eval_results", "eval_run_id", "INTEGER"),
+    ("eval_runs", "status", "TEXT NOT NULL DEFAULT 'complete'"),
 )
 
 

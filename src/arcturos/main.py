@@ -40,6 +40,13 @@ Routes (all data paths are append-only — no UPDATE/DELETE exists):
   POST /api/ops/bench/jobs              -> async bench job: returns {job_id} immediately, sweep runs in background
   GET  /api/ops/bench/jobs/{job_id}     -> job status: phase, per-point results, elapsed + ETA
   POST /api/ops/eval                    -> replay a suite against a target (stores eval_results)
+  POST /api/ops/eval/jobs               -> async eval replay job: {job_id} immediately, per-item progress
+  GET  /api/ops/eval/jobs/{job_id}      -> eval job status: phase, per-item rows, elapsed + ETA
+  POST /api/ops/eval/jobs/{id}/abort    -> cooperative stop (completed items stay stored)
+  POST /api/ops/judge/jobs              -> async blind A/B judge job (position swap, both orders stored)
+  GET  /api/ops/judge/jobs/{job_id}     -> judge job status
+  POST /api/ops/judge/jobs/{id}/abort   -> cooperative stop of a judge job
+  GET  /evals/run                       -> eval replay job page (async, live progress)
   GET  /api/ops/preflight               -> J6 health checks for a target (kind=bench|eval, model?)
   GET  /api/export/runs                 -> CSV export: all runs
   GET  /api/export/runs/{id}/benchmarks -> CSV export: one run's points
@@ -62,6 +69,8 @@ from fastapi.staticfiles import StaticFiles
 
 from . import compare, ops, reports
 from . import config
+from . import evals as evals_mod
+from . import judging
 from .db import DEFAULT_DB_PATH, connect, init_db
 from .schemas import (
     BaselineCreate,
@@ -172,6 +181,12 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
     @app.get("/evals", include_in_schema=False)
     def evals_page() -> FileResponse:
         return FileResponse(STATIC_DIR / "evals.html")
+
+    @app.get("/evals/run", include_in_schema=False)
+    def eval_run_page() -> FileResponse:
+        # v0.2 (2026-10-15): replay moved off /create onto its own async
+        # job page (live per-item progress + operator stop).
+        return FileResponse(STATIC_DIR / "eval-run.html")
 
     @app.get("/judgments", include_in_schema=False)
     def judgments_page() -> FileResponse:
@@ -379,7 +394,8 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
 
     @app.get("/api/eval-suites")
     def list_eval_suites(db=Depends(get_db)):
-        return fetch_all(db, "SELECT * FROM eval_suites ORDER BY id")
+        # Most recent first — the run/judge pickers surface fresh suites.
+        return fetch_all(db, "SELECT * FROM eval_suites ORDER BY id DESC")
 
     @app.get("/api/eval-suites/{suite_id}")
     def get_eval_suite(suite_id: int, db=Depends(get_db)):
@@ -468,18 +484,26 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
 
     # ------------------------------------------------------------- reports ----
     @app.get("/api/reports/suite/{suite_id}")
-    def suite_report_endpoint(suite_id: int, db=Depends(get_db)):
+    def suite_report_endpoint(suite_id: int,
+                              judge_model: str | None = None,
+                              judge_template: str | None = None,
+                              db=Depends(get_db)):
         """J5 report for one suite: win-rate aggregation + CSV export.
 
         Thin wrapper over reports.suite_report / export_report_csv; unknown
         suite ids surface as 404 (ValueError from the aggregator).
-        Categories: the DB stores item_id only, so the map is rebuilt from
-        the suite definition JSON the operator seeded (if present).
+        Categories/dimensions: the DB stores item_id only, so the maps are
+        rebuilt from the suite definition JSON the operator seeded (if
+        present). ``judge_model``/``judge_template`` scope every aggregate
+        to ONE judge generation (v0.2, ADR 007 §6); both None aggregates
+        all judgments.
         """
         try:
             report = reports.suite_report(
                 db, suite_id,
-                category_map=reports.category_map_for(db, suite_id))
+                category_map=reports.category_map_for(db, suite_id),
+                dimension_map=reports.dimension_map_for(db, suite_id),
+                judge_model=judge_model, judge_template=judge_template)
         except ValueError as exc:
             raise HTTPException(status_code=404, detail=str(exc))
         return {"report": report, "csv": reports.export_report_csv(report)}
@@ -821,6 +845,142 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
             if isinstance(exc, HTTPException):
                 raise
             raise HTTPException(status_code=502, detail=f"eval replay failed: {exc}")
+
+    @app.post("/api/ops/eval/jobs")
+    def ops_eval_job(body: dict):
+        """Async eval replay (v0.2): same body as POST /api/ops/eval plus
+        max_tokens/temperature/retries/concurrency.
+
+        Returns {job_id} immediately after synchronous validation; the
+        replay (preflight, per-item chat calls, per-item commits) runs in
+        a background thread. Poll GET /api/ops/eval/jobs/{id}; stop with
+        POST .../abort. Input errors are 422 here; everything inside the
+        thread lands in the job record.
+        """
+        suite_id = body.get("suite_id")
+        target = body.get("target")
+        model_fingerprint = body.get("model_fingerprint")
+        api_key = body.get("api_key")
+        suite = body.get("suite")
+        name = body.get("name")
+        max_tokens = body.get("max_tokens", 1024)
+        temperature = body.get("temperature", 0.0)
+        retries = body.get("retries", 0)
+        concurrency = body.get("concurrency", 1)
+        if not isinstance(suite_id, int) or suite_id < 1:
+            raise HTTPException(status_code=422, detail="suite_id must be a positive int")
+        if not isinstance(target, str) or not target.startswith("http"):
+            raise HTTPException(status_code=422, detail="target must be an http(s) URL")
+        if not isinstance(model_fingerprint, str) or not model_fingerprint:
+            raise HTTPException(status_code=422, detail="model_fingerprint required")
+        if not isinstance(suite, dict):
+            raise HTTPException(status_code=422, detail="suite must be an inline JSON object with 'items'")
+        if name is not None and (not isinstance(name, str) or not name.strip()):
+            raise HTTPException(status_code=422,
+                                detail="name must be a non-empty string when set")
+        for field, value in (("max_tokens", max_tokens), ("retries", retries),
+                             ("concurrency", concurrency)):
+            if not isinstance(value, int) or isinstance(value, bool):
+                raise HTTPException(status_code=422, detail=f"{field} must be an int")
+        if not isinstance(temperature, (int, float)) or isinstance(temperature, bool):
+            raise HTTPException(status_code=422, detail="temperature must be a number")
+        try:
+            job_id = ops.run_eval_job(
+                db_path=db_path, suite_id=suite_id, target=target,
+                model_fingerprint=model_fingerprint, suite=suite,
+                api_key=api_key,
+                name=name.strip() if isinstance(name, str) else None,
+                max_tokens=max_tokens, temperature=temperature,
+                retries=retries, concurrency=concurrency)
+        except ops.DispatchError as exc:
+            raise HTTPException(status_code=422, detail=str(exc))
+        except (ValueError, evals_mod.ItemValidationError) as exc:
+            raise HTTPException(status_code=422, detail=str(exc))
+        return {"job_id": job_id}
+
+    @app.get("/api/ops/eval/jobs/{job_id}")
+    def ops_eval_job_status(job_id: str):
+        result = ops.eval_job_status(job_id)
+        if result is None:
+            raise HTTPException(status_code=404, detail=f"eval job {job_id} not found")
+        return result
+
+    @app.post("/api/ops/eval/jobs/{job_id}/abort")
+    def ops_eval_job_abort(job_id: str):
+        result = ops.abort_eval_job(job_id)
+        if result is None:
+            raise HTTPException(status_code=404, detail=f"eval job {job_id} not found")
+        return result
+
+    # -------------------------------------------------- judge jobs (J4) ----
+    @app.post("/api/ops/judge/jobs")
+    def ops_judge_job(body: dict):
+        """Async blind A/B judge run (v0.2, ADR 007 §3).
+
+        Body: {suite_id, judge_model?, judge_url?, model_a?, model_b?,
+        retries?, allow_contestant_judge?, judge_api_key?}. Every judgeable
+        item (exactly two models' results) is judged in BOTH presentation
+        orders — position swap — and both raw judgments stored. Pair
+        selection uses the latest result per (item, normalized fingerprint).
+        judge_url falls back to the config layer ([eval] judge_url, then
+        legacy [demo] judge_url). Returns {job_id}; poll
+        GET /api/ops/judge/jobs/{id}; stop with POST .../abort.
+        """
+        suite_id = body.get("suite_id")
+        judge_model = body.get("judge_model")
+        judge_url = body.get("judge_url")
+        model_a = body.get("model_a")
+        model_b = body.get("model_b")
+        retries = body.get("retries", 1)
+        allow_contestant = body.get("allow_contestant_judge", False)
+        judge_api_key = body.get("judge_api_key") or body.get("api_key")
+        if not isinstance(suite_id, int) or suite_id < 1:
+            raise HTTPException(status_code=422, detail="suite_id must be a positive int")
+        if judge_model is not None and (not isinstance(judge_model, str)
+                                        or not judge_model.strip()):
+            raise HTTPException(status_code=422,
+                                detail="judge_model must be a non-empty string when set")
+        if judge_url is not None and (not isinstance(judge_url, str)
+                                      or not judge_url.startswith("http")):
+            raise HTTPException(status_code=422, detail="judge_url must be an http(s) URL")
+        if not isinstance(retries, int) or isinstance(retries, bool) or not (0 <= retries <= 3):
+            raise HTTPException(status_code=422, detail="retries must be an int between 0 and 3")
+        if (model_a is None) != (model_b is None):
+            raise HTTPException(status_code=422,
+                                detail="model_a and model_b must be given together")
+        if model_a is not None and (not isinstance(model_a, str)
+                                    or not isinstance(model_b, str)
+                                    or not model_a.strip() or not model_b.strip()):
+            raise HTTPException(status_code=422,
+                                detail="model_a/model_b must be non-empty strings when set")
+        if not isinstance(allow_contestant, bool):
+            raise HTTPException(status_code=422,
+                                detail="allow_contestant_judge must be a boolean")
+        try:
+            job_id = judging.run_judge_job(
+                db_path, suite_id,
+                judge_url=judge_url,
+                judge_model=judge_model.strip() if isinstance(judge_model, str) else None,
+                model_a=model_a, model_b=model_b, retries=retries,
+                allow_contestant_judge=allow_contestant,
+                judge_api_key=judge_api_key)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc))
+        return {"job_id": job_id}
+
+    @app.get("/api/ops/judge/jobs/{job_id}")
+    def ops_judge_job_status(job_id: str):
+        result = judging.judge_job_status(job_id)
+        if result is None:
+            raise HTTPException(status_code=404, detail=f"judge job {job_id} not found")
+        return result
+
+    @app.post("/api/ops/judge/jobs/{job_id}/abort")
+    def ops_judge_job_abort(job_id: str):
+        result = judging.abort_judge_job(job_id)
+        if result is None:
+            raise HTTPException(status_code=404, detail=f"judge job {job_id} not found")
+        return result
 
     @app.post("/api/ops/preflight")
     def ops_preflight(body: dict):

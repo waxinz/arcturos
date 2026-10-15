@@ -100,10 +100,15 @@ def test_csv_export_matches_counts(db):
     rep = reports.suite_report(db, suite_id)
     csv_text = reports.export_report_csv(rep)
     lines = csv_text.strip().splitlines()
-    assert len(lines) == 2  # header + one pair
+    # v0.2: pair section + dimension section (header, pair row, blank,
+    # dimension header, one dimension row)
+    assert len(lines) == 5
     assert "model-alpha,model-beta" in lines[1]
     assert "1,0,0,1" in lines[1]  # wins_a, wins_b, ties, total
     assert lines[0].startswith("suite,version,model_a")
+    assert "wilson_a_low" in lines[0]  # v0.2: Wilson interval columns
+    assert lines[3] == "dimension,wins_a,wins_b,ties,total"
+    assert lines[4].startswith("uncategorized,")  # no definition -> uncategorized
 
 
 def test_category_map_breakdown(db):
@@ -111,17 +116,24 @@ def test_category_map_breakdown(db):
     (ra, rb) = result_ids["sr-001"]
     seed_judgment(db, ra, rb, "a")
     cmap = {"sr-001": "logic", "sr-002": "counting", "sr-003": "writing"}
-    rep = reports.suite_report(db, suite_id, category_map=cmap)
+    dmap = {"sr-001": "reasoning", "sr-002": "reasoning", "sr-003": "writing"}
+    rep = reports.suite_report(db, suite_id, category_map=cmap,
+                               dimension_map=dmap)
     assert "logic" in rep["by_category"]
-    assert rep["by_category"]["logic"]["a"] == 1
+    # v0.2 shape: counts nested under "counts", percent under "percent"
+    assert rep["by_category"]["logic"]["counts"]["a"] == 1
     assert rep["by_category"]["logic"]["total"] == 1
+    assert rep["by_dimension"]["reasoning"]["counts"]["a"] == 1
     assert "uncategorized" not in rep["by_category"]  # fully mapped suite
     rep2 = reports.suite_report(db, suite_id)  # no map -> uncategorized
     assert rep2["by_category"]["uncategorized"]["total"] == 1
+    assert rep2["by_dimension"]["uncategorized"]["total"] == 1
 
 
 def test_category_map_for_reads_definition_snapshot(db):
-    """category_map_for rebuilds the map from the stored definition JSON."""
+    """category_map_for rebuilds the map from the stored definition JSON.
+    v0.2: items WITHOUT a category land under 'uncategorized' (honest
+    bucket) instead of being dropped from the map."""
     import json as _json
 
     cur = db.execute(
@@ -130,7 +142,7 @@ def test_category_map_for_reads_definition_snapshot(db):
     definition = {"items": [
         {"id": "sr-001", "category": "logic"},
         {"id": "sr-002", "category": "counting"},
-        {"id": "sr-003"},  # no category -> dropped from the map
+        {"id": "sr-003"},  # no category -> 'uncategorized' bucket
     ]}
     db.execute(
         "INSERT INTO suite_definitions (suite_id, payload, created_at) "
@@ -138,7 +150,12 @@ def test_category_map_for_reads_definition_snapshot(db):
     db.commit()
 
     cmap = reports.category_map_for(db, suite_id)
-    assert cmap == {"sr-001": "logic", "sr-002": "counting"}
+    # Multi-turn per-turn rows (#t2+) inherit the base item's category.
+    assert cmap["sr-001"] == "logic"
+    assert cmap["sr-002"] == "counting"
+    assert cmap["sr-003"] == "uncategorized"
+    assert cmap["sr-001#t2"] == "logic"
+    assert cmap["sr-003#t3"] == "uncategorized"
 
     # No snapshot for an unknown suite -> empty map, report still works.
     assert reports.category_map_for(db, 999) == {}

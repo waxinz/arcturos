@@ -200,8 +200,10 @@ def test_suite_report_happy_path(client):
     csv = data["csv"]
     assert csv.startswith("suite,version,model_a")
     lines = csv.strip().splitlines()
-    assert len(lines) == 2  # header + one pair row
+    # v0.2: pair rows + trailing dimension section (5 lines here)
+    assert len(lines) == 5
     assert "smoke,v1,model-alpha,model-beta,1,1,0,2" in lines[1]
+    assert "dimension,wins_a,wins_b,ties,total" in lines[3]
 
 
 def test_suite_report_unknown_suite_404(client):

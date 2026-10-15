@@ -5,6 +5,95 @@ stays the conventions/ground-truth file; this file is the living status).
 Newest first. Read AGENTS.md first for conventions; read this file to
 resume work.
 
+## 2026-10-15 — Eval system v0.2 (dimensions, position swap, reports)
+
+The eval side now answers the driving question — **"which model is
+better A or B, on which axes"** — end to end. ADR 007 records the
+methodology; PRD is v0.2.
+
+- **J3 replay v0.2:** items carry `dimension` (7-value enum: reasoning,
+  knowledge, instruction-following, writing, coding, vision, safety),
+  freeform `category`, optional `system`, optional `image` (http(s) URL
+  or suite-assets-relative path), optional deterministic `reference`.
+  Replay defaults max_tokens 1024 (512 shipped truncated answers on
+  reasoning models) / temperature 0 / retries 0 / concurrency ≤8;
+  per-item commits keep completed items on failure (partial
+  preservation — `eval_runs.status='partial'`, trigger whitelists name +
+  status). `evals.py` (new) owns validation + single-turn replay +
+  reference checkers (exact/numeric/contains/one_of/regex).
+- **J4 judging v0.2:** in-process judge runner (`judging.py`, new) with
+  `blind-pair-v2` template: blind anonymized responses, dimension
+  rubrics, **position-swap double judging** — every item judged in BOTH
+  presentation orders (the swap changes what the judge sees, not just
+  bookkeeping), both raw rows stored append-only; an order-biased judge
+  nets to a tie in aggregate. Judge-not-contestant enforced
+  synchronously at the dispatch boundary (normalized fingerprints;
+  substring match trips). Retry policy for invalid verdicts; per-item
+  commit; cooperative stop. `POST /api/ops/judge/jobs` + status +
+  abort. Multi-turn judged per assistant turn with prior-turn history
+  serialized (MT-Bench lesson).
+- **J5 reports v0.2:** per-dimension breakdown is the headline lens;
+  Wilson 95% score intervals + n on every rate (n<20 tinted in the UI);
+  deterministic reference pass-rates scored at REPORT time from the
+  newest definition snapshot (retroactive, stored rows untouched);
+  judge-generation scoping (`judge_model` + `judge_template` params,
+  UI selects). `by_dimension`/`reference_scores`/`generations` in the
+  report payload; CSV gains a dimension section.
+- **UI:** replay moved off /create onto **/evals/run** (async job page:
+  live per-item progress, ETA, operator stop, partial-run links); the
+  Judgments page hosts the judge kick-off card with the same job
+  panel; Reports gains the dimension lens, reference card, and
+  generation filters. Nav: Evals section = Create · **Run** · Results ·
+  Judgments · Reports.
+- **First suite:** `qa/suites/arcturos-core-v1.json` — 49 items across
+  all 7 dimensions (44 single-turn, 5 multi-turn; 33 with deterministic
+  references; 5 vision items with generated images under
+  `qa/suites/images/`). Research notes in `docs/research/eval-landscape.md`.
+- Tests: **307 passed** (250 pre-v0.2 baseline + 57 new: evals,
+  judging, reports v0.2, async job endpoints). Two real bugs the new
+  tests caught and fixed: pair filtering died when 3+ models had
+  results (two-model gate ran before the operator's pair filter), and
+  the position-swap randomization shuffled bookkeeping instead of the
+  actual presentation order.
+- **Live smoke (real models, 2026-10-15):** 12-item subset of
+  arcturos-core-v1 (incl. one multi-turn + two vision items) replayed
+  against qwen3.8-27b and GLM-5.3-Flash-uncensored via the litellm
+  proxy — 13 result rows per model, ZERO item errors (vision content
+  parts passed through end to end); judged by GLM-5.3-Flash with the
+  `allow_contestant_judge` override (family-name substring collision)
+  — 26/26 judgments stored, 0 invalid verdicts, position swap and
+  retry policy exercised for real. Result: qwen took
+  instruction-following 75% and writing 100%; 16/26 ties; reference
+  pass-rates (judge-free): qwen 11/11, uncensored GLM 10/11. The
+  smoke caught a third real bug: multi-turn `#t2` rows fell into the
+  `uncategorized` dimension bucket (metadata map lacked suffix keys) —
+  fixed with inheritance + regression test.
+- **Live smoke #2 — same weights, temp 0 vs temp 1 (operator-requested):**
+  GLM-5.3-Flash alias @ temp 0 vs GLM-5.3-Flash-uncensored alias
+  @ temp 1 (identical weights, sampling is the only variable), judged
+  by family-neutral qwen3.8-27b — 26/26 replays, 26/26 judgments,
+  0 invalid. Result: 22/26 ties (expected for same weights);
+  reasoning leaned temp0 2-0, writing leaned temp1 2-0 (n too small to
+  matter). The judge-free deterministic checks show the real signal:
+  temp0 passed 10/11 references (90.9%) vs temp1 9/11 (81.8%) —
+  temp 1 dropped one exact-match check. Both smokes ran through the
+  sync dispatch path (dispatch_eval → dispatch_judge → suite_report);
+  the async job pages (/evals/run, /judgments) are API-tested but not
+  yet exercised against live models.
+- **Mobile round (same day):** the top bar was broken at phone widths —
+  theme.css's legacy `nav { flex-wrap: wrap }` stacked the section tabs
+  into a column and page-level overrides (`.topnav-tabs { order: 3;
+  width: 100% }` on two pages) re-stacked it per active section, so the
+  theme toggle jumped ~200px when switching sections. Fix: nav.css now
+  owns narrow-screen behavior (`flex-wrap: nowrap` inside the bar, the
+  tabs strip scrolls instead of stacking, `.sidebar-foot` pins the
+  toggle right); page-level overrides removed. The /judgments main
+  table also overflowed 165px at 390px — wrapped in the standard
+  `.table-scroll`. Verified with headless Chromium at 390×844:
+  toggle at identical x on every section, zero horizontal overflow on
+  /evals/run, /judgments, /reports, /evals, /compare. Suite pickers on
+  /evals/run and /judgments list suites most-recent-first.
+
 ## 2026-10-11 (evening) — Nav renames, Run Diff integrated, rail polish
 
 Owner round: "Kick Off → Start, Runs → Compare, Run Diff inside

@@ -101,10 +101,8 @@
       .bp-clock { text-align: left; }
     }
     @media (max-width: 800px) {
-      .topnav-row { flex-wrap: wrap; row-gap: .4rem; }
-      .topnav-row .sidebar-foot { margin-left: auto; }
-      .topnav-tabs { order: 3; width: 100%; }
-      .topnav-sub { flex-wrap: wrap; }
+      /* nav.css owns narrow-screen nav behavior (scroll, never stack) —
+         page-level order/width overrides fought it and stacked the bar. */
     }
   </style>
   <script src="/static/app-time.js"></script>
@@ -144,6 +142,7 @@
       <a href="/kickoff" data-page="kickoff" data-nav-section="Benchmarks">Start</a>
       <a href="/compare" data-page="compare" data-nav-section="Benchmarks">Compare</a>
       <a href="/evals/suites/new" data-page="evalsuite" data-nav-section="Evals">Create</a>
+      <a href="/evals/run" data-page="evalrun" data-nav-section="Evals">Run</a>
       <a href="/evals" data-page="evals" data-nav-section="Evals">Results</a>
       <a href="/judgments" data-page="judgments" data-nav-section="Evals">Judgments</a>
       <a href="/reports" data-page="reports" data-nav-section="Evals">Reports</a>

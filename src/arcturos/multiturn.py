@@ -35,12 +35,21 @@ def validate_multiturn_item(item: dict[str, Any]) -> None:
 
 
 def post_openai_chat(target: str, messages: list[dict],
-                     api_key: str | None = None, model: str = "test") -> dict:
+                     api_key: str | None = None, model: str = "test",
+                     max_tokens: int = 512, temperature: float = 0.0) -> dict:
     """POST /v1/chat/completions; base URL may or may not include /v1.
 
     ``model`` defaults to 'test' (llama.cpp native servers ignore the model
     field); proxy-fronted targets (litellm/vLLM multi-model) need the real
     model name — pass it through.
+
+    ``messages`` content may be a plain string or an OpenAI content-part
+    list (text + image_url parts for vision items) — passed through as-is.
+
+    ``max_tokens``/``temperature`` are caller-owned (v0.2): the eval replay
+    defaults to 1024 (reasoning models burn budget thinking before
+    answering; 512 shipped truncated answers) and 0.0 for reproducibility.
+    Defaults here keep the historical 512/0.0 for existing callers.
     """
     base = target.rstrip("/")
     if base.endswith("/v1"):
@@ -52,7 +61,8 @@ def post_openai_chat(target: str, messages: list[dict],
         base + "/v1/chat/completions",
         data=json.dumps({
             "model": model, "messages": messages,
-            "max_tokens": 512, "temperature": 0.0, "stream": False,
+            "max_tokens": max_tokens, "temperature": temperature,
+            "stream": False,
         }).encode(),
         headers=headers, method="POST",
     )
@@ -80,11 +90,16 @@ def extract_output(resp: dict) -> tuple[str, int, int]:
 
 
 def replay_multiturn(target: str, item: dict[str, Any],
-                     api_key: str | None = None, model: str = "test") -> list[dict[str, Any]]:
+                     api_key: str | None = None, model: str = "test",
+                     max_tokens: int = 512, temperature: float = 0.0) -> list[dict[str, Any]]:
     """Replay one multi-turn item; return one record per assistant turn.
 
     Record: {turn_index, item_id (suffixed), output, prompt_tokens,
              completion_tokens, latency_ms}.
+
+    ``max_tokens``/``temperature`` pass through to every turn call (v0.2:
+    the eval dispatcher defaults these to 1024/0.0 for the reasoning-model
+    budget lesson).
     """
     validate_multiturn_item(item)
     base_id = item["id"]
@@ -102,7 +117,9 @@ def replay_multiturn(target: str, item: dict[str, Any],
         elif t["role"] == "assistant":
             turn_no += 1
             t0 = time.monotonic()
-            resp = post_openai_chat(target, messages, api_key, model=model)
+            resp = post_openai_chat(target, messages, api_key, model=model,
+                                    max_tokens=max_tokens,
+                                    temperature=temperature)
             latency_ms = (time.monotonic() - t0) * 1000
             content, ptok, ctok = extract_output(resp)
             messages.append({"role": "assistant", "content": content})
