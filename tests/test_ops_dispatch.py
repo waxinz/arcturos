@@ -286,8 +286,10 @@ def test_dispatch_eval_missing_prompt(db_path, pass_preflight):
                           {"items": [{"id": "q1"}]})
 
 
-def test_dispatch_eval_rolls_back_on_failure(db_path, pass_preflight):
-    """Second item raises -> nothing from the batch is stored."""
+def test_dispatch_eval_partial_preservation(db_path, pass_preflight):
+    """v0.2 (ADR 007 §5): second item raises -> item 1 stays stored, the
+    eval_run row is stamped 'partial', and the failure is reported in
+    item_errors — no all-or-nothing rollback."""
     _mk_suite(db_path)
     suite = {"items": [
         {"id": "q1", "prompt": "ok"},
@@ -304,11 +306,15 @@ def test_dispatch_eval_rolls_back_on_failure(db_path, pass_preflight):
                 "usage": {"prompt_tokens": 1, "completion_tokens": 1}}
 
     with patch("arcturos.multiturn.post_openai_chat", side_effect=flaky):
-        with pytest.raises(RuntimeError, match="exploded"):
-            ops.dispatch_eval(db_path, 1, "http://fake:4000/v1", "m", suite)
+        result = ops.dispatch_eval(db_path, 1, "http://fake:4000/v1", "m", suite)
+    assert result["status"] == "partial"
+    assert [r["item_id"] for r in result["stored"]] == ["q1"]
+    assert any("q2" in e for e in result["item_errors"])
     from arcturos import db as dbmod
     conn = dbmod.connect(db_path)
-    assert conn.execute("SELECT COUNT(*) FROM eval_results").fetchone()[0] == 0
+    assert conn.execute("SELECT COUNT(*) FROM eval_results").fetchone()[0] == 1
+    assert conn.execute(
+        "SELECT status FROM eval_runs").fetchone()[0] == "partial"
     conn.close()
 
 
@@ -885,14 +891,14 @@ def test_dispatch_bench_openai_name_stored(db_path):
 
 def test_dispatch_eval_creates_named_eval_run(db_path, pass_preflight):
     """Eval replay creates an eval_runs row; items stamp eval_run_id;
-    the response carries eval_run_id; name is stored."""
+    the response carries eval_run_id + status; name is stored."""
     import sqlite3
     conn = sqlite3.connect(db_path)
     conn.execute("INSERT INTO eval_suites (id, name, version) VALUES (1, 's', 'v1')")
     conn.commit()
     conn.close()
 
-    def fake_post(url, messages, api_key=None, model=None):
+    def fake_post(url, messages, api_key=None, model=None, **_kw):
         return {"choices": [{"message": {"content": "ok"},
                              "finish_reason": "stop"}],
                "usage": {"prompt_tokens": 5, "completion_tokens": 3}}
@@ -906,11 +912,13 @@ def test_dispatch_eval_creates_named_eval_run(db_path, pass_preflight):
             name="nightly eval")
 
     assert result["eval_run_id"] == 1
+    assert result["status"] == "complete"
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
     erun = dict(conn.execute("SELECT * FROM eval_runs WHERE id = 1").fetchone())
     assert erun["name"] == "nightly eval"
     assert erun["suite_id"] == 1
+    assert erun["status"] == "complete"
     stamped = conn.execute(
         "SELECT COUNT(*) FROM eval_results WHERE eval_run_id = 1").fetchone()[0]
     assert stamped == 2
@@ -925,7 +933,7 @@ def test_dispatch_eval_unnamed_eval_run_stores_null_name(db_path, pass_preflight
     conn.commit()
     conn.close()
 
-    def fake_post(url, messages, api_key=None, model=None):
+    def fake_post(url, messages, api_key=None, model=None, **_kw):
         return {"choices": [{"message": {"content": "ok"},
                              "finish_reason": "stop"}],
                "usage": {"prompt_tokens": 5, "completion_tokens": 3}}
@@ -1025,9 +1033,10 @@ def test_dispatch_eval_unknown_suite_checked_before_target(db_path):
         pf.assert_not_called()
 
 
-def test_dispatch_eval_replay_failure_rolls_back_transactionally(db_path):
-    """A mid-replay failure (network error on item 2) rolls back the
-    eval-run row + item-1 result — eval batches stay transactional."""
+def test_dispatch_eval_partial_preserves_run_and_items(db_path):
+    """v0.2 (ADR 007 §5): a mid-replay failure (network error on item 2)
+    keeps the eval-run row + item-1 result and stamps the run 'partial' —
+    partial preservation, not rollback."""
     # Seed a suite directly.
     from arcturos import db as dbmod
     conn = dbmod.connect(db_path)
@@ -1039,7 +1048,7 @@ def test_dispatch_eval_replay_failure_rolls_back_transactionally(db_path):
 
     calls = {"n": 0}
 
-    def flaky_post(target, messages, api_key=None, model="test"):
+    def flaky_post(target, messages, api_key=None, model="test", **_kw):
         calls["n"] += 1
         if calls["n"] == 1:
             return {"choices": [{"message": {"content": "ok"}}],
@@ -1050,16 +1059,19 @@ def test_dispatch_eval_replay_failure_rolls_back_transactionally(db_path):
         pf.return_value.ok.return_value = True
         with patch("arcturos.multiturn.post_openai_chat",
                    side_effect=flaky_post):
-            with pytest.raises(ops.DispatchFailure, match="replay failed"):
-                ops.dispatch_eval(
-                    db_path, suite_id=1, target="http://fake:8080",
-                    model_fingerprint="m",
-                    suite={"items": [{"id": "q1", "prompt": "a"},
-                                     {"id": "q2", "prompt": "b"}]})
-    # Rollback: no eval_runs row, no stored results.
+            result = ops.dispatch_eval(
+                db_path, suite_id=1, target="http://fake:8080",
+                model_fingerprint="m",
+                suite={"items": [{"id": "q1", "prompt": "a"},
+                                 {"id": "q2", "prompt": "b"}]})
+    assert result["status"] == "partial"
+    assert [r["item_id"] for r in result["stored"]] == ["q1"]
+    # Partial preservation: run row + item-1 result survive.
     conn = dbmod.connect(db_path)
-    assert conn.execute("SELECT COUNT(*) FROM eval_runs").fetchone()[0] == 0
-    assert conn.execute("SELECT COUNT(*) FROM eval_results").fetchone()[0] == 0
+    assert conn.execute("SELECT COUNT(*) FROM eval_runs").fetchone()[0] == 1
+    assert conn.execute(
+        "SELECT status FROM eval_runs").fetchone()[0] == "partial"
+    assert conn.execute("SELECT COUNT(*) FROM eval_results").fetchone()[0] == 1
     conn.close()
 
 

@@ -23,7 +23,8 @@ EXPECTED_COLUMNS = {
         "id", "suite_id", "model_fingerprint", "item_id", "output", "prompt_tokens",
         "completion_tokens", "latency_ms", "eval_run_id", "created_at",
     },
-    "eval_runs": {"id", "suite_id", "model_fingerprint", "name", "created_at"},
+    "eval_runs": {"id", "suite_id", "model_fingerprint", "name", "status",
+                  "created_at"},
     "judgments": {
         "id", "eval_result_a", "eval_result_b", "judge_model", "judge_template_version",
         "winner", "confidence", "rationale", "created_at",
