@@ -8,9 +8,9 @@ Power sampling (nvidia-smi over SSH) is meaningful ONLY on dedicated
 inference hosts where the GPU serves the benchmarked model exclusively:
 - demo host A (DeepSeek-V4-Flash, 6x3090)
 - demo host B (GLM-5.3-Flash, 6x3090)
-The qwen rotation lives behind a litellm PROXY on taupo; the actual serving
-hosts are elsewhere and taupo's own RTX 3080 is unrelated to that workload.
-Sampling taupo's GPU during a qwen rotation bench measures the wrong box.
+The qwen rotation lives behind a litellm PROXY on the model gateway host; the actual serving
+hosts are elsewhere and the gateway host's own RTX 3080 is unrelated to that workload.
+Sampling the gateway host's GPU during a qwen rotation bench measures the wrong box.
 
 Also: never benchmark demo host A/demo host B while other work may be queued —
 with --parallel 1 on llama.cpp servers, probe traffic behind unrelated jobs

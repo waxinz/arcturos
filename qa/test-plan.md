@@ -10,7 +10,7 @@ Three layers, all runnable from the repo root:
 |---|---|---|
 | Unit / API | pytest + FastAPI TestClient | every endpoint, validation boundary, append-only behavior |
 | Storage | pytest against temp SQLite | triggers, FK constraints, schema shape |
-| Live smoke | curl / real requests against taupo :24816 | deployed service health, real benchmark round trip |
+| Live smoke | curl / real requests against the deploy host :24816 | deployed service health, real benchmark round trip |
 
 Rules:
 - Every acceptance criterion in PRD.md §J1–J5 maps to at least one test here.
@@ -49,7 +49,7 @@ Rules:
 - [x] `tests/test_eval_jobs.py::test_combined_job_validation` — 422s: one target without the other, non-http url, empty model, identical A/B models, judge-is-contestant guard (UI discriminator substring), eval_run_ids+targets mutually exclusive, suite without a definition snapshot
 - [x] `tests/test_eval_jobs.py::test_combined_job_replay_failure_is_honest` — a replay that stores zero results hard-stops the job as error before judging ("nothing to judge"), zero judgments written
 - [x] staged job record: `combined`/`stage` (replay-a → replay-b → judging) drive the UI stage chip; one Stop flag flows through all three stages
-- [x] Live smoke: combined kick-off from /judgments against two real models on the smoke suite (2026-10-15, taupo: guard 422 → override accepted → staged job replay A/B complete on the suite's 6-item snapshot → 12 judgments stored (6 items × both orders), runs #4/#5, status_line honest; winners a=7/tie=5 from the family judge)
+- [x] Live smoke: combined kick-off from /judgments against two real models on the smoke suite (2026-10-15, deploy host: guard 422 → override accepted → staged job replay A/B complete on the suite's 6-item snapshot → 12 judgments stored (6 items × both orders), runs #4/#5, status_line honest; winners a=7/tie=5 from the family judge)
 
 ### J5 — Reports
 - [ ] win-rate aggregation: counts + percentages per suite × pair
@@ -67,7 +67,7 @@ Rules:
 
 ### Async bench jobs + progress indicator (added 2026-09-21)
 - [x] `tests/test_ops_dispatch.py` — openai transport dispatch: happy path stores points with no power fields (ADR 002), preflight failure surfaces actionable DispatchError, missing model → DispatchError, invalid transport name → 422; all network mocked
-- [x] Job API live-validated on taupo: job poll mid-run returns running + per-point metrics + self-correcting ETA; done state carries run_id; unknown job id → 404; openai job without model → 422 before any thread starts
+- [x] Job API live-validated on the deploy host: job poll mid-run returns running + per-point metrics + self-correcting ETA; done state carries run_id; unknown job id → 404; openai job without model → 422 before any thread starts
 - [x] Job-status 500 regression (missing `time` import crashed running-job polls; fixed a7cba82) — poller retries transient failures client-side
 - [ ] Load: two concurrent jobs against different targets do not interleave stored rows
 
@@ -76,7 +76,7 @@ Rules:
 - [x] `tests/test_api.py::test_run_visibility_validation_and_404` — non-bool hidden → 422, missing key → 422, unknown run → 404 (both endpoints)
 - [x] `tests/test_api.py::test_run_visibility_survives_append_only_triggers` — UPDATE/DELETE on run_visibility rejected at the storage layer
 - [x] `tests/test_api.py::test_hidden_run_excluded_from_compare` — compare rejects a hidden run with actionable 404 naming the unhide call; unhidden run compares again
-- [x] Live-validated on taupo: hide run 9 → gone from /api/runs (reason stored), unhide → back; 144 tests green
+- [x] Live-validated on the deploy host: hide run 9 → gone from /api/runs (reason stored), unhide → back; 144 tests green
 
 ### Cross-cutting
 - [x] /health returns ok; index served
@@ -145,7 +145,7 @@ eval payloads for J3/J4 implementation.
 
 ## 4. Exit criteria per milestone
 
-A milestone is "done" when: all mapped tests pass on taupo, the live smoke
+A milestone is "done" when: all mapped tests pass on the deploy host, the live smoke
 layer exercises the feature against :24816, and AGENTS.md §6 records it.
 | S28 | default run name is humanized `host · model · targets` | `tests/test_ops_dispatch.py::test_default_run_name_humanized` | done |
 | S29 | custom name flows through dispatch (native + openai) into the stored run | `tests/test_ops_dispatch.py::test_dispatch_bench_custom_name_stored`, `tests/test_ops_dispatch.py::test_dispatch_bench_openai_name_stored` | done |

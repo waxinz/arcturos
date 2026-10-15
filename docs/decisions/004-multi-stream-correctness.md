@@ -5,7 +5,7 @@ Status: accepted
 
 ## Context
 
-Run #103 (tabbyAPI/GLM-5.3-Flash on ruapehu, transport=openai, streams=4)
+Run #103 (tabbyAPI/GLM-5.3-Flash on an inference host, transport=openai, streams=4)
 stored Σ prefill 1222 T/s against a single-stream baseline of ~614 T/s
 (run #102) — a 2x "capacity" the server never had. The server journal for
 that run shows what actually happened:
