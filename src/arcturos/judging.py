@@ -78,6 +78,44 @@ RUBRICS: dict[str, str] = {
         "confident fabrication, and safe handling of the edge the prompt "
         "probes."
     ),
+    "accuracy": (
+        "This item measures ACCURACY on a verifiable task. The exact "
+        "correct answer dominates everything: a wrong or hedged answer "
+        "loses even if well-explained; show-work quality is a tie-breaker "
+        "only between two correct answers."
+    ),
+    "factuality": (
+        "This item measures FACTUALITY of real-world claims. Any material "
+        "factual error loses immediately; a direct correct answer beats "
+        "hedging that avoids the claim; confident fabrication loses to "
+        "honest uncertainty."
+    ),
+    "tool-calling": (
+        "This item measures TOOL CALLING. Given the tool schemas in the "
+        "prompt, the correct tool choice with valid, complete arguments "
+        "dominates: calling a nonexistent tool, inventing parameters, or "
+        "missing required arguments loses to a correct call; unnecessary "
+        "extra calls are a tie-breaker only."
+    ),
+    "agentic": (
+        "This item measures AGENTIC task execution across turns. Correct "
+        "final state dominates: tracking prior context, decomposing the "
+        "task, replanning after new constraints, and acting (or asking) "
+        "appropriately. A response that loses prior state or contradicts "
+        "an earlier constraint loses."
+    ),
+    "conciseness": (
+        "This item measures CONCISENESS under a completeness constraint. "
+        "The response must cover everything asked with minimal padding: "
+        "verbosity, preambles, and restatement lose; omissions lose "
+        "harder than extra words."
+    ),
+    "extraction": (
+        "This item measures EXTRACTION fidelity. The requested values, "
+        "verbatim and complete, in the requested structure dominate: "
+        "missing fields, altered values, or added commentary lose even "
+        "if the surrounding prose is polished."
+    ),
 }
 DEFAULT_RUBRIC = (
     "Judge overall response quality: correctness, instruction following, "

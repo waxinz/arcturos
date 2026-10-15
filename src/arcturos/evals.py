@@ -34,7 +34,10 @@ from urllib import request as urlreq
 from urllib.error import HTTPError, URLError
 
 # The quality axes (ADR 007 §1). Fixed allowlist: reports group by these;
-# freeform sub-classification stays in `category`.
+# freeform sub-classification stays in `category`. v1.1 (2026-10-15): grew
+# from 7 to 13 for the Evals 101 community set — accuracy, factuality,
+# tool-calling, agentic, conciseness, extraction join; `knowledge` stays
+# for arcturos-core-v1 back-compat (its items report under knowledge).
 DIMENSIONS = (
     "reasoning",
     "knowledge",
@@ -43,6 +46,12 @@ DIMENSIONS = (
     "coding",
     "vision",
     "safety",
+    "accuracy",
+    "factuality",
+    "tool-calling",
+    "agentic",
+    "conciseness",
+    "extraction",
 )
 
 CHECK_KINDS = ("exact", "numeric", "contains", "one_of", "regex")
