@@ -46,9 +46,15 @@ PAGES: list[tuple[str, str, str, str]] = [
     # that redirects regular visitors to the integrated view.
     ("diff.html",            "diff",      "Benchmarks", "Run diff"),
     ("eval-suite-new.html",  "evalsuite", "Evals",      "Create"),
+    # v0.2 (2026-10-15): replay got its own async job page (live per-item
+    # progress + operator stop) — the Run pill.
+    ("eval-run.html",        "evalrun",   "Evals",      "Run"),
     ("evals.html",           "evals",     "Evals",      "Results"),
     ("judgments.html",       "judgments", "Evals",      "Judgments"),
     ("reports.html",         "reports",   "Evals",      "Reports"),
+    # Drill-downs (2026-10-15): shell identity, no NAV_MODEL entry.
+    ("eval-run-detail.html", "evalrundetail", "Evals", "Run detail"),
+    ("judgment-detail.html", "jpair",         "Evals", "Judgment detail"),
     ("models.html",          "models",    "Settings",   "Models"),
     ("baselines.html",       "baselines", "Settings",   "Baselines"),
 ]
@@ -61,9 +67,10 @@ NAV_MODEL = [
     ]),
     ("Evals", [
         ("evalsuite", "/evals/suites/new", "Create"),
-        ("evals",     "/evals",           "Results"),
-        ("judgments", "/judgments",       "Judgments"),
-        ("reports",   "/reports",         "Reports"),
+        ("evalrun",   "/evals/run",        "Run"),
+        ("evals",     "/evals",            "Results"),
+        ("judgments", "/judgments",        "Judgments"),
+        ("reports",   "/reports",          "Reports"),
     ]),
     ("Settings", [
         ("models",    "/models",    "Models"),
@@ -104,7 +111,6 @@ def sidebar_html() -> str:
 
 
 def build_pages() -> None:
-    sidebar = sidebar_html()
     for fname, page, section, _title in PAGES:
         src = STATIC / fname
         if not src.exists():
@@ -137,22 +143,24 @@ def build_pages() -> None:
                       '', m.group(0)[len('<body'):-1]).rstrip()),
             t, count=1)
 
-        # ---- 4) nav injection / refresh right after <body …> ---------
-        # Replace-based (2026-10-11): the nav model is owned HERE, so a
-        # changed NAV_MODEL must rewrite the nav on every page, not just
-        # inject into pages missing one. The topnav container is matched
-        # FIRST — matching only the legacy aside made every re-run after
-        # the top-nav round inject a second header.
-        if '<header class="topnav">' in t:
+        # ---- 4) nav placeholder ---------------------------------------
+        # 2026-10-15: pages carry a `<!--NAV-->` placeholder; the header
+        # is ONE canonical partial (partials/nav.html, written below from
+        # NAV_MODEL) injected server-side at request time (pagelib).
+        # Stamping full markup into 13 files let copies drift (a regen
+        # once silently deleted the Run pill).
+        if '<!--NAV-->' in t:
+            pass                                    # already wired
+        elif '<header class="topnav">' in t:
             t = re.sub(r'[ \t]*<header class="topnav">.*?</header>\n',
-                       sidebar, t, count=1, flags=re.S)
+                       '  <!--NAV-->\n', t, count=1, flags=re.S)
         elif 'class="sidebar"' in t:
             t = re.sub(r'  <aside class="sidebar">.*?</aside>\n',
-                       sidebar, t, count=1, flags=re.S)
+                       '  <!--NAV-->\n', t, count=1, flags=re.S)
         else:
             m = re.search(r'<body[^>]*>', t)
             assert m, f"{fname}: <body> not found"
-            t = t[:m.end()] + "\n" + sidebar + t[m.end():]
+            t = t[:m.end()] + "\n  <!--NAV-->\n" + t[m.end():]
 
         # ---- 5) retire the legacy header (brand + old nav) ----------
         t = re.sub(r"\s*<header>\s*<h1>Arcturos</h1>.*?</header>",
@@ -177,6 +185,14 @@ def build_pages() -> None:
             print(f"built {fname} ({page} / {section})")
         else:
             print(f"unchanged: {fname}")
+
+    # The menu itself: ONE canonical partial injected server-side by
+    # pagelib at request time. This file is the single source of truth.
+    partials = STATIC / "partials"
+    partials.mkdir(exist_ok=True)
+    out = partials / "nav.html"
+    out.write_text(sidebar_html())
+    print(f"built partials/nav.html ({len(NAV_MODEL)} sections)")
 
 
 if __name__ == "__main__":

@@ -181,7 +181,8 @@ def guard_judge_not_contestant(judge_model: str, contestant_fps: list[str],
 
 def select_pairs(db: sqlite3.Connection, suite_id: int,
                  model_a: str | None = None,
-                 model_b: str | None = None) -> list[dict[str, Any]]:
+                 model_b: str | None = None,
+                 eval_run_ids: list[int] | None = None) -> list[dict[str, Any]]:
     """Build the judging worklist for one suite.
 
     Groups stored eval_results by item id and normalized fingerprint,
@@ -203,6 +204,11 @@ def select_pairs(db: sqlite3.Connection, suite_id: int,
     rows = db.execute(
         "SELECT * FROM eval_results WHERE suite_id = ? ORDER BY id",
         (suite_id,)).fetchall()
+    if eval_run_ids:
+        # Run-scoped judging (Results page multi-select): only results
+        # produced by the selected replay runs compete.
+        wanted_runs = set(eval_run_ids)
+        rows = [r for r in rows if r["eval_run_id"] in wanted_runs]
     if not rows:
         return []
     definition = _latest_definition(db, suite_id)
@@ -398,7 +404,9 @@ def judge_once(judge_url: str, judge_model: str, prompt_text: str,
 
 def judge_item(work_item: dict[str, Any], judge_url: str, judge_model: str,
                retries: int = 1, api_key: str | None = None,
-               rng: random.Random | None = None) -> tuple[list[dict], list[str], list[dict]]:
+               rng: random.Random | None = None,
+               abort: "AbortFlag | None" = None
+               ) -> tuple[list[dict], list[str], list[dict]]:
     """Judge one work item in BOTH presentation orders (position swap).
 
     Order is randomized once per call pair; each order gets its own retry
@@ -436,6 +444,14 @@ def judge_item(work_item: dict[str, Any], judge_url: str, judge_model: str,
     errors: list[str] = []
     rows: list[dict] = []
     for order, (first, second, first_was_a) in enumerate(orders):
+        # Operator Stop lands between the two order calls too — the bench
+        # precedent checks "between points and inside streaming loops";
+        # checking only between items left a mid-item Stop ineffective
+        # until the whole item (both orders + retries) finished. Break
+        # (don't raise): order 0's judgment is already paid for and is
+        # preserved — dispatch_judge still reports the job aborted.
+        if abort is not None and order == 1 and abort.requested:
+            break
         order_label = "a→b" if first_was_a else "b→a"
         verdict = None
         for attempt in range(retries + 1):
@@ -528,7 +544,9 @@ def abort_judge_job(job_id: str) -> dict[str, Any] | None:
         rec["abort_requested"] = True
         flag = _ABORT_FLAGS.pop(job_id, None)
     if flag is not None:
-        flag.set()
+        # AbortFlag.request() — a v0.2 refactor bug called set() (no such
+        # method) and turned the UI Stop button into a 500.
+        flag.request()
     return {"job_id": job_id, "status": rec["status"], "abort_requested": True}
 
 
@@ -551,6 +569,7 @@ def dispatch_judge(
     retries: int = 1,
     allow_contestant_judge: bool = False,
     judge_api_key: str | None = None,
+    eval_run_ids: list[int] | None = None,
     on_progress=None,
     abort: "AbortFlag | None" = None,
 ) -> dict:
@@ -581,7 +600,8 @@ def dispatch_judge(
         if conn.execute("SELECT 1 FROM eval_suites WHERE id = ?",
                         (suite_id,)).fetchone() is None:
             raise ValueError(f"eval suite {suite_id} not found")
-        work = select_pairs(conn, suite_id, model_a=model_a, model_b=model_b)
+        work = select_pairs(conn, suite_id, model_a=model_a, model_b=model_b,
+                            eval_run_ids=eval_run_ids)
         if not work:
             raise ValueError(
                 "no judgeable pairs: every item needs results from exactly "
@@ -601,7 +621,7 @@ def dispatch_judge(
                 label = w["base_id"] + (f"#t{w['turn_index']}" if w["turn_index"] else "")
                 judgments, item_errors, rows = judge_item(
                     w, judge_url, judge_model, retries=retries,
-                    api_key=judge_api_key, rng=rng)
+                    api_key=judge_api_key, rng=rng, abort=abort)
                 errors.extend(item_errors)
                 now = bench_mod._utcnow()
                 for j in judgments:
@@ -630,7 +650,12 @@ def dispatch_judge(
                 "errors": errors,
             }
         return {
-            "suite_id": suite_id, "status": "complete",
+            "suite_id": suite_id,
+            # A Stop that lands mid-item (order-1 break) still ends the
+            # job "aborted" — not "complete" — with the paid-for
+            # judgment(s) preserved.
+            "status": "aborted" if (abort is not None and abort.requested)
+            else "complete",
             "judged": len(items_progress), "stored": stored,
             "invalid": len(errors), "items": items_progress,
             "errors": errors,
@@ -649,6 +674,7 @@ def run_judge_job(
     retries: int = 1,
     allow_contestant_judge: bool = False,
     judge_api_key: str | None = None,
+    eval_run_ids: list[int] | None = None,
 ) -> str:
     """Validate + snapshot a judge job, run it in a daemon thread.
 
@@ -664,7 +690,8 @@ def run_judge_job(
         if conn.execute("SELECT 1 FROM eval_suites WHERE id = ?",
                         (suite_id,)).fetchone() is None:
             raise ValueError(f"eval suite {suite_id} not found")
-        work = select_pairs(conn, suite_id, model_a=model_a, model_b=model_b)
+        work = select_pairs(conn, suite_id, model_a=model_a, model_b=model_b,
+                            eval_run_ids=eval_run_ids)
         if not work:
             raise ValueError(
                 "no judgeable pairs: every item needs results from exactly "
@@ -683,6 +710,7 @@ def run_judge_job(
         "status": "running",           # running | done | error | aborted
         "suite_id": suite_id,
         "judge_model": judge_model or "(default)",
+        "eval_run_ids": list(eval_run_ids) if eval_run_ids else [],
         "items_total": 0,
         "items_done": 0,
         "work_items": [],              # per-judgment progress rows (UI table)
@@ -722,7 +750,8 @@ def run_judge_job(
                 judge_model=judge_model, model_a=model_a, model_b=model_b,
                 retries=retries,
                 allow_contestant_judge=allow_contestant_judge,
-                judge_api_key=judge_api_key, on_progress=on_progress,
+                judge_api_key=judge_api_key, eval_run_ids=eval_run_ids,
+                on_progress=on_progress,
                 abort=flag)
             with _JOBS_LOCK:
                 job["stored"] = result["stored"]

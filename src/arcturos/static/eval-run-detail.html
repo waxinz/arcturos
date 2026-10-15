@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="icon" type="image/png" sizes="16x16" href="/static/icons/scorpio-favicon-16.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/static/icons/scorpio-favicon-32.png">
+  <title>Arcturos — Eval run detail</title>
+  <link rel="stylesheet" href="/static/theme.css">
+  <link rel="stylesheet" href="/static/nav.css">
+  <style>
+    .page-sub { color: var(--text-muted); margin: .25rem 0 1rem; font-size: .9rem; }
+    .meta { display: flex; flex-wrap: wrap; gap: .5rem 1.6rem; margin: 0 0 1rem;
+            font-size: .9rem; }
+    .meta b { color: var(--text-soft); font-weight: 600; }
+    .badge { display: inline-block; padding: .1rem .5rem; border-radius: 999px;
+             font-size: .78rem; font-weight: 700; border: 1px solid var(--border); }
+    .badge.complete { color: var(--ok, #2a7); border-color: var(--ok, #2a7); }
+    .badge.partial { color: var(--warn, #d80); border-color: var(--warn, #d80); }
+    .table-scroll { overflow-x: auto; }   /* narrow screens: scroll, not wrap */
+    table { border-collapse: collapse; width: 100%; background: var(--surface);
+            margin-bottom: 1.2rem; }
+    th, td { text-align: left; padding: .45rem .6rem; border-bottom: 1px solid var(--border);
+             font-size: .85rem; vertical-align: top; }
+    th { font-weight: 600; color: var(--text-soft); white-space: nowrap; }
+    td.mono { font-family: ui-monospace, monospace; font-size: .78rem;
+              white-space: pre-wrap; word-break: break-word; min-width: 280px; }
+    td.num { white-space: nowrap; color: var(--text-muted); }
+    .actions { display: flex; flex-wrap: wrap; gap: .6rem; margin: 0 0 1rem; }
+    .actions a { display: inline-block; padding: .4rem .8rem; font-size: .88rem;
+                 border: 1px solid var(--border); border-radius: 5px;
+                 color: var(--text); text-decoration: none; background: var(--surface); }
+    .status { color: var(--text-muted); font-size: .85rem; margin-top: .75rem; }
+  </style>
+  <script src="/static/app-time.js"></script>
+  <script src="/static/theme.js"></script>
+  <script src="/static/nav.js"></script>
+</head>
+<body class="shell" data-page="evalrundetail" data-section="Evals">
+  <!--NAV-->
+
+  <main class="page">
+    <h1>Eval run</h1>
+    <p class="page-sub" id="sub"></p>
+
+    <div class="meta" id="meta"></div>
+    <div class="actions" id="actions"></div>
+
+    <div class="table-scroll">
+      <table>
+        <thead>
+          <tr><th>Item</th><th>Turn</th><th>Output</th><th>Tokens p/c</th>
+              <th>Latency</th></tr>
+        </thead>
+        <tbody id="rows"><tr><td colspan="5" class="status">Loading…</td></tr></tbody>
+      </table>
+    </div>
+    <p id="status" class="status"></p>
+  </main>
+
+  <script>
+function $(id) { return document.getElementById(id); }
+
+    function preview(s, n) {
+      if (s === null || s === undefined) return '(no output stored)';
+      s = String(s).replace(/\s+/g, ' ').trim();
+      return s.length > n ? s.slice(0, n) + '…' : s;
+    }
+
+    function turnLabel(itemId) {
+      const m = String(itemId).match(/#t(\d+)$/);
+      return m ? 't' + m[1] : '1';
+    }
+
+    async function load() {
+      const runId = location.pathname.split('/').filter(Boolean).pop();
+      try {
+        const res = await fetch('/api/eval-runs/' + runId);
+        if (!res.ok) throw new Error('HTTP ' + res.status + ': ' + await res.text());
+        const data = await res.json();
+        const run = data.run;
+        $('sub').textContent = 'Run #' + run.id + ' — ' + (run.name || '(unnamed)');
+        $('meta').innerHTML =
+          '<span><b>Suite</b> <a href="/evals">' + run.suite_name + ' ' +
+            run.suite_version + ' (#' + run.suite_id + ')</a></span>' +
+          '<span><b>Model</b> ' + run.model_fingerprint + '</span>' +
+          '<span><b>Status</b> <span class="badge ' + run.status + '">' +
+            run.status + '</span></span>' +
+          '<span><b>Created</b> ' + window.fmtLocalTime(run.created_at) + '</span>';
+        $('actions').innerHTML =
+          '<a href="/reports">Report for this suite →</a>' +
+          '<a href="/evals">← All runs</a>';
+        const tbody = $('rows');
+        tbody.innerHTML = '';
+        if (!data.results.length) {
+          tbody.innerHTML = '<tr><td colspan="5" class="status">' +
+            'No result rows stored for this run.</td></tr>';
+          return;
+        }
+        for (const r of data.results) {
+          const tr = document.createElement('tr');
+          const tdItem = document.createElement('td');
+          tdItem.className = 'mono'; tdItem.textContent = r.item_id.split('#')[0];
+          const tdTurn = document.createElement('td');
+          tdTurn.textContent = turnLabel(r.item_id);
+          const tdOut = document.createElement('td');
+          tdOut.className = 'mono'; tdOut.textContent = preview(r.output, 4000);
+          tdOut.title = r.output || '';
+          const tdTok = document.createElement('td');
+          tdTok.className = 'num';
+          tdTok.textContent = (r.prompt_tokens ?? '—') + ' / ' +
+                              (r.completion_tokens ?? '—');
+          const tdLat = document.createElement('td');
+          tdLat.className = 'num';
+          tdLat.textContent = r.latency_ms != null
+            ? (r.latency_ms / 1000).toFixed(1) + 's' : '—';
+          tr.append(tdItem, tdTurn, tdOut, tdTok, tdLat);
+          tbody.appendChild(tr);
+        }
+        $('status').textContent = data.results.length + ' result row(s).';
+      } catch (err) {
+        $('status').textContent = 'Failed to load run: ' + err;
+      }
+    }
+    load();
+  </script>
+</body>
+</html>

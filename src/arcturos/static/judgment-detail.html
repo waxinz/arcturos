@@ -1,0 +1,166 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="icon" type="image/png" sizes="16x16" href="/static/icons/scorpio-favicon-16.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/static/icons/scorpio-favicon-32.png">
+  <title>Arcturos — Judgment details</title>
+  <link rel="stylesheet" href="/static/theme.css">
+  <link rel="stylesheet" href="/static/nav.css">
+  <style>
+    .page-sub { color: var(--text-muted); margin: .25rem 0 1rem; font-size: .9rem; }
+    .meta { display: flex; flex-wrap: wrap; gap: .5rem 1.6rem; margin: 0 0 1rem;
+            font-size: .9rem; }
+    .meta b { color: var(--text-soft); font-weight: 600; }
+    .sxs { display: grid; grid-template-columns: 1fr 1fr; gap: .8rem;
+           margin: 0 0 .6rem; }
+    @media (max-width: 720px) { .sxs { grid-template-columns: 1fr; } }
+    .resp { background: var(--surface); border: 1px solid var(--border);
+            border-radius: 6px; padding: .7rem .8rem; }
+    .resp.winner { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+    .resp h4 { margin: 0 0 .4rem; font-size: .82rem; color: var(--text-soft);
+               display: flex; justify-content: space-between; gap: .5rem;
+               align-items: baseline; }
+    .resp .win-tag { color: var(--accent); font-weight: 800; font-size: .74rem;
+                     text-transform: uppercase; letter-spacing: .06em; }
+    .resp pre { margin: 0; font-family: ui-monospace, monospace; font-size: .8rem;
+                white-space: pre-wrap; word-break: break-word; max-height: 22rem;
+                overflow-y: auto; }
+    .verdict { background: var(--surface); border: 1px solid var(--border);
+               border-radius: 6px; padding: .6rem .8rem; margin: 0 0 1.2rem;
+               font-size: .85rem; }
+    .verdict .v-head { display: flex; flex-wrap: wrap; gap: .4rem 1.2rem;
+                       color: var(--text-soft); font-weight: 600; }
+    .verdict details { margin-top: .35rem; }
+    .verdict summary { cursor: pointer; color: var(--link); font-size: .82rem; }
+    .item-head { font-weight: 700; margin: 1.2rem 0 .45rem; font-size: .95rem; }
+    .status { color: var(--text-muted); font-size: .85rem; margin-top: .75rem; }
+    .empty { color: var(--text-muted); padding: 2rem 0; }
+    .tie-tag { color: var(--text-muted); font-weight: 800; font-size: .74rem;
+               text-transform: uppercase; letter-spacing: .06em; }
+  </style>
+  <script src="/static/app-time.js"></script>
+  <script src="/static/theme.js"></script>
+  <script src="/static/nav.js"></script>
+</head>
+<body class="shell" data-page="jpair" data-section="Evals">
+  <!--NAV-->
+
+  <main class="page">
+    <h1>Judgment details</h1>
+    <p class="page-sub" id="sub">Side-by-side responses with the judge's verdict per item.</p>
+    <div class="meta" id="meta"></div>
+    <div id="items"><p class="empty">Loading…</p></div>
+    <p id="status" class="status"></p>
+  </main>
+
+  <script>
+function $(id) { return document.getElementById(id); }
+
+    function winnerTag(row, which) {
+      if (row.winner === which) return '<span class="win-tag">judge preferred</span>';
+      if (row.winner === 'tie') return '<span class="tie-tag">tie</span>';
+      return '';
+    }
+
+    function respCard(row, which) {
+      const fp = which === 'a' ? row.fingerprint_a : row.fingerprint_b;
+      const out = which === 'a' ? row.output_a : row.output_b;
+      const div = document.createElement('div');
+      div.className = 'resp' + (row.winner === which ? ' winner' : '');
+      div.innerHTML = '<h4><span></span><span class="tag"></span></h4><pre></pre>';
+      div.querySelector('h4 span').textContent = fp;
+      div.querySelector('.tag').innerHTML = winnerTag(row, which);
+      div.querySelector('pre').textContent =
+        (out === null || out === undefined || out === '')
+          ? '(empty output stored)' : out;
+      return div;
+    }
+
+    function verdictCard(row) {
+      const div = document.createElement('div');
+      div.className = 'verdict';
+      const head = document.createElement('div');
+      head.className = 'v-head';
+      const conf = row.confidence != null ? row.confidence : '—';
+      head.innerHTML = '<span>#' + row.id + '</span>' +
+        '<span>Winner: <b class="w"></b></span>' +
+        '<span>Confidence: <b></b></span>' +
+        '<span>Judge: <b></b></span>' +
+        '<span>' + window.fmtLocalTime(row.created_at) + '</span>';
+      head.querySelector('.w').textContent =
+        row.winner === 'a' ? row.fingerprint_a
+        : row.winner === 'b' ? row.fingerprint_b : 'tie';
+      head.querySelectorAll('b')[1].textContent = String(conf);
+      head.querySelectorAll('b')[2].textContent = row.judge_model;
+      const det = document.createElement('details');
+      const sum = document.createElement('summary');
+      sum.textContent = 'Judge rationale';
+      const body = document.createElement('div');
+      body.style.marginTop = '.3rem';
+      body.textContent = row.rationale || '(no rationale stored)';
+      det.append(sum, body);
+      div.append(head, det);
+      return div;
+    }
+
+    async function load() {
+      const q = new URLSearchParams(location.search);
+      const suiteId = q.get('suite_id');
+      const ma = q.get('model_a') || '';
+      const mb = q.get('model_b') || '';
+      if (!suiteId || !ma || !mb) {
+        $('items').innerHTML = '<p class="empty">Need ?suite_id=&model_a=&model_b= ' +
+          '(select two runs on the Results page).</p>';
+        return;
+      }
+      try {
+        const res = await fetch('/api/judgments/pair?suite_id=' + suiteId +
+                                '&model_a=' + encodeURIComponent(ma) +
+                                '&model_b=' + encodeURIComponent(mb));
+        if (!res.ok) throw new Error('HTTP ' + res.status + ': ' + await res.text());
+        const rows = await res.json();
+        if (!rows.length) {
+          $('items').innerHTML = '<p class="empty">No judgments for this pair yet. ' +
+            'Select the two runs on the <a href="/evals">Results</a> page and press ' +
+            '“Judgements”.</p>';
+          return;
+        }
+        const counts = {a: 0, b: 0, tie: 0};
+        for (const r of rows) counts[r.winner] = (counts[r.winner] || 0) + 1;
+        // Column labels: use the row-stored fingerprints (stable across orders).
+        $('meta').innerHTML =
+          '<span><b>Suite</b> #' + suiteId + '</span>' +
+          '<span><b>Items judged</b> ' + rows.length + '</span>' +
+          '<span><b>' + rows[0].fingerprint_a + ' wins</b> ' + counts.a + '</span>' +
+          '<span><b>' + rows[0].fingerprint_b + ' wins</b> ' + counts.b + '</span>' +
+          '<span><b>Ties</b> ' + (counts.tie || 0) + '</span>' +
+          '<span><b>Judge</b> ' + rows[0].judge_model + '</span>';
+        const box = $('items');
+        box.innerHTML = '';
+        let lastItem = null;
+        for (const row of rows) {
+          const base = row.item_id.split('#')[0];
+          if (base !== lastItem) {
+            lastItem = base;
+            const h = document.createElement('div');
+            h.className = 'item-head';
+            h.textContent = base;
+            box.appendChild(h);
+          }
+          const sxs = document.createElement('div');
+          sxs.className = 'sxs';
+          sxs.append(respCard(row, 'a'), respCard(row, 'b'));
+          box.append(sxs, verdictCard(row));
+        }
+        $('status').textContent = rows.length + ' judgment row(s) — both presentation ' +
+          'orders aggregate here (position swap, ADR 007).';
+      } catch (err) {
+        $('status').textContent = 'Failed to load judgments: ' + err;
+      }
+    }
+    load();
+  </script>
+</body>
+</html>

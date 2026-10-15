@@ -71,6 +71,7 @@ from . import compare, ops, reports
 from . import config
 from . import evals as evals_mod
 from . import judging
+from . import pagelib
 from .db import DEFAULT_DB_PATH, connect, init_db
 from .schemas import (
     BaselineCreate,
@@ -83,6 +84,12 @@ from .schemas import (
 )
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
+
+
+def page_response(name: str) -> Response:
+    """Serve a static page with the canonical nav partial injected
+    (pagelib.render_page — one source of truth for the menu)."""
+    return Response(pagelib.render_page(name), media_type="text/html")
 
 
 def create_app(db_path: str | Path | None = None) -> FastAPI:
@@ -155,11 +162,11 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
 
     @app.get("/runs/{run_id}", include_in_schema=False)
     def run_detail_view(run_id: int):
-        return FileResponse(STATIC_DIR / "run_detail.html")
+        return page_response("run_detail.html")
 
     @app.get("/compare", include_in_schema=False)
-    def compare_page() -> FileResponse:
-        return FileResponse(STATIC_DIR / "compare.html")
+    def compare_page() -> Response:
+        return page_response("compare.html")
 
     # Run Diff integrated into the Compare page (owner call 2026-10-11):
     # the A/B tables render under the charts, so /diff is a permanent
@@ -171,46 +178,58 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
     # Split pages (2026-09-30 UX round 2): every kick-off form is its own
     # URL so the sidebar can link it directly — no anchor fragments.
     @app.get("/kickoff", include_in_schema=False)
-    def kickoff_page() -> FileResponse:
-        return FileResponse(STATIC_DIR / "bench-kickoff.html")
+    def kickoff_page() -> Response:
+        return page_response("bench-kickoff.html")
 
     @app.get("/evals/suites/new", include_in_schema=False)
-    def eval_suite_new_page() -> FileResponse:
-        return FileResponse(STATIC_DIR / "eval-suite-new.html")
+    def eval_suite_new_page() -> Response:
+        return page_response("eval-suite-new.html")
 
     @app.get("/evals", include_in_schema=False)
-    def evals_page() -> FileResponse:
-        return FileResponse(STATIC_DIR / "evals.html")
+    def evals_page() -> Response:
+        return page_response("evals.html")
 
     @app.get("/evals/run", include_in_schema=False)
-    def eval_run_page() -> FileResponse:
+    def eval_run_page() -> Response:
         # v0.2 (2026-10-15): replay moved off /create onto its own async
         # job page (live per-item progress + operator stop).
-        return FileResponse(STATIC_DIR / "eval-run.html")
+        return page_response("eval-run.html")
+
+    @app.get("/evals/runs/{run_id}", include_in_schema=False)
+    def eval_run_detail_page(run_id: int) -> Response:
+        # Drill-down (2026-10-15): one replay run's stored rows. Reached
+        # from the Results page's run table; data-page="evalrundetail".
+        return page_response("eval-run-detail.html")
+
+    @app.get("/judgments/pair", include_in_schema=False)
+    def judgment_pair_page() -> Response:
+        # Drill-down (2026-10-15): SxS judgment detail for one suite +
+        # model pair (?suite_id=&model_a=&model_b=). data-page="jpair".
+        return page_response("judgment-detail.html")
 
     @app.get("/judgments", include_in_schema=False)
-    def judgments_page() -> FileResponse:
-        return FileResponse(STATIC_DIR / "judgments.html")
+    def judgments_page() -> Response:
+        return page_response("judgments.html")
 
     @app.get("/reports", include_in_schema=False)
-    def reports_page() -> FileResponse:
-        return FileResponse(STATIC_DIR / "reports.html")
+    def reports_page() -> Response:
+        return page_response("reports.html")
 
     @app.get("/models", include_in_schema=False)
-    def models_view() -> FileResponse:
-        return FileResponse(STATIC_DIR / "models.html")
+    def models_view() -> Response:
+        return page_response("models.html")
 
     @app.get("/baselines", include_in_schema=False)
-    def baselines_view() -> FileResponse:
-        return FileResponse(STATIC_DIR / "baselines.html")
+    def baselines_view() -> Response:
+        return page_response("baselines.html")
 
     @app.get("/create", include_in_schema=False)
-    def create_page() -> FileResponse:
+    def create_page() -> Response:
         # Legacy path (2026-09-30 split): serves the bench start page.
         # 2026-10-11: was serving a frozen create.html copy that drifted
         # from bench-kickoff.html (old headings, old form) — both routes
         # now serve the one canonical page.
-        return FileResponse(STATIC_DIR / "bench-kickoff.html")
+        return page_response("bench-kickoff.html")
 
     @app.get("/health")
     def health() -> dict:
@@ -457,6 +476,71 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
         require_parent(db, "eval_suites", suite_id)
         return fetch_all(db, "SELECT * FROM eval_results WHERE suite_id = ? ORDER BY id",
                          (suite_id,))
+
+    # --------------------------------------------------------- eval runs --
+    @app.get("/api/eval-runs")
+    def list_eval_runs(db=Depends(get_db)):
+        """Replay runs, newest first — the Results page's primary table.
+
+        Each row: run id, suite, the run's model fingerprint, run label,
+        lifecycle status, stored result count, created_at. A run id links
+        to /evals/runs/{id}; selecting two runs judges them against each
+        other (eval_run_ids-scoped judge job).
+        """
+        return fetch_all(db, """
+            SELECT r.id, r.suite_id, r.model_fingerprint, r.name, r.status,
+                   r.created_at, s.name AS suite_name, s.version AS suite_version,
+                   (SELECT COUNT(*) FROM eval_results er
+                     WHERE er.eval_run_id = r.id) AS result_count
+            FROM eval_runs r JOIN eval_suites s ON s.id = r.suite_id
+            ORDER BY r.id DESC
+        """)
+
+    @app.get("/api/eval-runs/{run_id}")
+    def get_eval_run(run_id: int, db=Depends(get_db)):
+        """One replay run + its stored result rows (run detail page)."""
+        run = fetch_one(db, """
+            SELECT r.*, s.name AS suite_name, s.version AS suite_version
+            FROM eval_runs r JOIN eval_suites s ON s.id = r.suite_id
+            WHERE r.id = ?""", (run_id,))
+        if run is None:
+            raise HTTPException(status_code=404,
+                                detail=f"eval run {run_id} not found")
+        results = fetch_all(db, """
+            SELECT id, item_id, output, prompt_tokens, completion_tokens,
+                   latency_ms, created_at, eval_run_id
+            FROM eval_results WHERE eval_run_id = ? ORDER BY id""", (run_id,))
+        return {"run": run, "results": results}
+
+    # ------------------------------------------------- judgment SxS view --
+    @app.get("/api/judgments/pair")
+    def judgments_pair(suite_id: int, model_a: str, model_b: str,
+                       db=Depends(get_db)):
+        """Side-by-side judgment rows for one suite + model pair (any order).
+
+        Each row joins the judgment with BOTH stored responses so the
+        detail page renders the SxS diff. `fingerprint_a` names whose
+        response is 'a' in that row — winner 'a' always means
+        fingerprint_a's response won, whatever order the caller passed.
+        """
+        require_parent(db, "eval_suites", suite_id)
+        return fetch_all(db, """
+            SELECT j.id, j.judge_model,
+                   j.judge_template_version AS template,
+                   j.winner, j.confidence, j.rationale, j.created_at,
+                   ra.item_id AS item_id,
+                   ra.model_fingerprint AS fingerprint_a,
+                   rb.model_fingerprint AS fingerprint_b,
+                   ra.output AS output_a, rb.output AS output_b,
+                   ra.id AS result_a_id, rb.id AS result_b_id
+            FROM judgments j
+            JOIN eval_results ra ON ra.id = j.eval_result_a
+            JOIN eval_results rb ON rb.id = j.eval_result_b
+            WHERE ra.suite_id = ?
+              AND ((ra.model_fingerprint = ? AND rb.model_fingerprint = ?)
+                OR (ra.model_fingerprint = ? AND rb.model_fingerprint = ?))
+            ORDER BY ra.item_id, j.id
+        """, (suite_id, model_a, model_b, model_b, model_a))
 
     @app.get("/api/eval-results")
     def list_all_eval_results(db=Depends(get_db)):
@@ -934,8 +1018,19 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
         retries = body.get("retries", 1)
         allow_contestant = body.get("allow_contestant_judge", False)
         judge_api_key = body.get("judge_api_key") or body.get("api_key")
+        eval_run_ids = body.get("eval_run_ids")
         if not isinstance(suite_id, int) or suite_id < 1:
             raise HTTPException(status_code=422, detail="suite_id must be a positive int")
+        if eval_run_ids is not None:
+            # Results-page multi-select: scope judging to the selected
+            # replay runs (needs two runs on the same suite to pair).
+            if (not isinstance(eval_run_ids, list)
+                    or not all(isinstance(r, int) and not isinstance(r, bool)
+                               and r >= 1 for r in eval_run_ids)
+                    or len(eval_run_ids) < 2):
+                raise HTTPException(
+                    status_code=422,
+                    detail="eval_run_ids must be a list of >= 2 positive ints")
         if judge_model is not None and (not isinstance(judge_model, str)
                                         or not judge_model.strip()):
             raise HTTPException(status_code=422,
@@ -963,7 +1058,8 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
                 judge_model=judge_model.strip() if isinstance(judge_model, str) else None,
                 model_a=model_a, model_b=model_b, retries=retries,
                 allow_contestant_judge=allow_contestant,
-                judge_api_key=judge_api_key)
+                judge_api_key=judge_api_key,
+                eval_run_ids=eval_run_ids)
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc))
         return {"job_id": job_id}
