@@ -21,11 +21,13 @@ from typing import Any
 from arcturos import bench
 from arcturos import bench_openai
 from arcturos import compare
+from arcturos import evals
 from arcturos import power
 from arcturos import multiturn as mt
 from arcturos import preflight
 
 import httpx
+from urllib.error import URLError
 
 # Bench transports: 'native' (llama.cpp /tokenize + /completion) and
 # 'openai' (any /v1/chat/completions server: tabbyAPI, vLLM, litellm).
@@ -738,32 +740,53 @@ def dispatch_eval(
     suite: dict[str, Any],
     api_key: str | None = None,
     name: str | None = None,
+    max_tokens: int = 1024,
+    temperature: float = 0.0,
+    retries: int = 0,
+    concurrency: int = 1,
+    on_result=None,
+    abort: "AbortFlag | None" = None,
 ) -> dict:
     """Replay one eval suite against a target; store eval_results per item.
 
-    Single-turn items replay as one POST; multi-turn items replay via
+    Single-turn items replay as one POST (honoring the item's ``system``
+    prompt and ``image`` — v0.2); multi-turn items replay via
     multiturn.replay_multiturn (one stored row per assistant turn).
     ``model_fingerprint`` is passed to the target as the chat model name —
     proxy-fronted endpoints (litellm/vLLM) need the real name; native
     llama.cpp servers ignore it.
 
+    v0.2 parameters (ADR 007 §5): ``max_tokens`` default 1024 (512 shipped
+    truncated answers on reasoning models), ``temperature`` default 0.0,
+    ``retries`` per item (default 0), ``concurrency`` across items (default
+    1, max 8). Items are committed PER ITEM — a mid-replay failure keeps
+    completed items and marks the eval_run partial (partial preservation,
+    the bench pattern). ``abort`` (ops.AbortFlag) stops between items.
+
     ``name`` (optional run label, 2026-09-22): names the eval run shown
     on /evals and reports; None stores NULL and the UI falls back to the
-    default 'suite · model · N items' rendering.
+    the default 'suite · model · N items' rendering.
     """
-    items = suite.get("items")
-    if not isinstance(items, list) or not items:
+    try:
+        items = evals.validate_suite(suite)
+    except evals.ItemValidationError as exc:
+        # cheap validation keeps the historical DispatchError contract
+        # (main.py + callers match on it); no network has been touched.
+        raise DispatchError(str(exc)) from exc
+    if not items:
         raise DispatchError("suite has no items to replay")
-    # cheap shape validation BEFORE preflight: bad input needs no network
-    for item in items:
-        if item.get("type") == "multi-turn":
-            mt.validate_multiturn_item(item)
-        else:
-            item_id = item.get("id") or item.get("item_id")
-            if not item_id:
-                raise DispatchError(f"item missing id: {item!r}")
-            if not (item.get("prompt") or item.get("content")):
-                raise DispatchError(f"item {item_id!r} missing prompt")
+    if not isinstance(max_tokens, int) or isinstance(max_tokens, bool) \
+            or not (1 <= max_tokens <= 32768):
+        raise DispatchError("max_tokens must be an int between 1 and 32768")
+    if not isinstance(temperature, (int, float)) or isinstance(temperature, bool) \
+            or not (0.0 <= temperature <= 2.0):
+        raise DispatchError("temperature must be a number between 0 and 2")
+    if not isinstance(retries, int) or isinstance(retries, bool) or retries < 0 \
+            or retries > 3:
+        raise DispatchError("retries must be an int between 0 and 3")
+    if not isinstance(concurrency, int) or isinstance(concurrency, bool) \
+            or not (1 <= concurrency <= 8):
+        raise DispatchError("concurrency must be an int between 1 and 8")
 
     from arcturos import db as dbmod
     conn = dbmod.connect(db_path)
@@ -780,59 +803,324 @@ def dispatch_eval(
     conn = dbmod.connect(db_path)
     dbmod.init_db(conn)
     stored: list[dict] = []
+    item_errors: list[str] = []
+    eval_run_id: int | None = None
     try:
         # Eval-run entity (2026-09-22): one replay = one eval_runs row; the
         # items stamp eval_run_id so results group per run. Insert happens
-        # before replay: a mid-replay failure still leaves the (partial)
-        # run row + whatever items completed — consistent with bench's
-        # partial-run preservation.
+        # before replay; items commit PER ITEM (v0.2) — a mid-replay failure
+        # still leaves the run row + whatever items completed (partial
+        # preservation), and the run is marked partial in the except net.
         now = bench._utcnow()
         cur = conn.execute(
             "INSERT INTO eval_runs (suite_id, model_fingerprint, name, created_at)"
             " VALUES (?, ?, ?, ?)",
             (suite_id, model_fingerprint, name, now))
         eval_run_id = int(cur.lastrowid)
-        for item in items:
-            if item.get("type") == "multi-turn":
-                records = mt.replay_multiturn(target, item, api_key=api_key,
-                                              model=model_fingerprint)
-                for rec in records:
-                    row = _store_eval_result(
-                        conn, suite_id, model_fingerprint, rec["item_id"],
-                        rec["output"], rec["prompt_tokens"],
-                        rec["completion_tokens"], rec["latency_ms"],
-                        eval_run_id=eval_run_id)
-                    stored.append(row)
-            else:
-                item_id = item.get("id") or item.get("item_id")
-                if not item_id:
-                    raise DispatchError(f"item missing id: {item!r}")
-                prompt = item.get("prompt") or item.get("content")
-                if not prompt:
-                    raise DispatchError(f"item {item_id!r} missing prompt")
-                t0 = time.monotonic()
-                resp = mt.post_openai_chat(
-                    target, [{"role": "user", "content": prompt}],
-                    api_key=api_key, model=model_fingerprint)
-                latency_ms = round((time.monotonic() - t0) * 1000, 1)
-                content, ptoks, ctoks = mt.extract_output(resp)
-                stored.append(_store_eval_result(
-                    conn, suite_id, model_fingerprint, item_id,
-                    content, ptoks, ctoks, latency_ms,
-                    eval_run_id=eval_run_id))
         conn.commit()
-    except (RuntimeError, ValueError) as exc:
-        conn.rollback()
-        raise DispatchFailure(
-            f"eval replay failed against {target}: {exc} — check the target "
-            "is still up / returns valid chat responses") from exc
-    except Exception:
-        conn.rollback()
-        raise
-    finally:
+
+        def _replay_one(item: dict[str, Any]) -> list[dict[str, Any]]:
+            """Replay one item with the retry policy; raises after budget."""
+            last_exc: Exception | None = None
+            for attempt in range(retries + 1):
+                try:
+                    if item.get("type") == "multi-turn":
+                        return list(mt.replay_multiturn(
+                            target, item, api_key=api_key,
+                            model=model_fingerprint,
+                            max_tokens=max_tokens,
+                            temperature=temperature))
+                    rec = evals.replay_single_turn(
+                        target, item, api_key=api_key,
+                        model=model_fingerprint, max_tokens=max_tokens,
+                        temperature=temperature)
+                    return [rec]
+                except (httpx.HTTPError, URLError, TimeoutError,
+                        RuntimeError, ValueError, KeyError) as exc:
+                    last_exc = exc
+            raise last_exc  # type: ignore[misc]
+
+        def _store_and_track(rec: dict[str, Any]) -> dict:
+            row = _store_eval_result(
+                conn, suite_id, model_fingerprint, rec["item_id"],
+                rec["output"], rec["prompt_tokens"],
+                rec["completion_tokens"], rec["latency_ms"],
+                eval_run_id=eval_run_id)
+            conn.commit()  # per-item commit: partial preservation (v0.2)
+            stored.append(row)
+            if on_result is not None:
+                on_result(rec["item_id"], row)
+            return row
+
+        def _work_items() -> list[tuple[dict[str, Any], Any]]:
+            """(item, done-marker) pairs in stable suite order."""
+            return [(item, None) for item in items]
+
+        done_count = 0
+
+        def _track(done_label: str) -> None:
+            nonlocal done_count
+            done_count += 1
+            if abort is not None:
+                abort.check()
+
+        if concurrency > 1:
+            from concurrent.futures import ThreadPoolExecutor
+            with ThreadPoolExecutor(max_workers=concurrency) as pool:
+                futures = {pool.submit(_replay_one, item): item
+                           for item, _ in _work_items()}
+                for future, item in futures.items():
+                    if abort is not None:
+                        abort.check()
+                    try:
+                        records = future.result()
+                    except SweepAborted:
+                        raise
+                    except Exception as exc:  # noqa: BLE001 — recorded, not swallowed
+                        item_errors.append(
+                            f"{item.get('id', '?')}: {exc}")
+                        continue
+                    for rec in records:
+                        _store_and_track(rec)
+                    _track(item.get("id", "?"))
+        else:
+            for item, _ in _work_items():
+                if abort is not None:
+                    abort.check()
+                try:
+                    records = _replay_one(item)
+                except SweepAborted:
+                    raise
+                except Exception as exc:  # noqa: BLE001 — recorded, not swallowed
+                    item_errors.append(f"{item.get('id', '?')}: {exc}")
+                    continue
+                for rec in records:
+                    _store_and_track(rec)
+                _track(item.get("id", "?"))
+        # eval_run status: partial when any item failed or an abort landed;
+        # complete when every item stored. (runs.status doctrine — ADR 007 §5)
+        if item_errors or (abort is not None and abort.requested):
+            conn.execute("UPDATE eval_runs SET status = 'partial' WHERE id = ?",
+                         (eval_run_id,))
+        conn.commit()
+    except SweepAborted as exc:
+        _mark_partial(conn, eval_run_id)
+        conn.commit()
+        if not stored:
+            conn.close()
+            raise DispatchFailure(
+                f"eval replay aborted before any item completed: {exc}") from exc
         conn.close()
+        return {"suite_id": suite_id, "eval_run_id": eval_run_id,
+                "status": "aborted", "stored": stored,
+                "item_errors": item_errors, "error": str(exc)}
+    except (RuntimeError, ValueError) as exc:
+        _mark_partial(conn, eval_run_id)
+        conn.commit()
+        conn.close()
+        if not stored:
+            raise DispatchFailure(
+                f"eval replay failed against {target}: {exc} — check the target "
+                "is still up / returns valid chat responses") from exc
+        return {"suite_id": suite_id, "eval_run_id": eval_run_id,
+                "status": "partial", "stored": stored,
+                "item_errors": item_errors, "error": str(exc)}
+    except Exception:
+        _mark_partial(conn, eval_run_id)
+        conn.commit()
+        conn.close()
+        raise
+    conn.close()
+    status = "partial" if item_errors else "complete"
     return {"suite_id": suite_id, "eval_run_id": eval_run_id,
-            "stored": stored}
+            "status": status, "stored": stored, "item_errors": item_errors}
+
+
+def _mark_partial(conn, eval_run_id: int | None) -> None:
+    """Stamp an eval_run partial (the trigger whitelists name + status)."""
+    if not eval_run_id:
+        return
+    try:
+        conn.execute("UPDATE eval_runs SET status = 'partial' WHERE id = ?",
+                     (eval_run_id,))
+    except Exception:
+        pass  # pre-migration DB without the status column — best effort
+
+
+# ----------------------------------------------------- async eval jobs -----
+# Same in-process job pattern as bench jobs (ADR 007 §5): metadata + live
+# progress only; every measurement lands in the append-only store through
+# the normal dispatch path. A dashboard restart loses the live progress
+# view, never data.
+_EVAL_JOBS: dict[str, dict[str, Any]] = {}
+_EVAL_ABORT_FLAGS: dict[str, "AbortFlag"] = {}
+_EVAL_JOBS_LOCK = threading.Lock()
+
+
+def abort_eval_job(job_id: str) -> dict[str, Any] | None:
+    """Request a cooperative stop of a running eval replay (ADR 006 pattern).
+
+    The current item finishes or is abandoned per its retry budget; items
+    after the flag never start; completed items stay stored (partial
+    preservation). Aborting a finished job is a no-op.
+    """
+    with _EVAL_JOBS_LOCK:
+        rec = _EVAL_JOBS.get(job_id)
+        if rec is None:
+            return None
+        rec["abort_requested"] = True
+        flag = _EVAL_ABORT_FLAGS.pop(job_id, None)
+    if flag is not None:
+        flag.request()
+    return {"job_id": job_id, "status": rec["status"], "abort_requested": True}
+
+
+def eval_job_status(job_id: str) -> dict[str, Any] | None:
+    """Thread-safe snapshot of one eval job record."""
+    with _EVAL_JOBS_LOCK:
+        rec = _EVAL_JOBS.get(job_id)
+        if rec is None:
+            return None
+        snapshot = dict(rec)
+        snapshot["items"] = [dict(p) for p in rec["items"]]
+    # computed at read time (like bench jobs) — never stored on the record
+    if snapshot.get("finished_at") is not None:
+        snapshot["elapsed_s"] = round(
+            snapshot["finished_at"] - snapshot["started_at"], 1)
+    else:
+        snapshot["elapsed_s"] = round(
+            time.monotonic() - snapshot["started_at"], 1)
+    return snapshot
+
+
+def _prune_eval_jobs() -> None:
+    now = time.monotonic()
+    for job_id in [j for j, rec in _EVAL_JOBS.items()
+                   if rec["status"] in ("done", "error", "partial", "aborted")
+                   and now - rec["finished_at"] > _JOB_TTL_S]:
+        _EVAL_JOBS.pop(job_id, None)
+        _EVAL_ABORT_FLAGS.pop(job_id, None)
+
+
+def run_eval_job(
+    db_path,
+    suite_id: int,
+    target: str,
+    model_fingerprint: str,
+    suite: dict[str, Any],
+    api_key: str | None = None,
+    name: str | None = None,
+    max_tokens: int = 1024,
+    temperature: float = 0.0,
+    retries: int = 0,
+    concurrency: int = 1,
+) -> str:
+    """Validate + snapshot an eval job, replay in a daemon thread.
+
+    Returns the job id immediately. Validation errors raise DispatchError
+    synchronously (422 before any thread starts); everything inside the
+    thread is reported via the job record.
+    """
+    try:
+        items = evals.validate_suite(suite)
+    except evals.ItemValidationError as exc:
+        raise DispatchError(str(exc)) from exc
+    if not items:
+        raise DispatchError("suite has no items to replay")
+    _prune_eval_jobs()
+    job_id = uuid.uuid4().hex[:12]
+    flag = AbortFlag()
+    job: dict[str, Any] = {
+        "job_id": job_id,
+        "kind": "eval",
+        "status": "preflight",         # preflight | running | done | error | partial | aborted
+        "suite_id": suite_id,
+        "target": target,
+        "model": model_fingerprint,
+        "items_total": len(items),
+        "items_done": 0,
+        "results_stored": 0,
+        "items": [],                   # per-item progress rows
+        "status_line": "validating + preflight…",
+        "eta_s": None,
+        "started_at": time.monotonic(),
+        "finished_at": None,
+        "eval_run_id": None,
+        "error": None,
+        "item_errors": [],
+        "abort_requested": False,
+    }
+    with _EVAL_JOBS_LOCK:
+        _EVAL_JOBS[job_id] = job
+        _EVAL_ABORT_FLAGS[job_id] = flag
+
+    def _worker() -> None:
+        try:
+            def on_result(item_id: str, row: dict) -> None:
+                with _EVAL_JOBS_LOCK:
+                    job["status"] = "running"
+                    job["items_done"] += 1
+                    job["results_stored"] += 1
+                    job["items"].append({
+                        "item_id": item_id, "result_id": row["id"],
+                        "latency_ms": row["latency_ms"],
+                        "completion_tokens": row["completion_tokens"],
+                    })
+                    elapsed = time.monotonic() - job["started_at"]
+                    remaining = job["items_total"] - job["items_done"]
+                    job["eta_s"] = (
+                        round(elapsed / job["items_done"] * remaining, 1)
+                        if job["items_done"] and remaining > 0 else None)
+                    job["status_line"] = (
+                        f"item {job['items_done']}/{job['items_total']}"
+                        f" — {item_id} stored")
+
+            result = dispatch_eval(
+                db_path=db_path, suite_id=suite_id, target=target,
+                model_fingerprint=model_fingerprint, suite=suite,
+                api_key=api_key, name=name, max_tokens=max_tokens,
+                temperature=temperature, retries=retries,
+                concurrency=concurrency, on_result=on_result, abort=flag)
+            with _EVAL_JOBS_LOCK:
+                job["eval_run_id"] = result.get("eval_run_id")
+                job["item_errors"] = result.get("item_errors", [])
+                status = result.get("status", "complete")
+                if status == "aborted":
+                    job["status"] = "aborted"
+                    job["status_line"] = (
+                        f"stopped by operator after {job['items_done']} item(s)"
+                        f" — eval run #{result.get('eval_run_id')} (partial) stored")
+                elif status == "partial":
+                    job["status"] = "partial"
+                    job["error"] = result.get("error")
+                    job["status_line"] = (
+                        f"failed after {job['items_done']} item(s) — eval run "
+                        f"#{result.get('eval_run_id')} (partial) stored")
+                else:
+                    job["status"] = "done"
+                    job["status_line"] = (
+                        f"eval run #{result.get('eval_run_id')} stored "
+                        f"({job['items_total']} items)")
+                job["finished_at"] = time.monotonic()
+                job["eta_s"] = 0.0 if status == "complete" else None
+        except DispatchFailure as exc:
+            with _EVAL_JOBS_LOCK:
+                job["status"] = "error"
+                job["error"] = str(exc)
+                job["status_line"] = f"failed: {exc}"
+                job["finished_at"] = time.monotonic()
+                job["eta_s"] = None
+        except Exception as exc:  # noqa: BLE001 — the thread IS the report
+            with _EVAL_JOBS_LOCK:
+                job["status"] = "error"
+                job["error"] = str(exc)
+                job["status_line"] = f"failed: {exc}"
+                job["finished_at"] = time.monotonic()
+                job["eta_s"] = None
+
+    threading.Thread(target=_worker, name=f"eval-job-{job_id}",
+                     daemon=True).start()
+    return job_id
 
 
 def _store_eval_result(conn, suite_id: int, model_fingerprint: str,

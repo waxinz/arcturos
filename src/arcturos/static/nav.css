@@ -44,7 +44,11 @@ body.shell {
   gap: 1.1rem;
   height: 56px;
   padding: 0 1.4rem;
+  flex-wrap: nowrap;              /* theme.css's legacy nav wrap must not
+                                    reflow the bar per active section */
 }
+.topnav nav { flex-wrap: nowrap; } /* kills legacy `nav {flex-wrap:wrap}`
+                                    for topnav-tabs AND topnav-sub */
 .topnav-sub {
   display: flex;
   align-items: center;
@@ -85,8 +89,12 @@ body.shell {
   display: flex;
   align-items: center;
   gap: .35rem;
-  flex: 1;
+  flex: 1 1 auto;
+  min-width: 0;                    /* allow shrink below content size */
+  overflow-x: auto;                /* narrow screens: scroll, never stack */
+  scrollbar-width: none;
 }
+.topnav-tabs::-webkit-scrollbar { display: none; }
 .nav-section { display: contents; }      /* data-nav-section lives on the
                                             div for nav.js; the head is the
                                             visible tab */
@@ -149,6 +157,9 @@ body.shell {
 .sidebar-foot {
   display: flex;
   align-items: center;
+  margin-left: auto;               /* pin the theme toggle to the right edge
+                                      — identical position on every section */
+  flex: 0 0 auto;
 }
 .theme-toggle-inline {
   background: var(--code-bg);

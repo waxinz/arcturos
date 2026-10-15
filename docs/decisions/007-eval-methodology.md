@@ -1,0 +1,174 @@
+# ADR 007 — Eval system methodology: dimensions, position swap, rubrics, references, in-process jobs
+
+**Date:** 2026-10-15
+**Status:** Accepted
+**Deciders:** Alexei (owner), Mantis (implementation)
+
+## Context
+
+The benchmarking side of Arcturos spent a month hardening a set of patterns:
+async jobs with live progress and self-correcting ETAs, cooperative operator
+stop (ADR 006), partial-run preservation, preflight before dispatch, honest
+nulls, labels-vs-measurements (ADR 003), transport autodetect, and judge
+isolation discovered ad hoc during the first smoke evals (judge-must-not-be-
+a-contestant, reasoning models returning empty `content`, fingerprint
+normalization across server suffixes).
+
+The eval side (J3/J4/J5) pre-dates most of those patterns and cannot answer
+the owner's primary question: **"which model is better, A or B, based on
+specific dimensions and evals?"** Concretely:
+
+1. Items carry a freeform `category` but no primary **dimension** — there is
+   no axis to break "which model is better" down by.
+2. Judging exists only as a CLI script (`scripts/ab_judge.py`) that
+   hard-codes one suite file, judges each item once in one random order
+   (unmitigated position bias), has no retry policy, and no dashboard
+   surface.
+3. Replay is synchronous only (no progress, no stop, no partial
+   preservation), hard-codes `max_tokens=512` (reasoning models truncate),
+   and silently drops the `system` field of single-turn items.
+4. Reports aggregate ALL judgments ever stored — one re-judge with a
+   different judge pollutes the aggregate — and there is no confidence
+   measure on small-n win rates.
+5. No image content support anywhere in the eval path.
+
+Industry practice (surveyed in `docs/research/eval-landscape.md`: Chatbot
+Arena, MT-Bench, AlpacaEval 2.0, Arena-Hard, IFEval, GSM8K) converged on
+solutions for each of these; this ADR adopts the subset that fits a
+local-first, append-only, multi-judge tool.
+
+## Decision
+
+### 1. Dimensions are the primary eval axis
+
+Every eval item carries `dimension` — one of a fixed allowlist
+(`reasoning`, `knowledge`, `instruction-following`, `writing`, `coding`,
+`vision`, `safety`) — plus the existing freeform `category` sub-tag.
+Reports break win rates and pass rates down BY DIMENSION as the headline
+view; categories remain the second-level drill-down. Unknown dimensions are
+a validation error at suite-creation time; legacy suites without dimensions
+report under `uncategorized` (honest fallback, same doctrine as
+categories).
+
+### 2. Objective where possible, judged where not
+
+Items MAY carry a `reference` — a deterministic check spec validated at
+suite creation and evaluated at REPORT time against stored outputs:
+
+- `{"check": "exact", "value": str}` — whitespace-trimmed, case-insensitive
+  equality (industry exact-match normalization).
+- `{"check": "numeric", "value": number, "tolerance": number = 0}` — the
+  LAST number found in the output must match within tolerance (GSM8K
+  convention: final answers end in the number).
+- `{"check": "contains", "value": str, "case_sensitive": bool = false}`.
+- `{"check": "one_of", "values": [str, ...]}` — normalized membership.
+- `{"check": "regex", "pattern": str, "flags": str = ""}` — `re.search`.
+
+Reference items need no judge: reports show per-model pass rates per
+dimension alongside judge win rates. Scoring happens at report time from
+the newest definition snapshot — improving a reference spec applies
+retroactively and the append-only store is never touched. Executing
+model-generated code in a sandbox (Aider-style) is explicitly OUT of scope
+for v1: arbitrary code execution from the dispatch path is a security
+surface v1 does not accept.
+
+### 3. Blind pairwise judging: position swap, dimension rubrics, retry
+
+- The judge runner is IN-PROCESS (`src/arcturos/judging.py`, invoked by
+  `POST /api/ops/judge/jobs`) — the same async-job pattern as bench jobs:
+  synchronous validation, background thread, live per-item progress,
+  self-correcting ETA, cooperative stop (ADR 006's `AbortFlag` checked
+  between items), partial preservation (judgments stored as they land).
+- **Every item is judged TWICE — once per presentation order — and both
+  raw judgments are stored.** No derived "combined" row: reports aggregate
+  rows, so an order-flipped item contributes one win to each side (a tie in
+  aggregate) instead of trusting a coin flip. Per-item disagreement is
+  visible as the flip count.
+- The judge prompt template is versioned (`blind-pair-v2`) and
+  **dimension-aware**: the item's dimension selects a rubric paragraph
+  (correctness-first for reasoning/knowledge/coding; instruction-fidelity
+  for instruction-following; prose quality for writing; visual grounding
+  for vision; calibration for safety). Template version is stored on every
+  judgment row, so reports can scope to a generation.
+- Verdict parsing tolerates reasoning-model chatter: prefer a
+  `VERDICT: <1|2|tie>` line, fall back to the LAST bare 1/2/tie token.
+  Invalid verdicts retry per policy (default 1); after exhaustion they are
+  COUNTED in the job summary, never silently dropped, and never stored as
+  fabricated verdicts.
+- Judge model + judge URL come from the dispatch body with config fallback
+  (`[eval] judge_url`, then legacy `[demo] judge_url`). The judge must not
+  be a contestant: normalized fingerprints (server suffixes stripped, the
+  `ab_judge` lesson) are compared at dispatch; violation is a 422 unless
+  explicitly overridden.
+
+### 4. Multi-turn and vision
+
+- Multi-turn items are judged **per assistant turn** (matching the
+  store's `#tN` turn records) with the conversation serialized up to and
+  including that turn — context-preserving (the MT-Bench lesson: judge the
+  later turn WITH the earlier turns, not in isolation), per-turn
+  granularity.
+- Vision items carry an `image` reference (http(s) URL, or a path relative
+  to the suite assets directory `qa/suites/`). Replay sends OpenAI
+  `image_url` content parts (local files inlined as base64 data URIs); the
+  judge receives the same image. A text-only judge failing on images is an
+  honest per-item error, never a fabricated verdict.
+
+### 5. Replay inherits the bench job pattern
+
+`dispatch_eval` gains: `max_tokens` (default 1024), `temperature` (default
+0.0), `retries` (default 0), `concurrency` (default 1, 1-8), per-item
+progress callbacks, cooperative abort, and per-item commits — a mid-replay
+failure keeps completed items (partial preservation, `eval_runs.status =
+'partial'`; the eval_runs UPDATE trigger already permits status writes
+while blocking measurement columns). Single-turn items honor `system` (the
+pre-v0.2 runner dropped it — recorded as a shipped defect, fixed here).
+Async variant `POST /api/ops/eval/jobs` mirrors bench jobs; the sync
+endpoint stays for scripted use.
+
+### 6. Reports: dimension lens, Wilson intervals, generations
+
+- `suite_report` gains `by_dimension`, `reference_scores` (per model per
+  dimension pass/fail), `generations` (distinct judge model + template
+  versions with counts), and a `generation` filter (judge model +
+  template version; default = newest by first judgment id).
+- Every win-rate surface (overall, per pair, per dimension) carries its n
+  and a Wilson 95% score interval — closed-form, no bootstrap needed at
+  this scale; small-n cells are already UX-tinted below n=20.
+
+## Rejected alternatives
+
+- *Single judging pass with order randomized once (v0.1 behaviour).*
+  Rejected: position bias is a known, measured judge defect (MT-Bench
+  reports significant position inconsistency across strong judges); the
+  swap is one extra call per item and buys net-out-in-aggregate honesty.
+- *Store a derived combined verdict per item (both orders merged).*
+  Rejected: append-only doctrine — derived rows are recomputable at report
+  time; storing only raw judgments keeps the store auditable.
+- *JSON-structured judge verdicts.* Rejected for v1: local small judges
+  (the realistic judge pool on the LAN) break JSON formatting under
+  reasoning chatter far more often than a one-token verdict; the strict
+  `VERDICT:` line plus last-token fallback is robust to both.
+- *Rubric 1-10 single-answer scoring (MT-Bench style) as the primary
+  mode.* Deferred: pairwise answers the owner's A-vs-B question directly;
+  absolute scores can be added later as a third judgment mode without
+  schema changes (judgments.confidence already exists as a 0-1 column).
+- *Sandboxed code execution for coding items.* Rejected for v1 (security
+  surface); coding items are judge-scored, with `contains`-style reference
+  checks available for crude signal.
+
+## Consequences
+
+- Suite JSON gains `dimension` (required for NEW items at creation) and
+  optional `reference`/`image` keys; the validator rejects unknown
+  dimensions and malformed check specs with actionable messages.
+- Two judge calls per item doubles judge traffic; acceptable — judge calls
+  are cheap relative to contestant replays and the job pattern surfaces
+  progress either way.
+- Reports aggregation logic is UNCHANGED (it already counts judgment rows);
+  the dimension lens, reference scores, generations, and Wilson intervals
+  are additive joins over existing tables + the definition snapshot.
+- `scripts/ab_judge.py` keeps working (single-order mode, API-based) for
+  scripted/CI use; the dashboard surface is the primary path for operators.
+- Historical suites (smoke-reasoning v1) report under `uncategorized`
+  dimension until re-judged or re-seeded; nothing is backfilled.
