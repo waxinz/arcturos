@@ -3,7 +3,7 @@
 **Project:** Arcturos — local-first LLM benchmarking & evaluation suite
 **Interface:** local web dashboard, `0.0.0.0:24816` (owner decision 2026-09-17)
 **Repo host:** operator-managed Linux host (private; path `~/arcturos`)
-**Owner:** Alexei
+**Owner:** the operator
 **Created:** 2026-09-17
 **Status:** Phase 1 (foundation) — see [Current Status](#current-status)
 
@@ -88,7 +88,7 @@ arcturos/
 - [x] Repo initialized on the lab host (`~/arcturos`, branch `main`)
 - [x] AGENTS.md created (this file)
 - [x] PRD.md drafted from key user journeys
-- [x] PRD reviewed and signed off by Alexei
+- [x] PRD reviewed and signed off by the operator
 - [x] UX design doc (journey walkthroughs, wireframe-level flows)
 - [x] QA test plan + suites (coverage-validated 2026-09-22: 92% total, 232 tests)
 - [x] J1 bench core: bench.py (tokenize sizing, cold UUID prompts, timings parser, storage, export) — commit f7c2fee
