@@ -2,7 +2,7 @@
 
 **Date:** 2026-09-22
 **Status:** Accepted
-**Deciders:** Alexei (owner), Mantis (implementation)
+**Deciders:** the owner, Mantis (implementation)
 
 ## Context
 

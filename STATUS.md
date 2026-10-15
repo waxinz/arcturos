@@ -5,6 +5,36 @@ stays the conventions/ground-truth file; this file is the living status).
 Newest first. Read AGENTS.md first for conventions; read this file to
 resume work.
 
+## 2026-10-15 (late) — Evals 101 suite + dimension enum v1.1
+
+- **New committed suite `qa/suites/evals-101-v1.json` (100 items):** the
+  community-grounded broad set — 12 dimensions (accuracy 10, factuality
+  8, reasoning 10, instruction-following 9, writing 7, coding 10,
+  tool-calling 8, agentic 8, conciseness 7, extraction 8, vision 7,
+  safety 8), 13 multi-turn items, 7 image items (6 committed assets:
+  4 synthetic reference-backed — chart March=42/Oct=78 max, clock 10:10,
+  7-red-square grid, MIND THE GAP sign — plus Eiffel Tower and Great
+  Wave public-domain photos), 44 deterministic-reference items / 56
+  judge-scored. Every numeric reference value is computed and asserted
+  in the builder script; all regex references compile; images verified
+  visually before commit. Dimension mix grounded in the eval-landscape
+  survey (MT-Bench categories, BFCL-style tool calling, Arena-style
+  conciseness, chart-QA synthetic vision).
+- **Dimension enum v1.1 (7 → 13):** added `accuracy`, `factuality`,
+  `tool-calling`, `agentic`, `conciseness`, `extraction` to
+  `evals.DIMENSIONS`, each with a judge rubric in `judging.RUBRICS`;
+  `knowledge` stays for arcturos-core-v1 back-compat. ADR 007 amended;
+  `tests/test_suites.py` (new) validates every committed suite with the
+  real validator and pins the Evals 101 contract (also asserts committed
+  suites use repo assets, not remote URLs — no asset rot, no remote
+  fetch flakiness).
+- **Sanitize sweep (public mirror):** operator name removed from
+  PRD.md, ux-design.md, ADR 003/007 headers, and the smoke-reasoning
+  item content (already-published copies remain in older commits —
+  history left untouched per doctrine). AGENTS.md still carries the
+  name; it is approval-gated and flagged to the owner.
+- 317 tests green.
+
 ## 2026-10-15 (evening) — Results page flow, nav as a module, judge abort fix
 
 - **Results page flow (J5):** new `/evals` Results page — mobile-friendly

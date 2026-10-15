@@ -1,7 +1,7 @@
 # Arcturos — PRD v0.2
 
 Local-first LLM benchmarking & evaluation suite.
-Owner: Alexei. Status: v0.2 — eval-system revision (2026-10-15).
+Owner: the operator. Status: v0.2 — eval-system revision (2026-10-15).
 
 ---
 
@@ -13,7 +13,7 @@ comparisons across models and runs effortless.
 
 ## 2. Personas
 
-- **P1 — Benchmark operator (Alexei):** technical, wants cold-cache numbers,
+- **P1 — Benchmark operator (the operator):** technical, wants cold-cache numbers,
   power draw, MTP acceptance, and to compare quantization/engine changes over time.
 - **P2 — Eval operator:** same person, different hat; wants eval suites run
   against models and judged by an external LLM rater.

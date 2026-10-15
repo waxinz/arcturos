@@ -51,7 +51,7 @@
       "type": "multi-turn",
       "category": "instruction-following",
       "turns": [
-        {"role": "user", "content": "My name is Alexei. Remember it."},
+        {"role": "user", "content": "My name is Sam. Remember it."},
         {"role": "assistant", "content": null},
         {"role": "user", "content": "What is my name? Answer with the name only."}
       ],
