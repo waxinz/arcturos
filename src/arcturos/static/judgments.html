@@ -57,6 +57,25 @@
     .jmsg.err { color: var(--err); }
     .jmsg.ok { color: var(--ok); }
     .jmsg.warn { color: #b58a2a; }
+    .jmsg a { color: var(--link); font-weight: 600; }
+    /* ---- A/B model cards (combined kick-off: evals + judging) ---- */
+    .ab-grid { display: grid; grid-template-columns: 1fr 1fr; gap: .9rem;
+               margin: .1rem 0 .2rem; }
+    .model-card { border: 1px solid var(--border); border-radius: 6px;
+                  padding: .65rem .75rem .75rem; margin: 0; min-width: 0;
+                  background: var(--bg); display: grid; gap: .45rem; }
+    .model-card legend { font-size: .8rem; font-weight: 700;
+                         letter-spacing: .06em; text-transform: uppercase;
+                         color: var(--text-soft); padding: 0 .25rem; }
+    .model-card .opt { font-weight: 400; color: var(--text-muted); }
+    .stage-chip { display: inline-block; padding: .08rem .5rem;
+                  border-radius: 999px; font-size: .72rem; font-weight: 700;
+                  border: 1px solid var(--border); background: var(--surface);
+                  color: var(--text-soft); white-space: nowrap; }
+    .stage-chip[hidden] { display: none; }
+    @media (max-width: 640px) {
+      .ab-grid { grid-template-columns: 1fr; }
+    }
     /* judge-not-contestant guard: WARNING with override, not a dead end */
     .warn-card { display: flex; flex-wrap: wrap; align-items: center;
                  gap: .7rem; margin-top: .6rem; padding: .55rem .8rem;
@@ -116,8 +135,11 @@
   <h2>Judgments <button id="export-judgments" title="Download all judgments as CSV">⤓ CSV</button></h2>
 
   <div class="card">
-    <p class="hint">Run the blind A/B judge (v0.2): every item where exactly two models
-      have answers is judged in BOTH presentation orders — position swap — and
+    <p class="hint">One kick-off surface for evals + judging. Fill both model
+      cards (endpoint URL, optional API key, model name) to <strong>run the
+      suite on both models, then judge</strong> the two fresh runs — or leave
+      the URLs blank and give model names to judge already-stored results.
+      Every item is judged in BOTH presentation orders (position swap) and
       both raw judgments are stored. The judge must not be a contestant.</p>
     <form id="judge-form" autocomplete="off" onsubmit="return false;">
       <div class="field">
@@ -136,20 +158,42 @@
         <label for="judge-model">Judge model (blank = config default)</label>
         <input id="judge-model" placeholder="e.g. a strong instruct model">
       </div>
-      <div class="field wide minors">
-        <div>
-          <label for="judge-ma">Model A (optional — scope to one pair)</label>
-          <input id="judge-ma" placeholder="e.g. model-alpha">
-        </div>
-        <div>
-          <label for="judge-mb">Model B</label>
-          <input id="judge-mb" placeholder="e.g. model-beta">
-        </div>
+      <div class="ab-grid">
+        <fieldset class="model-card">
+          <legend>Model A</legend>
+          <div class="field">
+            <label for="judge-ma-url">Endpoint URL</label>
+            <input id="judge-ma-url" inputmode="url" placeholder="http://localhost:4000/v1">
+          </div>
+          <div class="field">
+            <label for="judge-ma-key">API key <span class="opt">(optional)</span></label>
+            <input id="judge-ma-key" type="password" placeholder="sk-…">
+          </div>
+          <div class="field">
+            <label for="judge-ma">Model name</label>
+            <input id="judge-ma" placeholder="e.g. model-alpha">
+          </div>
+        </fieldset>
+        <fieldset class="model-card">
+          <legend>Model B</legend>
+          <div class="field">
+            <label for="judge-mb-url">Endpoint URL</label>
+            <input id="judge-mb-url" inputmode="url" placeholder="http://localhost:4000/v1">
+          </div>
+          <div class="field">
+            <label for="judge-mb-key">API key <span class="opt">(optional)</span></label>
+            <input id="judge-mb-key" type="password" placeholder="sk-…">
+          </div>
+          <div class="field">
+            <label for="judge-mb">Model name</label>
+            <input id="judge-mb" placeholder="e.g. model-beta">
+          </div>
+        </fieldset>
       </div>
-      <div class="field wide" style="display:flex; gap:.6rem; flex-wrap:wrap; margin-top:.7rem;">
+      <div class="field wide" style="display:flex; gap:.6rem; flex-wrap:wrap; margin-top:.7rem; align-items:center;">
         <button id="judge-btn" style="margin-top:0;">▶ Kick off judging</button>
         <button id="judge-stop-btn" type="button" class="stop-btn" hidden
-                title="Stop the judge: completed judgments are kept">■ Stop judging</button>
+                title="Stop the run: completed work is kept">■ Stop run</button>
       </div>
     </form>
     <div id="judge-msg" class="jmsg"></div>
@@ -159,6 +203,7 @@
     </div>
     <div id="judge-progress" class="benchprog">
       <div class="bp-head2">
+        <span id="jbp-stage" class="stage-chip" hidden></span>
         <div id="jbp-status" class="bp-status"></div>
         <div id="jbp-clock" class="bp-clock"></div>
       </div>
@@ -387,11 +432,11 @@
       function stopBtnShow(on) {
         const b = $('judge-stop-btn');
         b.hidden = !on;
-        if (!on) { b.disabled = false; b.textContent = '■ Stop judging'; }
+        if (!on) { b.disabled = false; b.textContent = '■ Stop run'; }
       }
       $('judge-stop-btn').onclick = async () => {
         if (!poll.jobId || poll.stopBusy) return;
-        if (!window.confirm('Stop the judging run? Judgments already completed are kept.')) return;
+        if (!window.confirm('Stop the run? Completed replays and judgments are kept.')) return;
         poll.stopBusy = true;
         const btn = $('judge-stop-btn');
         btn.disabled = true; btn.textContent = '⏳ Stopping…';
@@ -419,11 +464,23 @@
           '<td>' + (w.verdict || (w.error ? '✘ ' + w.error : '…')) + '</td>' +
           '<td>' + (w.judge_model || '') + '</td></tr>';
       }
+      const STAGE_LABELS = {
+        'replay-a': '1/3 · replay A',
+        'replay-b': '2/3 · replay B',
+        'judging': '3/3 · judging',
+      };
       function render(st) {
         const total = st.items_total || 0, done = st.items_done || 0;
         const frac = total ? done / total : 0;
         const bar = $('jbp-bar'), pct = $('jbp-pct');
-        if (st.status === 'selecting') {
+        const chip = $('jbp-stage');
+        if (st.combined && STAGE_LABELS[st.stage]) {
+          chip.hidden = false;
+          chip.textContent = STAGE_LABELS[st.stage];
+        } else {
+          chip.hidden = true;
+        }
+        if (st.status === 'selecting' || !total) {
           bar.classList.add('indeterminate'); pct.textContent = '…';
         } else {
           bar.classList.remove('indeterminate');
@@ -458,11 +515,21 @@
               st.status === 'partial' || st.status === 'error') {
             stopPoll(); stopBtnShow(false);
             if (st.status === 'done') {
-              setMsg('✔ Judging complete — ' + (st.judgments_stored || 0) +
-                     ' judgment(s) stored (both orders per item)', true);
+              if (st.combined && (st.eval_run_ids || []).length === 2) {
+                setMsg('✔ Run complete — ' + (st.judgments_stored || 0) +
+                       ' judgment(s) stored · eval runs #' +
+                       st.eval_run_ids.join(' vs #') + ' — ', true);
+                const link = document.createElement('a');
+                link.href = '/evals';
+                link.textContent = 'open Results →';
+                $('judge-msg').appendChild(link);
+              } else {
+                setMsg('✔ Judging complete — ' + (st.judgments_stored || 0) +
+                       ' judgment(s) stored (both orders per item)', true);
+              }
               $('jbp-bar').style.width = '100%'; $('jbp-pct').textContent = '100%';
             } else if (st.status === 'aborted') {
-              setMsg('■ Judging stopped by operator — completed judgments kept', true);
+              setMsg('■ Run stopped by operator — completed work kept', true);
               $('jbp-pct').textContent = 'stopped';
             } else if (st.status === 'partial') {
               setMsg('⚠ Judging finished with failures: ' + (st.error || 'some items failed'));
@@ -483,9 +550,21 @@
           else poll.timer = setTimeout(() => pollLoop(jobId), 2000);
         }
       }
+      function updateKickLabel() {
+        const anyUrl = $('judge-ma-url').value.trim() || $('judge-mb-url').value.trim();
+        $('judge-btn').textContent = anyUrl
+          ? '▶ Run evals + judging'
+          : '▶ Kick off judging';
+      }
+      document.getElementById('judge-ma-url').addEventListener('input', updateKickLabel);
+      document.getElementById('judge-mb-url').addEventListener('input', updateKickLabel);
       async function kickJudge(extra = {}) {
         const suiteId = parseInt($('judge-suite').value, 10);
         if (!suiteId) { setMsg('Pick a suite to judge'); return; }
+        const maUrl = $('judge-ma-url').value.trim();
+        const mbUrl = $('judge-mb-url').value.trim();
+        const maName = $('judge-ma').value.trim();
+        const mbName = $('judge-mb').value.trim();
         const btn = $('judge-btn');
         btn.disabled = true;
         $('judge-warn').hidden = true;
@@ -495,9 +574,29 @@
           if ($('judge-url').value.trim()) body.judge_url = $('judge-url').value.trim();
           if ($('judge-key').value.trim()) body.judge_api_key = $('judge-key').value.trim();
           if ($('judge-model').value.trim()) body.judge_model = $('judge-model').value.trim();
-          if ($('judge-ma').value.trim() && $('judge-mb').value.trim()) {
-            body.model_a = $('judge-ma').value.trim();
-            body.model_b = $('judge-mb').value.trim();
+          if (maUrl || mbUrl) {
+            // Combined kick-off: replay the suite on both models, then judge
+            // the two fresh runs. Auth is optional per model.
+            if (!maUrl || !mbUrl) {
+              setMsg('Combined kick-off needs BOTH endpoint URLs — or clear both to judge stored results');
+              return;
+            }
+            if (!maName || !mbName) {
+              setMsg('Give both models a name for the combined kick-off');
+              return;
+            }
+            body.target_a = {url: maUrl, model: maName};
+            if ($('judge-ma-key').value.trim()) {
+              body.target_a.api_key = $('judge-ma-key').value.trim();
+            }
+            body.target_b = {url: mbUrl, model: mbName};
+            if ($('judge-mb-key').value.trim()) {
+              body.target_b.api_key = $('judge-mb-key').value.trim();
+            }
+          } else if (maName && mbName) {
+            // Stored-results mode: scope judging to one A/B pair.
+            body.model_a = maName;
+            body.model_b = mbName;
           }
           const res = await fetch('/api/ops/judge/jobs', {method: 'POST',
             headers: {'Content-Type': 'application/json'},
@@ -522,11 +621,12 @@
           poll.jobId = data.job_id;
           $('jbp-rows').innerHTML = '';
           $('jbp-bar').style.width = '0%';
-          $('jbp-status').textContent = 'selecting pairs…';
+          $('jbp-status').textContent = body.target_a
+            ? 'replay A — starting…' : 'selecting pairs…';
           $('jbp-clock').textContent = '';
           $('jbp-detail').classList.add('open');
           stopBtnShow(true);
-          setMsg('Job ' + data.job_id + ' accepted — judging running', true);
+          setMsg('Job ' + data.job_id + ' accepted — run in progress', true);
           poll.retries = 0;
           pollLoop(data.job_id);
         } catch (err) { setMsg('Kick off failed: ' + err); }

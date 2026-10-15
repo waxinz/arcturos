@@ -197,3 +197,137 @@ def test_eval_job_abort_keeps_completed_items(client, monkeypatch):
     assert conn.execute(
         "SELECT status FROM eval_runs WHERE id = 1").fetchone()[0] == "partial"
     conn.close()
+
+
+# ------------- combined kick-off: target_a/target_b (evals + judging) ----
+
+def _fake_replay_chat(model_echo: bool = True):
+    def chat(target, messages, api_key=None, model="test", **kw):
+        content = ("ok " + model) if model_echo else "ok"
+        return {"choices": [{"message": {"content": content}}],
+                "usage": {"prompt_tokens": 3, "completion_tokens": 2}}
+    return chat
+
+
+def _ok_preflight(monkeypatch):
+    monkeypatch.setattr(
+        "arcturos.ops.preflight.preflight",
+        lambda *a, **k: type("PF", (), {"ok": lambda self: True})())
+
+
+def _fake_judge(verdict: str = "VERDICT: 1"):
+    return lambda url, payload, api_key=None: {
+        "choices": [{"message": {
+            "content": verdict + "\nConfidence: high\nRationale: fine"}}]}
+
+
+def test_combined_job_end_to_end(client, monkeypatch):
+    tc, db_path = client
+    _ok_preflight(monkeypatch)
+    monkeypatch.setattr("arcturos.multiturn.post_openai_chat",
+                        _fake_replay_chat())
+    monkeypatch.setattr(judging, "_post_chat", _fake_judge("VERDICT: 1"))
+    res = tc.post("/api/ops/judge/jobs", json={
+        "suite_id": 1, "judge_url": "http://judge:9/v1", "judge_model": "j",
+        "target_a": {"url": "http://a:1/v1", "model": "m-a",
+                     "api_key": "secret-a"},
+        "target_b": {"url": "http://b:2/v1", "model": "m-b"}})
+    assert res.status_code == 200, res.text
+    job_id = res.json()["job_id"]
+    st = _wait_job(lambda jid: tc.get(f"/api/ops/judge/jobs/{jid}"), job_id)
+    assert st["status"] == "done", st
+    assert st["combined"] is True
+    assert st["stage"] == "judging"
+    assert len(st["eval_run_ids"]) == 2
+    assert st["judgments_stored"] == 2          # 1 item × both orders
+    # API keys never echo on the job record
+    assert "secret-a" not in json.dumps(st)
+    assert st["targets"]["a"] == {"url": "http://a:1/v1", "model": "m-a"}
+    assert st["targets"]["b"] == {"url": "http://b:2/v1", "model": "m-b"}
+    conn = dbmod.connect(db_path)
+    dbmod.init_db(conn)
+    runs = conn.execute(
+        "SELECT er.name, er.model_fingerprint"
+        " FROM eval_results res JOIN eval_runs er ON er.id = res.eval_run_id"
+        " ORDER BY er.id").fetchall()
+    assert {r["model_fingerprint"] for r in runs} == {"m-a", "m-b"}
+    assert all("kick-off" in r["name"] for r in runs)
+    judged = conn.execute(
+        "SELECT COUNT(*) FROM judgments").fetchone()[0]
+    assert judged == 2
+    conn.close()
+
+
+def test_combined_job_validation(client):
+    tc, db_path = client
+    body = {"suite_id": 1, "judge_url": "http://judge:9/v1"}
+    # one target without the other
+    r = tc.post("/api/ops/judge/jobs", json={
+        **body, "target_a": {"url": "http://a/v1", "model": "m-a"}})
+    assert r.status_code == 422 and "together" in r.json()["detail"]
+    # bad url
+    r = tc.post("/api/ops/judge/jobs", json={
+        **body, "target_a": {"url": "ftp://a", "model": "m-a"},
+        "target_b": {"url": "http://b/v1", "model": "m-b"}})
+    assert r.status_code == 422 and "target_a.url" in r.json()["detail"]
+    # empty model name
+    r = tc.post("/api/ops/judge/jobs", json={
+        **body, "target_a": {"url": "http://a/v1", "model": "m-a"},
+        "target_b": {"url": "http://b/v1", "model": "  "}})
+    assert r.status_code == 422 and "target_b.model" in r.json()["detail"]
+    # identical models
+    r = tc.post("/api/ops/judge/jobs", json={
+        **body, "target_a": {"url": "http://a/v1", "model": "same"},
+        "target_b": {"url": "http://b/v1", "model": "same"}})
+    assert r.status_code == 422 and "distinct" in r.json()["detail"]
+    # judge is a contestant → the guard, with the UI discriminator
+    r = tc.post("/api/ops/judge/jobs", json={
+        **body, "judge_model": "m-a",
+        "target_a": {"url": "http://a/v1", "model": "m-a"},
+        "target_b": {"url": "http://b/v1", "model": "m-b"}})
+    assert r.status_code == 422
+    assert "allow_contestant_judge" in r.json()["detail"]
+    # run-scoped + combined are mutually exclusive
+    r = tc.post("/api/ops/judge/jobs", json={
+        **body, "eval_run_ids": [1, 2],
+        "target_a": {"url": "http://a/v1", "model": "m-a"},
+        "target_b": {"url": "http://b/v1", "model": "m-b"}})
+    assert r.status_code == 422 and "mutually exclusive" in r.json()["detail"]
+    # suite without a definition snapshot
+    conn = dbmod.connect(db_path)
+    dbmod.init_db(conn)
+    conn.execute("INSERT INTO eval_suites (id, name, version) VALUES (2, 's2', 'v1')")
+    conn.commit()
+    conn.close()
+    r = tc.post("/api/ops/judge/jobs", json={
+        "suite_id": 2, "judge_url": "http://judge:9/v1",
+        "target_a": {"url": "http://a/v1", "model": "m-a"},
+        "target_b": {"url": "http://b/v1", "model": "m-b"}})
+    assert r.status_code == 422 and "definition snapshot" in r.json()["detail"]
+
+
+def test_combined_job_replay_failure_is_honest(client, monkeypatch):
+    tc, db_path = client
+    _ok_preflight(monkeypatch)
+
+    def chat(target, messages, api_key=None, model="test", **kw):
+        if model == "m-b":
+            raise RuntimeError("upstream exploded")
+        return {"choices": [{"message": {"content": "ok"}}],
+                "usage": {"prompt_tokens": 3, "completion_tokens": 2}}
+
+    monkeypatch.setattr("arcturos.multiturn.post_openai_chat", chat)
+    monkeypatch.setattr(judging, "_post_chat", _fake_judge("VERDICT: 1"))
+    res = tc.post("/api/ops/judge/jobs", json={
+        "suite_id": 1, "judge_url": "http://judge:9/v1", "judge_model": "j",
+        "target_a": {"url": "http://a:1/v1", "model": "m-a"},
+        "target_b": {"url": "http://b:2/v1", "model": "m-b"}})
+    assert res.status_code == 200, res.text
+    job_id = res.json()["job_id"]
+    st = _wait_job(lambda jid: tc.get(f"/api/ops/judge/jobs/{jid}"), job_id)
+    assert st["status"] == "error", st
+    assert "replay B" in st["status_line"] or "B" in (st["error"] or "")
+    assert st["judgments_stored"] == 0
+    conn = dbmod.connect(db_path)
+    assert conn.execute("SELECT COUNT(*) FROM judgments").fetchone()[0] == 0
+    conn.close()
