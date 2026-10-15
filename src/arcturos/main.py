@@ -1002,13 +1002,21 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
         """Async blind A/B judge run (v0.2, ADR 007 §3).
 
         Body: {suite_id, judge_model?, judge_url?, model_a?, model_b?,
-        retries?, allow_contestant_judge?, judge_api_key?}. Every judgeable
-        item (exactly two models' results) is judged in BOTH presentation
-        orders — position swap — and both raw judgments stored. Pair
-        selection uses the latest result per (item, normalized fingerprint).
-        judge_url falls back to the config layer ([eval] judge_url, then
-        legacy [demo] judge_url). Returns {job_id}; poll
-        GET /api/ops/judge/jobs/{id}; stop with POST .../abort.
+        retries?, allow_contestant_judge?, judge_api_key?, eval_run_ids?,
+        target_a?, target_b?, eval_max_tokens?, eval_temperature?,
+        eval_concurrency?, eval_retries?}.
+
+        Two modes. (1) Judge stored results (model_a/model_b or
+        eval_run_ids scope). (2) Combined kick-off (2026-10-15): give
+        target_a AND target_b ({url, model, api_key?}) and the job first
+        replays the suite's latest definition snapshot on both models,
+        then judges the two fresh runs — the Judgements page as the one
+        kick-off surface for evals + judging. Every judgeable item is
+        judged in BOTH presentation orders — position swap — and both
+        raw judgments stored. judge_url falls back to the config layer
+        ([eval] judge_url, then legacy [demo] judge_url). Returns
+        {job_id}; poll GET /api/ops/judge/jobs/{id}; stop with
+        POST .../abort.
         """
         suite_id = body.get("suite_id")
         judge_model = body.get("judge_model")
@@ -1019,6 +1027,12 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
         allow_contestant = body.get("allow_contestant_judge", False)
         judge_api_key = body.get("judge_api_key") or body.get("api_key")
         eval_run_ids = body.get("eval_run_ids")
+        target_a = body.get("target_a")
+        target_b = body.get("target_b")
+        eval_max_tokens = body.get("eval_max_tokens", 1024)
+        eval_temperature = body.get("eval_temperature", 0.0)
+        eval_concurrency = body.get("eval_concurrency", 4)
+        eval_retries = body.get("eval_retries", 0)
         if not isinstance(suite_id, int) or suite_id < 1:
             raise HTTPException(status_code=422, detail="suite_id must be a positive int")
         if eval_run_ids is not None:
@@ -1031,6 +1045,37 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
                 raise HTTPException(
                     status_code=422,
                     detail="eval_run_ids must be a list of >= 2 positive ints")
+        if (target_a is None) != (target_b is None):
+            raise HTTPException(status_code=422,
+                                detail="target_a and target_b must be given together")
+        for side, tgt in (("a", target_a), ("b", target_b)):
+            if tgt is None:
+                continue
+            if not isinstance(tgt, dict):
+                raise HTTPException(status_code=422,
+                                    detail=f"target_{side} must be an object")
+            if not isinstance(tgt.get("url"), str) or not tgt["url"].startswith("http"):
+                raise HTTPException(status_code=422,
+                                    detail=f"target_{side}.url must be an http(s) URL")
+            if not isinstance(tgt.get("model"), str) or not tgt["model"].strip():
+                raise HTTPException(status_code=422,
+                                    detail=f"target_{side}.model must be a non-empty string")
+            key = tgt.get("api_key")
+            if key is not None and not isinstance(key, str):
+                raise HTTPException(status_code=422,
+                                    detail=f"target_{side}.api_key must be a string when set")
+        if eval_run_ids is not None and target_a is not None:
+            raise HTTPException(status_code=422,
+                                detail="eval_run_ids is mutually exclusive with target_a/target_b")
+        for field, value in (("eval_max_tokens", eval_max_tokens),
+                             ("eval_concurrency", eval_concurrency),
+                             ("eval_retries", eval_retries)):
+            if not isinstance(value, int) or isinstance(value, bool) or value < 1 and field != "eval_retries":
+                raise HTTPException(status_code=422, detail=f"{field} must be a positive int")
+        if not isinstance(eval_retries, int) or isinstance(eval_retries, bool) or eval_retries < 0:
+            raise HTTPException(status_code=422, detail="eval_retries must be a non-negative int")
+        if not isinstance(eval_temperature, (int, float)) or isinstance(eval_temperature, bool):
+            raise HTTPException(status_code=422, detail="eval_temperature must be a number")
         if judge_model is not None and (not isinstance(judge_model, str)
                                         or not judge_model.strip()):
             raise HTTPException(status_code=422,
@@ -1059,7 +1104,12 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
                 model_a=model_a, model_b=model_b, retries=retries,
                 allow_contestant_judge=allow_contestant,
                 judge_api_key=judge_api_key,
-                eval_run_ids=eval_run_ids)
+                eval_run_ids=eval_run_ids,
+                target_a=target_a, target_b=target_b,
+                eval_max_tokens=eval_max_tokens,
+                eval_temperature=eval_temperature,
+                eval_concurrency=eval_concurrency,
+                eval_retries=eval_retries)
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc))
         return {"job_id": job_id}

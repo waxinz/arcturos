@@ -5,6 +5,35 @@ stays the conventions/ground-truth file; this file is the living status).
 Newest first. Read AGENTS.md first for conventions; read this file to
 resume work.
 
+## 2026-10-15 (latest) — Combined kick-off: Judgements page runs evals + judging
+
+- **One kick-off surface:** `POST /api/ops/judge/jobs` accepts
+  `target_a`/`target_b` ({url, model, api_key?}) plus optional
+  `eval_max_tokens/eval_temperature/eval_concurrency/eval_retries`. With
+  both targets the job becomes staged: replay the suite's LATEST
+  definition snapshot on model A, then model B, then blind-judge the two
+  fresh runs run-scoped (same pairing semantics as the Results-page
+  flow). Job record gains `combined` + `stage` (replay-a → replay-b →
+  judging); one AbortFlag flows through all three stages (Stop keeps
+  completed work). API keys never land on the job record (`targets`
+  echoes url+model only). A replay that stores zero results hard-stops
+  the job as an error before judging — honest nulls, no fabricated
+  pairs. dispatch_eval quirk: its `stored` field is a row LIST, not an
+  int — zero-checks must handle both shapes.
+- **UI (judgments.html):** Model A / Model B fieldsets (endpoint URL,
+  optional API key, model name) in a two-column `ab-grid` that collapses
+  to one column ≤640px; the kick button relabels to "▶ Run evals +
+  judging" the moment an A/B URL is filled; stage chip (1/3 replay A ·
+  2/3 replay B · 3/3 judging) on the progress card; done message links
+  to Results with the two run ids. Stored-results judging (names only)
+  unchanged; guard-warning + override unchanged.
+- **Docs/tests:** PRD J4 v0.3 amendment + acceptance criterion;
+  qa/test-plan.md J4 combined-kick-off section; `tests/test_eval_jobs.py`
+  +3 (end-to-end with fakes, validation 422 matrix, honest replay
+  failure); `test_evalviews` judgments contract pins the A/B cards +
+  stage chip. Tests 317 → 320 green; static gates clean (13 pages).
+- Sanitize: AGENTS.md operator name → "the operator" (owner-approved).
+
 ## 2026-10-15 (late) — Evals 101 suite + dimension enum v1.1
 
 - **New committed suite `qa/suites/evals-101-v1.json` (100 items):** the
