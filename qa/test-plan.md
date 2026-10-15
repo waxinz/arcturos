@@ -49,7 +49,7 @@ Rules:
 - [x] `tests/test_eval_jobs.py::test_combined_job_validation` — 422s: one target without the other, non-http url, empty model, identical A/B models, judge-is-contestant guard (UI discriminator substring), eval_run_ids+targets mutually exclusive, suite without a definition snapshot
 - [x] `tests/test_eval_jobs.py::test_combined_job_replay_failure_is_honest` — a replay that stores zero results hard-stops the job as error before judging ("nothing to judge"), zero judgments written
 - [x] staged job record: `combined`/`stage` (replay-a → replay-b → judging) drive the UI stage chip; one Stop flag flows through all three stages
-- [ ] Live smoke: combined kick-off from /judgments against two real models on the smoke suite
+- [x] Live smoke: combined kick-off from /judgments against two real models on the smoke suite (2026-10-15, taupo: guard 422 → override accepted → staged job replay A/B complete on the suite's 6-item snapshot → 12 judgments stored (6 items × both orders), runs #4/#5, status_line honest; winners a=7/tie=5 from the family judge)
 
 ### J5 — Reports
 - [ ] win-rate aggregation: counts + percentages per suite × pair
