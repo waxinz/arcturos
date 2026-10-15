@@ -5,7 +5,7 @@ Source of truth: `PRD.md` (signed off 2026-09-17). This document walks each
 key user journey (J1–J6) end-to-end, specifies every CLI surface, and gives
 view-level specs for the web dashboard at `0.0.0.0:24816`.
 
-Owner: Alexei · Status: draft for implementation.
+Owner: the operator · Status: draft for implementation.
 Companion docs: `PRD.md` (requirements), `docs/decisions/` (methodology/ADR).
 
 ---

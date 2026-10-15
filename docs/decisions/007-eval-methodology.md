@@ -2,7 +2,7 @@
 
 **Date:** 2026-10-15
 **Status:** Accepted
-**Deciders:** Alexei (owner), Mantis (implementation)
+**Deciders:** the owner, Mantis (implementation)
 
 ## Context
 
@@ -43,7 +43,9 @@ local-first, append-only, multi-judge tool.
 
 Every eval item carries `dimension` — one of a fixed allowlist
 (`reasoning`, `knowledge`, `instruction-following`, `writing`, `coding`,
-`vision`, `safety`) — plus the existing freeform `category` sub-tag.
+`vision`, `safety`; extended 2026-10-15 for the community Evals 101 set
+with `accuracy`, `factuality`, `tool-calling`, `agentic`, `conciseness`,
+`extraction`) — plus the existing freeform `category` sub-tag.
 Reports break win rates and pass rates down BY DIMENSION as the headline
 view; categories remain the second-level drill-down. Unknown dimensions are
 a validation error at suite-creation time; legacy suites without dimensions
