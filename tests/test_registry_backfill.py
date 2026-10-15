@@ -115,7 +115,7 @@ def test_stale_label_trigger_upgrades_on_legacy_db(tmp_path):
     trg_runs_no_update (any UPDATE aborts). CREATE TRIGGER IF NOT EXISTS is
     a no-op when the name is taken, so init_db must detect the stale
     definition and replace it — otherwise renames 500 forever on live DBs
-    (observed on taupo 2026-09-22). Measurement columns must stay locked."""
+    (observed on the deploy host 2026-09-22). Measurement columns must stay locked."""
     import sqlite3
     from arcturos.db import connect, init_db
 

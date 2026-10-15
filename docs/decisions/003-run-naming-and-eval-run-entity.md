@@ -90,7 +90,7 @@ level; now each batch is addressable.
   mutable column to any of these tables requires touching its trigger —
   deliberately annoying.
 - **Migration:** three idempotent tuples (runs.name, eval_runs table,
-  eval_results.eval_run_id); taupo's live DB migrates on next boot
+  eval_results.eval_run_id); the deploy host's live DB migrates on next boot
   without touching stored rows.
 - **API surface:** `PATCH /api/runs/{id}/name` joins the short list of
   non-POST/GET routes; the editable-routes contract test pins it.

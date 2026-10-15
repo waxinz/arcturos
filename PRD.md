@@ -356,7 +356,7 @@ the launch surface, not only the reading surface).
 
 ## 5. Constraints & decisions
 - Local-first: SQLite storage; no cloud dependency except external judge API.
-- Python 3.10+ (taupo has 3.12.3). UI = local web dashboard bound
+- Python 3.10+ (the deploy host has 3.12.3). UI = local web dashboard bound
   `0.0.0.0:24816`; server-side Python (stdlib or FastAPI+uvicorn), JSON API,
   client-side charts (Chart.js).
 - Benchmarking targets: OpenAI-compatible endpoints on the LAN (llama.cpp,
