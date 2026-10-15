@@ -357,7 +357,7 @@
       ],
       "reference": {
         "check": "regex",
-        "pattern": "(?i)^yes\\b"
+        "pattern": "(?i)^\\s*yes\\b"
       }
     },
     {
@@ -433,7 +433,7 @@
       ],
       "reference": {
         "check": "regex",
-        "pattern": "(?i)^grapes\\b"
+        "pattern": "(?i)\\bgrapes\\b"
       }
     },
     {
@@ -448,7 +448,7 @@
       ],
       "reference": {
         "check": "regex",
-        "pattern": "(?s)^1\\. \\w+\\n2\\. \\w+\\n3\\. \\w+$"
+        "pattern": "(?s)^\\s*1\\. \\w+\\n2\\. \\w+\\n3\\. \\w+\\s*$"
       }
     },
     {
@@ -547,7 +547,7 @@
       ],
       "reference": {
         "check": "regex",
-        "pattern": "(?s)^1\\. (\\w+ ){3}\\w+\\n2\\. (\\w+ ){3}\\w+\\n3\\. (\\w+ ){3}\\w+\\n4\\. (\\w+ ){3}\\w+$"
+        "pattern": "(?s)^\\s*1\\. (\\w+ ){3}\\w+\\n2\\. (\\w+ ){3}\\w+\\n3\\. (\\w+ ){3}\\w+\\n4\\. (\\w+ ){3}\\w+\\s*$"
       }
     },
     {
@@ -1218,7 +1218,7 @@
       ],
       "reference": {
         "check": "regex",
-        "pattern": "(?s)^- .{1,80}\\n- .{1,80}\\n- .{1,80}$"
+        "pattern": "(?s)^\\s*- .{1,80}\\n- .{1,80}\\n- .{1,80}\\s*$"
       }
     },
     {
@@ -1233,7 +1233,7 @@
       ],
       "reference": {
         "check": "regex",
-        "pattern": "^(\\S+ ){1,9}\\S+\\.?$"
+        "pattern": "^\\s*(\\S+ ){1,9}\\S+\\.?\\s*$"
       }
     },
     {
@@ -1526,7 +1526,7 @@
       ],
       "reference": {
         "check": "regex",
-        "pattern": "(?i)^false\\b"
+        "pattern": "(?i)^\\s*false\\b"
       }
     },
     {
