@@ -193,7 +193,7 @@
           <div>
             <label for="bench-npredict">n_predict (tokens per point)</label>
             <select id="bench-npredict">
-              <option>256</option><option>512</option><option>1024</option>
+              <option>256</option><option>512</option><option selected>1024</option>
               <option>2048</option><option>4096</option><option>8192</option>
               <option>16384</option><option>32768</option><option>65535</option>
             </select>
@@ -560,7 +560,7 @@ function $(id) { return document.getElementById(id); }
           body: JSON.stringify({
             server_url: $('bench-url').value.trim(),
             targets: targets,
-            n_predict: parseInt($('bench-npredict').value, 10) || 256,
+            n_predict: parseInt($('bench-npredict').value, 10) || 1024,
             streams: parseInt($('bench-streams').value, 10) || 1,
             name: $('bench-name').value.trim() || null,
             api_key: $('bench-key').value.trim() || null,
