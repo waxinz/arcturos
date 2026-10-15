@@ -150,6 +150,14 @@ model must not be a contestant.)*
 - Operator can re-judge with a different template/judge model; all
   judgments retained; reports scope to a **generation** (judge model +
   template version), defaulting to newest.
+- **Combined kick-off (v0.3, 2026-10-15):** the Judgements page is the
+  one kick-off surface for evals + judging. Model A and Model B each carry
+  an endpoint URL, an optional API key, and a model name; with both URLs
+  filled, one action replays the suite's latest definition snapshot on
+  both models, then blind-judges the two fresh runs (staged job: replay A
+  → replay B → judging, live per-stage progress, one Stop that preserves
+  completed work). Leaving the URLs blank keeps the stored-results
+  judging path (model names only). API keys never echo on job records.
 
 **Acceptance criteria**
 - [x] Blind randomized pairwise judging (v0.1, scripts/ab_judge.py — API still valid).
@@ -158,6 +166,7 @@ model must not be a contestant.)*
 - [x] Dimension rubrics in the judge template; rubric selection driven by item dimension (blind-pair-v2).
 - [x] In-process judge jobs: live progress, operator stop, invalid-verdict retry policy (`POST /api/ops/judge/jobs`).
 - [x] Judge-not-contestant enforced at the dispatch boundary (normalized fingerprints; substring match trips).
+- [x] Combined kick-off (`target_a`/`target_b`): one staged job replays both models from the definition snapshot, then judges the two fresh runs; staged progress + operator stop; API keys stay off the job record (v0.3).
 - [x] Vision items carry the image into the judge payload (image_url content part).
 
 ### J5 — Eval performance reports

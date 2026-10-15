@@ -72,6 +72,13 @@ def test_judgments_view_contract(client):
     text = client.get("/judgments").text
     assert "/api/judgments" in text
     assert "/api/eval-results" in text         # item_id resolution via results
+    # Combined kick-off (2026-10-15): model A/B cards with endpoint URL,
+    # optional auth, model name — the page is the evals+judging surface.
+    assert "judge-ma-url" in text and "judge-mb-url" in text
+    assert "judge-ma-key" in text and "judge-mb-key" in text
+    assert "/api/ops/judge/jobs" in text
+    assert "Run evals + judging" in text       # dynamic kick-off label
+    assert "stage-chip" in text                # replay-a/b/judging progress
 
 
 def test_reports_view_contract(client):

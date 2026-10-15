@@ -44,6 +44,13 @@ Rules:
 - [ ] order-randomization audit: stored judgment payload must not leak which model is A/B
 - [ ] re-judging same pair with different template version appends a second row
 
+### J4 — Combined kick-off (evals + judging, added 2026-10-15)
+- [x] `tests/test_eval_jobs.py::test_combined_job_end_to_end` — target_a/target_b replays both models from the suite's latest definition snapshot, then judges the two fresh runs run-scoped; two judgments stored (both orders); run names carry the kick-off provenance; API keys never echo on the job record (targets expose url+model only)
+- [x] `tests/test_eval_jobs.py::test_combined_job_validation` — 422s: one target without the other, non-http url, empty model, identical A/B models, judge-is-contestant guard (UI discriminator substring), eval_run_ids+targets mutually exclusive, suite without a definition snapshot
+- [x] `tests/test_eval_jobs.py::test_combined_job_replay_failure_is_honest` — a replay that stores zero results hard-stops the job as error before judging ("nothing to judge"), zero judgments written
+- [x] staged job record: `combined`/`stage` (replay-a → replay-b → judging) drive the UI stage chip; one Stop flag flows through all three stages
+- [ ] Live smoke: combined kick-off from /judgments against two real models on the smoke suite
+
 ### J5 — Reports
 - [ ] win-rate aggregation: counts + percentages per suite × pair
 - [ ] category breakdown

@@ -13,6 +13,7 @@ nets out as a tie in aggregate — no derived combined rows, ever.
 
 from __future__ import annotations
 
+import json
 import random
 import re
 import sqlite3
@@ -702,6 +703,158 @@ def dispatch_judge(
         conn.close()
 
 
+def _worker_combined(job, flag, db_path, suite_id, definition, targets, *,
+                     judge_url, judge_model, judge_api_key, retries,
+                     allow_contestant_judge, eval_max_tokens,
+                     eval_temperature, eval_concurrency, eval_retries) -> None:
+    """Staged combined kick-off: replay A → replay B → judge the two runs.
+
+    Runs inside the judge-job thread. The same AbortFlag flows through all
+    three stages (dispatch_eval checks it per item, dispatch_judge per
+    judgment), so one Stop button stops whichever stage is live. Replays
+    are sequential — the judge stage needs both run ids, and interleaved
+    replays would race the per-run counters.
+    """
+    from arcturos import ops as ops_mod
+
+    runs: dict[str, int] = {}
+
+    def replay(side: str) -> dict:
+        t = targets[side]
+        label = side.upper()
+        job["stage"] = f"replay-{side}"
+        job["items_total"] = len(definition["items"])
+        job["items_done"] = 0
+        job["results_stored"] = 0
+        job["status_line"] = (
+            f"replay {label} ({t['model']}) — starting…")
+
+        def on_result(item_id: str, row: dict) -> None:
+            with _JOBS_LOCK:
+                job["items_done"] += 1
+                job["results_stored"] += 1
+                elapsed = time.monotonic() - job["started_at"]
+                remaining = job["items_total"] - job["items_done"]
+                job["eta_s"] = (
+                    round(elapsed / job["items_done"] * remaining, 1)
+                    if job["items_done"] and remaining > 0 else None)
+                job["status_line"] = (
+                    f"replay {label} ({t['model']}) — item "
+                    f"{job['items_done']}/{job['items_total']}"
+                    f" — {item_id} stored")
+
+        result = ops_mod.dispatch_eval(
+            db_path=db_path, suite_id=suite_id, target=t["url"],
+            model_fingerprint=t["model"], suite=definition,
+            api_key=t.get("api_key"),
+            name=f"{label}: {t['model']} (judgements kick-off)",
+            max_tokens=eval_max_tokens, temperature=eval_temperature,
+            retries=eval_retries, concurrency=eval_concurrency,
+            on_result=on_result, abort=flag)
+        with _JOBS_LOCK:
+            n_err = len(result.get("item_errors", []))
+            job["replay_errors"][side] = n_err
+            run_id = result.get("eval_run_id")
+            if run_id is not None:
+                runs[side] = run_id
+                job["eval_run_ids"] = [runs[s] for s in ("a", "b")
+                                       if s in runs]
+        return result
+
+    try:
+        for side in ("a", "b"):
+            t = targets[side]
+            res = replay(side)
+            status = res.get("status", "complete")
+            if status == "aborted":
+                with _JOBS_LOCK:
+                    job["status"] = "aborted"
+                    job["status_line"] = (
+                        f"stopped by operator during replay "
+                        f"{side.upper()} — partial eval run "
+                        f"#{res.get('eval_run_id')} stored")
+                    job["finished_at"] = time.monotonic()
+                    job["eta_s"] = None
+                return
+            if res.get("stored", 0) == 0 or not res.get("stored"):
+                # A run row may exist even with zero stored results — the
+                # judge stage needs OUTPUTS, so zero stored is a hard stop.
+                # dispatch_eval returns `stored` as a row LIST (empty list
+                # is falsy) or an int in the aborted paths — both shapes.
+                with _JOBS_LOCK:
+                    job["status"] = "error"
+                    job["error"] = (
+                        f"replay {side.upper()} stored no results"
+                        + (f": {res.get('error')}" if res.get("error") else ""))
+                    job["status_line"] = (
+                        f"failed during replay {side.upper()} "
+                        f"({t['model']}) — nothing to judge")
+                    job["finished_at"] = time.monotonic()
+                    job["eta_s"] = None
+                return
+
+        job["stage"] = "judging"
+        job["items_total"] = 0
+        job["items_done"] = 0
+        job["results_stored"] = 0
+        job["status_line"] = "judging — selecting pairs…"
+
+        def on_progress(done, total, label, n_judgments, n_invalid, rows):
+            with _JOBS_LOCK:
+                if job["items_total"] != total:
+                    job["items_total"] = total
+                job["items_done"] = done
+                job["work_items"].extend(rows)
+                elapsed = time.monotonic() - job["started_at"]
+                remaining = total - done
+                job["eta_s"] = round(elapsed / done * remaining, 1) \
+                    if done and remaining else None
+                job["status_line"] = (
+                    f"judging {done}/{total} — {label} "
+                    f"({n_judgments} verdict(s))"
+                    + (f", {n_invalid} invalid" if n_invalid else ""))
+
+        result = dispatch_judge(
+            db_path, suite_id, judge_url=judge_url,
+            judge_model=judge_model, model_a=targets["a"]["model"],
+            model_b=targets["b"]["model"], retries=retries,
+            allow_contestant_judge=allow_contestant_judge,
+            judge_api_key=judge_api_key,
+            eval_run_ids=[runs["a"], runs["b"]],
+            on_progress=on_progress, abort=flag)
+        with _JOBS_LOCK:
+            job["stored"] = result["stored"]
+            job["judgments_stored"] = result["stored"]
+            job["invalid"] = result["invalid"]
+            note = ""
+            if job["replay_errors"]["a"] or job["replay_errors"]["b"]:
+                note = (f" — replay item errors: "
+                        f"{job['replay_errors']['a']} (A), "
+                        f"{job['replay_errors']['b']} (B)")
+            if result["status"] == "aborted":
+                job["status"] = "aborted"
+                job["status_line"] = (
+                    f"stopped by operator after {result['judged']} item(s)"
+                    f" — {result['stored']} judgment(s) stored" + note)
+            else:
+                job["status"] = "done"
+                job["status_line"] = (
+                    f"done — runs #{runs['a']} vs #{runs['b']}, "
+                    f"{result['judged']} item(s), "
+                    f"{result['stored']} judgment(s) stored"
+                    + (f", {result['invalid']} invalid" if result["invalid"] else "")
+                    + note)
+            job["finished_at"] = time.monotonic()
+            job["eta_s"] = 0.0
+    except Exception as exc:  # noqa: BLE001 — the thread IS the report
+        with _JOBS_LOCK:
+            job["status"] = "error"
+            job["error"] = str(exc)
+            job["status_line"] = f"failed: {exc}"
+            job["finished_at"] = time.monotonic()
+            job["eta_s"] = None
+
+
 def run_judge_job(
     db_path,
     suite_id: int,
@@ -713,6 +866,12 @@ def run_judge_job(
     allow_contestant_judge: bool = False,
     judge_api_key: str | None = None,
     eval_run_ids: list[int] | None = None,
+    target_a: dict | None = None,
+    target_b: dict | None = None,
+    eval_max_tokens: int = 1024,
+    eval_temperature: float = 0.0,
+    eval_concurrency: int = 4,
+    eval_retries: int = 0,
 ) -> str:
     """Validate + snapshot a judge job, run it in a daemon thread.
 
@@ -721,22 +880,81 @@ def run_judge_job(
     SYNCHRONOUSLY so the API can 422 before any thread starts (ADR 007
     §3: the guard lives at the dispatch boundary); everything inside the
     thread is reported via the job record.
+
+    Combined kick-off (2026-10-15): pass target_a AND target_b
+    ({url, model, api_key?}) and the job becomes a staged
+    "run evals + judgement": replay the suite's latest definition
+    snapshot on model A, then model B, then judge the two fresh runs
+    (run-scoped, same pairing semantics as the Results-page flow). The
+    stored targets echo url+model only — API keys never land on the
+    job record.
     """
+    combined = target_a is not None or target_b is not None
+    if combined and (target_a is None or target_b is None):
+        raise ValueError("target_a and target_b must be given together")
+    targets: dict[str, dict] = {}
+    if combined:
+        for side, tgt in (("a", target_a), ("b", target_b)):
+            if not isinstance(tgt, dict):
+                raise ValueError(f"target_{side} must be an object")
+            url = tgt.get("url")
+            model = tgt.get("model")
+            key = tgt.get("api_key")
+            if not isinstance(url, str) or not url.startswith("http"):
+                raise ValueError(f"target_{side}.url must be an http(s) URL")
+            if not isinstance(model, str) or not model.strip():
+                raise ValueError(f"target_{side}.model must be a non-empty string")
+            if key is not None and not isinstance(key, str):
+                raise ValueError(f"target_{side}.api_key must be a string when set")
+            targets[side] = {"url": url, "model": model.strip(), "api_key": key}
+        if eval_run_ids is not None:
+            raise ValueError(
+                "eval_run_ids (run-scoped judging) is mutually exclusive with "
+                "target_a/target_b (combined kick-off)")
     conn = dbmod.connect(db_path)
     dbmod.init_db(conn)
     try:
         if conn.execute("SELECT 1 FROM eval_suites WHERE id = ?",
                         (suite_id,)).fetchone() is None:
             raise ValueError(f"eval suite {suite_id} not found")
-        work = select_pairs(conn, suite_id, model_a=model_a, model_b=model_b,
-                            eval_run_ids=eval_run_ids)
-        if not work:
-            raise ValueError(
-                "no judgeable pairs: every item needs results from exactly "
-                "two distinct models (or the requested pair has no results)")
-        fps = sorted({w["fp_a"] for w in work} | {w["fp_b"] for w in work})
-        guard_judge_not_contestant(judge_model or "(default)", fps,
-                                   allow=allow_contestant_judge)
+        definition: Any = None
+        n_items = 0
+        if combined:
+            ma = (model_a or targets["a"]["model"] or "").strip()
+            mb = (model_b or targets["b"]["model"] or "").strip()
+            if not ma or not mb:
+                raise ValueError("both models must have a name")
+            if ma.casefold() == mb.casefold():
+                raise ValueError(
+                    f"model A and model B must be distinct (both are '{ma}')")
+            targets["a"]["model"] = ma
+            targets["b"]["model"] = mb
+            row = conn.execute(
+                "SELECT payload FROM suite_definitions WHERE suite_id = ? "
+                "ORDER BY id DESC LIMIT 1", (suite_id,)).fetchone()
+            if row is None:
+                raise ValueError(
+                    f"no definition snapshot for suite {suite_id} — snapshot "
+                    "the suite first (Create page)")
+            definition = json.loads(row["payload"])
+            # Sync validation (pure, no HTTP) so a broken snapshot 422s
+            # before any thread starts; dispatch_eval re-validates (cheap).
+            n_items = len(evals.validate_suite(definition))
+            # Guard BEFORE any thread starts: the fingerprints the replays
+            # will create are the contestants.
+            fps = sorted({ma, mb})
+            guard_judge_not_contestant(judge_model or "(default)", fps,
+                                       allow=allow_contestant_judge)
+        else:
+            work = select_pairs(conn, suite_id, model_a=model_a, model_b=model_b,
+                                eval_run_ids=eval_run_ids)
+            if not work:
+                raise ValueError(
+                    "no judgeable pairs: every item needs results from exactly "
+                    "two distinct models (or the requested pair has no results)")
+            fps = sorted({w["fp_a"] for w in work} | {w["fp_b"] for w in work})
+            guard_judge_not_contestant(judge_model or "(default)", fps,
+                                       allow=allow_contestant_judge)
     finally:
         conn.close()
     _prune_jobs()
@@ -746,19 +964,26 @@ def run_judge_job(
         "job_id": job_id,
         "kind": "judge",
         "status": "running",           # running | done | error | aborted
+        "combined": combined,
+        "stage": "replay-a" if combined else "judging",
         "suite_id": suite_id,
         "judge_model": judge_model or "(default)",
         "eval_run_ids": list(eval_run_ids) if eval_run_ids else [],
-        "items_total": 0,
+        # url+model only — API keys are never echoed on the job record
+        "targets": ({s: {"url": t["url"], "model": t["model"]}
+                     for s, t in targets.items()} if combined else {}),
+        "items_total": (n_items if combined else 0),
         "items_done": 0,
         "work_items": [],              # per-judgment progress rows (UI table)
-        "status_line": "selecting pairs…",
+        "status_line": ("replay A — starting…" if combined
+                        else "selecting pairs…"),
         "eta_s": None,
         "started_at": time.monotonic(),
         "finished_at": None,
         "stored": 0,
         "judgments_stored": 0,
         "invalid": 0,
+        "replay_errors": {"a": 0, "b": 0} if combined else None,
         "error": None,
         "abort_requested": False,
     }
@@ -768,6 +993,18 @@ def run_judge_job(
 
     def _worker() -> None:
         try:
+            if combined:
+                _worker_combined(job, flag, db_path, suite_id, definition,
+                                 targets, judge_url=judge_url,
+                                 judge_model=judge_model,
+                                 judge_api_key=judge_api_key,
+                                 retries=retries,
+                                 allow_contestant_judge=True,
+                                 eval_max_tokens=eval_max_tokens,
+                                 eval_temperature=eval_temperature,
+                                 eval_concurrency=eval_concurrency,
+                                 eval_retries=eval_retries)
+                return
             def on_progress(done, total, label, n_judgments, n_invalid, rows):
                 with _JOBS_LOCK:
                     if job["items_total"] != total:
