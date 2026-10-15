@@ -259,10 +259,19 @@ def connect(db_path: str | Path = DEFAULT_DB_PATH) -> sqlite3.Connection:
 
     WAL journal mode is set once here and persists on the database file, so
     repeated connects are cheap and concurrent reads/writes are safe.
+
+    check_same_thread=False (2026-10-15): FastAPI runs the get_db
+    dependency and the sync endpoint in DIFFERENT threadpool threads, so
+    a request-scoped connection is legally created in thread X and used
+    in thread Y. Without this flag that intermittently 500s
+    (ProgrammingError: objects created in a thread...), which is exactly
+    the transient "Suite dropdown is empty" failure. Safety is preserved:
+    the connection is still per-request, and WAL + per-request commit/close
+    serialize writes.
     """
     db_path = Path(db_path)
     db_path.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(db_path)
+    conn = sqlite3.connect(db_path, check_same_thread=False)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
     conn.execute("PRAGMA journal_mode = WAL")
