@@ -34,52 +34,19 @@
   <script src="/static/theme.js"></script>
   <script src="/static/nav.js"></script>
     <script>
-      // Replay target default from arcturos.toml / local overlay
-      // (/api/config/ui-defaults); silent fallback = user types it.
-      fetch('/api/config/ui-defaults').then(r => r.json()).then(cfg => {
-        if (cfg.eval_target) document.getElementById('eval-target').value = cfg.eval_target;
-      }).catch(() => {});
+      // (2026-10-15: the replay card moved to /evals/run — that page owns
+      // the ui-defaults prefill now; nothing to prefill here.)
     </script>
   </head>
 <body class="shell" data-page="evalsuite" data-section="Evals">
-  <header class="topnav">
-    <div class="topnav-row">
-      <a class="brand-tile" href="/" aria-hidden="true">A</a>
-      <a class="brand" href="/">Arcturos</a>
-      <nav class="topnav-tabs">
-        <div class="nav-section" data-nav-section="Benchmarks">
-          <a class="nav-section-head" href="/kickoff">Benchmarks</a>
-        </div>
-        <div class="nav-section" data-nav-section="Evals">
-          <a class="nav-section-head" href="/evals/suites/new">Evals</a>
-        </div>
-        <div class="nav-section" data-nav-section="Settings">
-          <a class="nav-section-head" href="/models">Settings</a>
-        </div>
-      </nav>
-      <div class="sidebar-foot">
-        <button class="theme-toggle-inline" data-theme-toggle>☾</button>
-      </div>
-    </div>
-    <nav class="topnav-sub">
-      <a href="/kickoff" data-page="kickoff" data-nav-section="Benchmarks">Start</a>
-      <a href="/compare" data-page="compare" data-nav-section="Benchmarks">Compare</a>
-      <a href="/evals/suites/new" data-page="evalsuite" data-nav-section="Evals">Create</a>
-      <a href="/evals/run" data-page="evalrun" data-nav-section="Evals">Run</a>
-      <a href="/evals" data-page="evals" data-nav-section="Evals">Results</a>
-      <a href="/judgments" data-page="judgments" data-nav-section="Evals">Judgments</a>
-      <a href="/reports" data-page="reports" data-nav-section="Evals">Reports</a>
-      <a href="/models" data-page="models" data-nav-section="Settings">Models</a>
-      <a href="/baselines" data-page="baselines" data-nav-section="Settings">Baselines</a>
-    </nav>
-  </header>
+  <!--NAV-->
   <main class="page">
     <h1>Create</h1>
-    <p class="page-intro">Create the suite record, define its item JSON (optional pre-store), then replay it against a target — the three cards run top-to-bottom and the suite id flows from the first card into the replay form.</p>
+    <p class="page-intro">Create the suite record and define its item JSON (optional pre-store). Replay happens on the <a href="/evals/run">Run</a> page.</p>
     <div class="grid">
     <div class="card" id="eval-suite-create">
       <h3>Eval suite — create</h3>
-      <p class="hint">Creates the suite record; populate results afterwards by replaying it ("Eval replay — kick off").</p>
+      <p class="hint">Creates the suite record; populate results afterwards by replaying it from the <a href="/evals/run">Run</a> page.</p>
       <label>Suite name <input id="suite-name" placeholder="smoke-reasoning"></label>
       <label>Version <input id="suite-version" value="v1"></label>
       <button id="suite-btn">＋ Create suite</button>
@@ -97,23 +64,6 @@
     
 
 
-    <div class="card" id="eval-replay-kick">
-      <h3>Eval replay — kick off</h3>
-      <p class="hint">Replays the JSON from "Eval suite items — definition" against an OpenAI-compatible chat endpoint, stores eval_results.</p>
-      <label>Suite ID (from "Eval suite — create" result) <input id="eval-suite-id" placeholder="e.g. 3"></label>
-      <label>Target (OpenAI-compatible base URL incl. /v1)
-        <input id="eval-target" value="">
-      </label>
-      <div class="row2">
-        <div><label>Model fingerprint <input id="eval-model" placeholder="qwen3.8-27b-rotation"></label></div>
-        <div><label>API key (optional) <input id="eval-key" type="password" placeholder="sk-…"></label></div>
-      </div>
-      <div class="row2">
-        <div><button id="eval-btn" style="width:100%">▶ Kick off eval replay</button></div>
-        <div><button id="eval-pf-btn" style="width:100%; background:var(--pf-btn)">✔ Check target</button></div>
-      </div>
-      <div id="eval-msg" class="msg"></div>
-    </div>
     </div>
   </main>
   <script>
@@ -186,24 +136,9 @@ $('suite-validate-btn').onclick = () => {
         version: $('suite-version').value.trim() || 'v1',
       }, $('suite-btn'), $('suite-msg'), 'Create suite');
       if (data) {
-        setMsg($('suite-msg'), 'Suite #' + data.id + ' created (' + data.name + ')', true);
-        $('eval-suite-id').value = data.id;
+        setMsg($('suite-msg'),
+          'Suite #' + data.id + ' created (' + data.name + ') — replay it from the Run page', true);
       }
-    };
-
-    $('eval-btn').onclick = async () => {
-      let suite;
-      try { suite = JSON.parse($('suite-json').value); }
-      catch (err) { setMsg($('eval-msg'), 'Suite JSON invalid: ' + err.message); return; }
-      const data = await post('/api/ops/eval', {
-        suite_id: parseInt($('eval-suite-id').value, 10),
-        target: $('eval-target').value.trim(),
-        model_fingerprint: $('eval-model').value.trim(),
-        api_key: $('eval-key').value.trim() || null,
-        suite: suite,
-      }, $('eval-btn'), $('eval-msg'), 'Replay eval suite');
-      if (data) setMsg($('eval-msg'),
-        'Stored ' + data.stored.length + ' result(s) in suite #' + data.suite_id, true);
     };
 
   </script>

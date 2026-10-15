@@ -37,47 +37,60 @@
     .status { color: var(--text-muted); font-size: .85rem; margin-top: .75rem; }
     .empty { color: var(--text-muted); padding: 2rem; text-align: center; }
     a.jump { font-size: .82rem; white-space: nowrap; }
+    /* ---- runs table (2026-10-15) ------------------------------------ */
+    .runs-head h3, .explorer-head { margin: 1.4rem 0 .3rem; }
+    .runs-head .hint { color: var(--text-muted); font-size: .85rem;
+                       margin: 0 0 .6rem; }
+    .table-scroll { overflow-x: auto; }   /* narrow screens: scroll, not wrap */
+    #runs-table { background: var(--surface); border: 1px solid var(--border);
+                  border-radius: 6px; }
+    #runs-table th, #runs-table td { white-space: nowrap; }
+    #runs-table td.out-cell { white-space: normal; }
+    .run-actions { display: flex; flex-wrap: wrap; gap: .9rem;
+                   align-items: center; margin: .6rem 0 0; }
+    .run-actions .judge-model-label { font-size: .85rem; font-weight: 600;
+                                      color: var(--text-soft); }
+    .run-actions input { padding: .32rem .45rem; font-size: .88rem;
+                         border: 1px solid var(--input-border); border-radius: 4px;
+                         background: var(--bg); color: var(--text); }
+    .run-actions button { padding: .38rem .9rem; font-size: .88rem; }
+    #jpair-link { font-size: .88rem; }
   </style>
   <script src="/static/app-time.js"></script>
   <script src="/static/theme.js"></script>
   <script src="/static/nav.js"></script>
 </head>
 <body class="shell" data-page="evals" data-section="Evals">
-  <header class="topnav">
-    <div class="topnav-row">
-      <a class="brand-tile" href="/" aria-hidden="true">A</a>
-      <a class="brand" href="/">Arcturos</a>
-      <nav class="topnav-tabs">
-        <div class="nav-section" data-nav-section="Benchmarks">
-          <a class="nav-section-head" href="/kickoff">Benchmarks</a>
-        </div>
-        <div class="nav-section" data-nav-section="Evals">
-          <a class="nav-section-head" href="/evals/suites/new">Evals</a>
-        </div>
-        <div class="nav-section" data-nav-section="Settings">
-          <a class="nav-section-head" href="/models">Settings</a>
-        </div>
-      </nav>
-      <div class="sidebar-foot">
-        <button class="theme-toggle-inline" data-theme-toggle>☾</button>
-      </div>
-    </div>
-    <nav class="topnav-sub">
-      <a href="/kickoff" data-page="kickoff" data-nav-section="Benchmarks">Start</a>
-      <a href="/compare" data-page="compare" data-nav-section="Benchmarks">Compare</a>
-      <a href="/evals/suites/new" data-page="evalsuite" data-nav-section="Evals">Create</a>
-      <a href="/evals/run" data-page="evalrun" data-nav-section="Evals">Run</a>
-      <a href="/evals" data-page="evals" data-nav-section="Evals">Results</a>
-      <a href="/judgments" data-page="judgments" data-nav-section="Evals">Judgments</a>
-      <a href="/reports" data-page="reports" data-nav-section="Evals">Reports</a>
-      <a href="/models" data-page="models" data-nav-section="Settings">Models</a>
-      <a href="/baselines" data-page="baselines" data-nav-section="Settings">Baselines</a>
-    </nav>
-  </header>
+  <!--NAV-->
 
   <main class="page">
   <h2>Evals <button id="export-evals" title="Download all eval results as CSV">⤓ CSV</button></h2>
 
+  <div class="runs-head">
+    <h3>Runs</h3>
+    <p class="hint">Pick two runs of the same suite (different models), then
+      “Judgements” judges them against each other. Click a run id for its
+      stored rows.</p>
+  </div>
+  <div class="table-scroll">
+    <table id="runs-table">
+      <thead><tr>
+        <th></th><th>Run</th><th>Suite</th><th>Model</th><th>Status</th>
+        <th>Results</th><th>Created</th>
+      </tr></thead>
+      <tbody id="runs-body"><tr><td colspan="7" class="status">Loading…</td></tr></tbody>
+    </table>
+  </div>
+  <div class="run-actions">
+    <label class="judge-model-label">Judge model
+      <input id="judge-model" placeholder="optional — blank = config default">
+    </label>
+    <button id="judge-btn" disabled>Judgements</button>
+    <a id="jpair-link" hidden></a>
+  </div>
+  <p id="run-status" class="status"></p>
+
+  <h3 class="explorer-head">Results explorer</h3>
   <div class="controls">
     <label>Suite
       <select id="suite-select"><option value="">— choose a suite —</option></select>
@@ -272,6 +285,160 @@
       window.location = '/api/export/eval-results';
     });
 
+    // ---- runs table: multi-select → run-scoped judging ------------------
+    let selectedRuns = [];
+
+    async function loadRuns() {
+      const tbody = document.getElementById('runs-body');
+      const st = document.getElementById('run-status');
+      try {
+        const res = await fetch('/api/eval-runs');
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        const runs = await res.json();
+        tbody.innerHTML = '';
+        if (!runs.length) {
+          tbody.innerHTML = '<tr><td colspan="7" class="status">No replay runs yet — start one on the Run page.</td></tr>';
+          return;
+        }
+        for (const r of runs) {
+          const tr = document.createElement('tr');
+          const tdCk = document.createElement('td');
+          const ck = document.createElement('input');
+          ck.type = 'checkbox';
+          ck.dataset.runId = r.id;
+          ck.dataset.suiteId = r.suite_id;
+          ck.dataset.model = r.model_fingerprint;
+          ck.setAttribute('aria-label', 'Select run ' + r.id);
+          ck.addEventListener('change', onSelectionChange);
+          tdCk.appendChild(ck);
+          const tdId = document.createElement('td');
+          const a = document.createElement('a');
+          a.href = '/evals/runs/' + r.id;
+          a.textContent = '#' + r.id;
+          tdId.appendChild(a);
+          const tdSuite = document.createElement('td');
+          tdSuite.textContent = r.suite_name + ' ' + r.suite_version;
+          const tdModel = document.createElement('td');
+          tdModel.className = 'mono';
+          tdModel.textContent = r.model_fingerprint;
+          const tdStatus = document.createElement('td');
+          tdStatus.textContent = r.status;
+          if (r.status !== 'complete') tdStatus.style.color = 'var(--warn, #d80)';
+          const tdCount = document.createElement('td');
+          tdCount.className = 'num';
+          tdCount.textContent = r.result_count;
+          const tdCreated = document.createElement('td');
+          tdCreated.textContent = window.fmtLocalTime(r.created_at);
+          tr.append(tdCk, tdId, tdSuite, tdModel, tdStatus, tdCount, tdCreated);
+          tbody.appendChild(tr);
+        }
+      } catch (err) {
+        tbody.innerHTML = '<tr><td colspan="7" class="status">Failed to load runs: ' + err + '</td></tr>';
+      }
+    }
+
+    async function onSelectionChange() {
+      const checked = [...document.querySelectorAll('#runs-body input[type=checkbox]:checked')];
+      selectedRuns = checked.map(c => ({
+        id: parseInt(c.dataset.runId, 10),
+        suiteId: parseInt(c.dataset.suiteId, 10),
+        model: c.dataset.model,
+      }));
+      const btn = document.getElementById('judge-btn');
+      const link = document.getElementById('jpair-link');
+      const st = document.getElementById('run-status');
+      link.hidden = true;
+      if (selectedRuns.length !== 2) {
+        btn.disabled = true;
+        st.textContent = selectedRuns.length < 2
+          ? 'Select two runs to judge them against each other.'
+          : 'Exactly two runs at a time.';
+        return;
+      }
+      const [x, y] = selectedRuns;
+      if (x.suiteId !== y.suiteId) {
+        btn.disabled = true;
+        st.textContent = 'The two runs must share one suite.';
+        return;
+      }
+      if (x.model === y.model) {
+        btn.disabled = true;
+        st.textContent = 'The two runs must be different models.';
+        return;
+      }
+      btn.disabled = false;
+      st.textContent = '';
+      // Judgment available for this pair? → surface the SxS link.
+      try {
+        const res = await fetch('/api/judgments/pair?suite_id=' + x.suiteId +
+                                '&model_a=' + encodeURIComponent(x.model) +
+                                '&model_b=' + encodeURIComponent(y.model));
+        if (res.ok) {
+          const rows = await res.json();
+          if (rows.length) {
+            link.href = '/judgments/pair?suite_id=' + x.suiteId +
+                        '&model_a=' + encodeURIComponent(x.model) +
+                        '&model_b=' + encodeURIComponent(y.model);
+            link.textContent = 'View judgment details (' + rows.length + ' rows) →';
+            link.hidden = false;
+          }
+        }
+      } catch (err) { /* link stays hidden — honest */ }
+    }
+
+    document.getElementById('judge-btn').addEventListener('click', async () => {
+      const btn = document.getElementById('judge-btn');
+      const st = document.getElementById('run-status');
+      const [x, y] = selectedRuns;
+      const jm = document.getElementById('judge-model').value.trim();
+      const body = {
+        suite_id: x.suiteId,
+        eval_run_ids: [x.id, y.id],
+      };
+      if (jm) body.judge_model = jm;
+      btn.disabled = true;
+      st.textContent = 'Starting judge job…';
+      try {
+        const res = await fetch('/api/ops/judge/jobs', {
+          method: 'POST', headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify(body),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          const d = data.detail;
+          st.textContent = 'Failed: ' + (typeof d === 'string' ? d : JSON.stringify(d));
+          btn.disabled = false;
+          return;
+        }
+        st.textContent = 'Judge job ' + data.job_id + ' running…';
+        const poll = setInterval(async () => {
+          try {
+            const jr = await fetch('/api/ops/judge/jobs/' + data.job_id);
+            if (!jr.ok) { clearInterval(poll); return; }
+            const job = await jr.json();
+            st.textContent = 'Judge job ' + data.job_id + ': ' +
+              (job.status_line || job.status);
+            if (job.status === 'done') {
+              clearInterval(poll);
+              st.textContent = 'Judged ' + (job.judgments_stored || 0) +
+                ' row(s). Refreshing…';
+              await onSelectionChange();
+              btn.disabled = false;
+            } else if (job.status === 'error' || job.status === 'aborted') {
+              clearInterval(poll);
+              st.textContent = 'Judge job ' + job.status + ': ' +
+                (job.error || '');
+              btn.disabled = false;
+            }
+          } catch (err) { clearInterval(poll); btn.disabled = false; }
+        }, 2000);
+      } catch (err) {
+        st.textContent = 'Failed: ' + err;
+        btn.disabled = false;
+      }
+    });
+
+    loadRuns();
     loadSuites().catch(err => {
       document.getElementById('status').textContent = 'Failed to load suites: ' + err;
     });

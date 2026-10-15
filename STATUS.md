@@ -5,6 +5,38 @@ stays the conventions/ground-truth file; this file is the living status).
 Newest first. Read AGENTS.md first for conventions; read this file to
 resume work.
 
+## 2026-10-15 (evening) — Results page flow, nav as a module, judge abort fix
+
+- **Results page flow (J5):** new `/evals` Results page — mobile-friendly
+  runs table (same pattern as benchmark runs): run ID → run detail
+  (`/evals/runs/{id}`), multi-select → Judgements button → run-scoped
+  judge job (`POST /api/ops/judge/jobs` now accepts `eval_run_ids`;
+  selection + guard run synchronously, scoping filters results to the
+  selected replay runs). When judgments exist for a pair, the page links
+  to `/judgments/pair` — the SxS diff view (blind rows in canonical a→b
+  orientation; the a/b winner flip across the two stored orders is the
+  position-bias signal). Run detail and pair detail carry the shared
+  shell (data-page `evalrundetail` / `jpair`).
+- **Nav is ONE module now (drift-class kill):** `static/partials/nav.html`
+  is the single menu source, written by `tools/build_nav.py` from
+  NAV_MODEL; pages carry only `<!--NAV-->`; `pagelib.render_page()`
+  injects it server-side at request time and every page route serves
+  through `page_response()`. A generator regen can no longer silently
+  delete a pill (that shipped earlier today). Direct `/static/*.html`
+  fetches bypass injection — routes are the canonical entry.
+- **Judge-job Stop fixed (500):** `abort_judge_job` called
+  `flag.set()` — no such method (AbortFlag exposes `request()`) — so
+  POST `/api/ops/judge/jobs/{id}/abort` 500'd since the v0.2 refactor.
+  Also: a Stop landing mid-item now breaks between the two order calls
+  (bench precedent: check inside the loop) — the paid-for order-0
+  judgment is preserved and the job still reports `aborted`.
+- Create page is suite-create + items only (replay moved to `/evals/run`
+  earlier today); nav row-2 gains the Run pill.
+- Tests: 314 green (new `tests/test_eval_runs_api.py`: runs list/detail,
+  run-scoped judging, SxS order-independence, abort regression,
+  drill-down shell identity); static gates clean; nav generator
+  idempotent (placeholder contract).
+
 ## 2026-10-15 — Eval system v0.2 (dimensions, position swap, reports)
 
 The eval side now answers the driving question — **"which model is
