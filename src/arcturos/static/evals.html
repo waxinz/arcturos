@@ -54,6 +54,13 @@
                          border: 1px solid var(--input-border); border-radius: 4px;
                          background: var(--bg); color: var(--text); }
     .run-actions button { padding: .38rem .9rem; font-size: .88rem; }
+    /* judge-not-contestant guard: WARNING with override, not a dead end */
+    .warn-card { display: flex; flex-wrap: wrap; align-items: center;
+                 gap: .7rem; margin-top: .6rem; padding: .55rem .8rem;
+                 border: 1px solid #b58a2a; border-radius: 6px;
+                 background: rgba(181, 138, 42, .12); font-size: .86rem; }
+    .warn-card[hidden] { display: none; }
+    .warn-card button { padding: .3rem .7rem; font-size: .82rem; }
     #jpair-link { font-size: .88rem; }
   </style>
   <script src="/static/app-time.js"></script>
@@ -87,6 +94,10 @@
     </label>
     <button id="judge-btn" disabled>Judgements</button>
     <a id="jpair-link" hidden></a>
+  </div>
+  <div id="judge-warn" class="warn-card" hidden>
+    <span id="judge-warn-text"></span>
+    <button id="judge-warn-go">Judge anyway (override guard)</button>
   </div>
   <p id="run-status" class="status"></p>
 
@@ -347,6 +358,7 @@
       const btn = document.getElementById('judge-btn');
       const link = document.getElementById('jpair-link');
       const st = document.getElementById('run-status');
+      document.getElementById('judge-warn').hidden = true;
       link.hidden = true;
       if (selectedRuns.length !== 2) {
         btn.disabled = true;
@@ -386,17 +398,20 @@
       } catch (err) { /* link stays hidden — honest */ }
     }
 
-    document.getElementById('judge-btn').addEventListener('click', async () => {
+    async function dispatchJudge(extra = {}) {
       const btn = document.getElementById('judge-btn');
       const st = document.getElementById('run-status');
+      const warn = document.getElementById('judge-warn');
       const [x, y] = selectedRuns;
       const jm = document.getElementById('judge-model').value.trim();
       const body = {
         suite_id: x.suiteId,
         eval_run_ids: [x.id, y.id],
+        ...extra,
       };
       if (jm) body.judge_model = jm;
       btn.disabled = true;
+      warn.hidden = true;
       st.textContent = 'Starting judge job…';
       try {
         const res = await fetch('/api/ops/judge/jobs', {
@@ -405,8 +420,19 @@
         });
         const data = await res.json().catch(() => ({}));
         if (!res.ok) {
-          const d = data.detail;
-          st.textContent = 'Failed: ' + (typeof d === 'string' ? d : JSON.stringify(d));
+          const d = typeof data.detail === 'string'
+            ? data.detail : JSON.stringify(data.detail);
+          if (d.includes('allow_contestant_judge')) {
+            // Judge-not-contestant guard: a WARNING with an explicit
+            // override — not a dead-end error. The operator decides the
+            // family-bias risk is acceptable by clicking the button.
+            document.getElementById('judge-warn-text').textContent =
+              '⚠ ' + d;
+            warn.hidden = false;
+            st.textContent = '';
+          } else {
+            st.textContent = 'Failed: ' + d;
+          }
           btn.disabled = false;
           return;
         }
@@ -436,7 +462,12 @@
         st.textContent = 'Failed: ' + err;
         btn.disabled = false;
       }
-    });
+    }
+
+    document.getElementById('judge-btn').addEventListener('click',
+      () => dispatchJudge());
+    document.getElementById('judge-warn-go').addEventListener('click',
+      () => dispatchJudge({allow_contestant_judge: true}));
 
     loadRuns();
     loadSuites().catch(err => {

@@ -32,10 +32,18 @@ resume work.
   judgment is preserved and the job still reports `aborted`.
 - Create page is suite-create + items only (replay moved to `/evals/run`
   earlier today); nav row-2 gains the Run pill.
+- **Judge-not-contestant guard is a WARNING with an override, not a
+  dead-end error** (operator call after hitting it in dev testing): the
+  422's `allow_contestant_judge` detail renders as an amber warn card on
+  BOTH judge kick-off surfaces (Results `/evals` + `/judgments`), with a
+  "Judge anyway (override guard)" button that re-dispatches with
+  `allow_contestant_judge=true`. API contract unchanged (guard still
+  422s synchronously; the override is the documented operator path).
 - Tests: 314 green (new `tests/test_eval_runs_api.py`: runs list/detail,
   run-scoped judging, SxS order-independence, abort regression,
   drill-down shell identity); static gates clean; nav generator
-  idempotent (placeholder contract).
+  idempotent (placeholder contract); override flow verified with
+  headless Chromium route mocks (guard → warn card → override POST).
 
 ## 2026-10-15 — Eval system v0.2 (dimensions, position swap, reports)
 

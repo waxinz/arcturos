@@ -56,6 +56,14 @@
     .jmsg { margin-top: .5rem; font-size: .85rem; min-height: 1.1em; }
     .jmsg.err { color: var(--err); }
     .jmsg.ok { color: var(--ok); }
+    .jmsg.warn { color: #b58a2a; }
+    /* judge-not-contestant guard: WARNING with override, not a dead end */
+    .warn-card { display: flex; flex-wrap: wrap; align-items: center;
+                 gap: .7rem; margin-top: .6rem; padding: .55rem .8rem;
+                 border: 1px solid #b58a2a; border-radius: 6px;
+                 background: rgba(181, 138, 42, .12); font-size: .86rem; }
+    .warn-card[hidden] { display: none; }
+    .warn-card button { padding: .3rem .7rem; font-size: .82rem; }
     .benchprog { margin-top: .7rem; display: none; }
     .benchprog.active { display: block; }
     .bp-head2 { display: flex; align-items: baseline; gap: .6rem;
@@ -145,6 +153,10 @@
       </div>
     </form>
     <div id="judge-msg" class="jmsg"></div>
+    <div id="judge-warn" class="warn-card" hidden>
+      <span id="judge-warn-text"></span>
+      <button id="judge-warn-go">Judge anyway (override guard)</button>
+    </div>
     <div id="judge-progress" class="benchprog">
       <div class="bp-head2">
         <div id="jbp-status" class="bp-status"></div>
@@ -471,14 +483,15 @@
           else poll.timer = setTimeout(() => pollLoop(jobId), 2000);
         }
       }
-      $('judge-btn').onclick = async () => {
+      async function kickJudge(extra = {}) {
         const suiteId = parseInt($('judge-suite').value, 10);
         if (!suiteId) { setMsg('Pick a suite to judge'); return; }
         const btn = $('judge-btn');
         btn.disabled = true;
+        $('judge-warn').hidden = true;
         setMsg('Submitting…');
         try {
-          const body = {suite_id: suiteId};
+          const body = {suite_id: suiteId, ...extra};
           if ($('judge-url').value.trim()) body.judge_url = $('judge-url').value.trim();
           if ($('judge-key').value.trim()) body.judge_api_key = $('judge-key').value.trim();
           if ($('judge-model').value.trim()) body.judge_model = $('judge-model').value.trim();
@@ -490,7 +503,21 @@
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify(body)});
           const data = await res.json().catch(() => ({}));
-          if (!res.ok) { setMsg('Kick off failed: ' + fmtDetail(data.detail, res.status)); return; }
+          if (!res.ok) {
+            const d = fmtDetail(data.detail, res.status);
+            if (typeof data.detail === 'string'
+                && data.detail.includes('allow_contestant_judge')) {
+              // Judge-not-contestant guard: a WARNING with an explicit
+              // override — not a dead-end error. Clicking the button
+              // re-dispatches with allow_contestant_judge=true.
+              $('judge-warn-text').textContent = '⚠ ' + d;
+              $('judge-warn').hidden = false;
+              setMsg('Judge-model guard tripped — judge anyway to proceed.');
+              return;
+            }
+            setMsg('Kick off failed: ' + d);
+            return;
+          }
           $('judge-progress').classList.add('active');
           poll.jobId = data.job_id;
           $('jbp-rows').innerHTML = '';
@@ -504,7 +531,10 @@
           pollLoop(data.job_id);
         } catch (err) { setMsg('Kick off failed: ' + err); }
         finally { btn.disabled = false; }
-      };
+      }
+      $('judge-btn').onclick = () => kickJudge();
+      $('judge-warn-go').onclick =
+        () => kickJudge({allow_contestant_judge: true});
       $('jbp-zoom').onclick = () => {
         poll.zoom = !poll.zoom;
         $('jbp-detail').classList.toggle('open', poll.zoom);
