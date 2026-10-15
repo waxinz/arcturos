@@ -124,19 +124,22 @@ def test_reports_is_under_evals_nav(client):
     # The Reports pill shares row 2 with the other Evals pills (all
     # emitted consecutively inside .topnav-sub).
     sub = text.split('class="topnav-sub"')[1].split('</nav>')[0]
-    for href in ('/evals/suites/new', '/evals', '/judgments', '/reports'):
+    for href in ('/evals/suites/new', '/evals/run', '/evals', '/judgments',
+                 '/reports'):
         assert f'href="{href}"' in sub, href
 
 
-def test_eval_suite_page_has_three_cards(client):
-    # Suite create page: the three eval kick-off cards live on ONE page
-    # (owner call: features share the suite-creation flow, not anchors).
+def test_eval_suite_page_has_two_cards(client):
+    # v0.2 (2026-10-15): replay moved to the /evals/run async job page —
+    # the Create page keeps ONLY suite create + item definition.
     text = client.get("/evals/suites/new").text
     assert 'id="eval-suite-create"' in text
     assert 'id="eval-suite-items"' in text
-    assert 'id="eval-replay-kick"' in text
     assert '<h3>Eval suite — create</h3>' in text
-    assert '<h3>Eval replay — kick off</h3>' in text
+    assert 'id="eval-replay-kick"' not in text
+    assert '<h3>Eval replay — kick off</h3>' not in text
+    # the page points at the Run page for replaying
+    assert 'href="/evals/run"' in text
 
 
 def test_kickoff_page_bench_only(client):
