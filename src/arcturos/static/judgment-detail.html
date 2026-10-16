@@ -34,7 +34,38 @@
                        color: var(--text-soft); font-weight: 600; }
     .verdict details { margin-top: .35rem; }
     .verdict summary { cursor: pointer; color: var(--link); font-size: .82rem; }
-    .item-head { font-weight: 700; margin: 1.2rem 0 .45rem; font-size: .95rem; }
+    .item-head { font-weight: 700; margin: 1.2rem 0 .45rem; font-size: .95rem;
+                 display: flex; align-items: center; gap: .45rem; width: 100%;
+                 background: none; border: 0; padding: .15rem .1rem;
+                 cursor: pointer; color: var(--text); text-align: left;
+                 font: inherit; font-weight: 700; font-size: .95rem; }
+    .item-head .chev { color: var(--link); font-size: .82rem; width: 1em;
+                       flex: none; }
+    .item-head .item-name { word-break: break-word; }
+    .item-head .hint { color: var(--text-muted); font-weight: 400;
+                       font-size: .72rem; margin-left: .3rem; white-space: nowrap; }
+    .item-head:focus-visible { outline: 2px solid var(--link);
+                               outline-offset: 2px; border-radius: 4px; }
+    .prompt-box { background: var(--surface); border: 1px solid var(--border);
+                  border-radius: 6px; padding: .7rem .8rem;
+                  margin: .1rem 0 .7rem; }
+    .prompt-box[hidden] { display: none; }
+    .prompt-box .p-label { font-size: .72rem; font-weight: 700;
+                           text-transform: uppercase; letter-spacing: .06em;
+                           color: var(--text-muted); margin: 0 0 .35rem; }
+    .prompt-box .p-turn { font-size: .74rem; font-weight: 600;
+                          color: var(--text-soft); margin: .55rem 0 .2rem; }
+    .prompt-box pre { margin: 0; font-family: ui-monospace, monospace;
+                      font-size: .8rem; white-space: pre-wrap;
+                      word-break: break-word; }
+    .prompt-box .p-sys pre { color: var(--text-muted); font-size: .76rem; }
+    .prompt-box .p-note { color: var(--text-muted); font-size: .74rem;
+                          margin: .4rem 0 0; }
+    .prompt-box .p-img { margin-top: .5rem; }
+    .prompt-box .p-img img { display: block; max-width: 100%;
+                             max-height: 22rem; width: auto; height: auto;
+                             border: 1px solid var(--border);
+                             border-radius: 6px; background: var(--bg); }
     .status { color: var(--text-muted); font-size: .85rem; margin-top: .75rem; }
     .empty { color: var(--text-muted); padding: 2rem 0; }
     .tie-tag { color: var(--text-muted); font-weight: 800; font-size: .74rem;
@@ -83,7 +114,7 @@
 
   <main class="page">
     <h1>Judgment details</h1>
-    <p class="page-sub" id="sub">Side-by-side responses with the judge's verdict per item.</p>
+    <p class="page-sub" id="sub">Side-by-side responses with the judge's verdict per item. Tap an item name to expand its prompt underneath.</p>
     <section id="jsum" class="jsum" hidden>
       <h3>Category summary</h3>
       <p class="jsum-cap">Blind pairwise score = wins + ½ ties, scaled 0–100 · n per category</p>
@@ -122,6 +153,115 @@ function $(id) { return document.getElementById(id); }
       return String(s).replace(/[&<>"']/g,
         c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;',
                "'": '&#39;'}[c]));
+    }
+
+    // ---- expandable prompt (tap the item name) --------------------------
+    // Fills the collapsible panel under an item head with the case's
+    // prompt from the suite's latest definition snapshot: system prompt,
+    // the user prompt (single-turn) or per-turn user messages with the
+    // assistant placeholders marked (multi-turn), plus the item's IMAGE
+    // when it carries one — http(s) refs load directly, suite-relative
+    // refs resolve through the guarded suite-image endpoint (base64).
+    // Answers from both models stay in the SxS cards below the head.
+    function fillPrompt(panel, item, suiteId) {
+      panel.innerHTML = '';
+      const lab = document.createElement('div');
+      lab.className = 'p-label';
+      lab.textContent = 'Prompt';
+      panel.appendChild(lab);
+      if (!item) {
+        const pre = document.createElement('pre');
+        pre.textContent = '(not in the current definition snapshot)';
+        panel.appendChild(pre);
+        return;
+      }
+      if (item.system) {
+        const sys = document.createElement('div');
+        sys.className = 'p-sys';
+        const t = document.createElement('div');
+        t.className = 'p-turn';
+        t.textContent = 'System';
+        const pre = document.createElement('pre');
+        pre.textContent = item.system;
+        sys.append(t, pre);
+        panel.appendChild(sys);
+      }
+      if (Array.isArray(item.turns)) {
+        let n = 0;
+        for (const turn of item.turns) {
+          const t = document.createElement('div');
+          t.className = 'p-turn';
+          const pre = document.createElement('pre');
+          if (turn.role === 'user') {
+            n += 1;
+            t.textContent = 'Turn ' + n + ' · user';
+            pre.textContent = turn.content ?? '(no content)';
+          } else {
+            t.textContent = 'model reply (stored below)';
+            pre.textContent = '…';
+          }
+          panel.append(t, pre);
+        }
+      } else if (item.prompt) {
+        const pre = document.createElement('pre');
+        pre.textContent = item.prompt;
+        panel.appendChild(pre);
+      } else {
+        const pre = document.createElement('pre');
+        pre.textContent = '(no prompt stored)';
+        panel.appendChild(pre);
+      }
+      if (item.image) {
+        const isHttp = item.image.startsWith('http://') ||
+                       item.image.startsWith('https://');
+        const wrap = document.createElement('div');
+        wrap.className = 'p-img';
+        const img = document.createElement('img');
+        img.alt = 'Item image: ' + item.image;
+        img.loading = 'lazy';
+        img.src = isHttp
+          ? item.image
+          : '/api/eval-suites/' + suiteId + '/image?item=' +
+            encodeURIComponent(item.id);
+        img.addEventListener('error', () => {
+          wrap.innerHTML = '';
+          const note = document.createElement('div');
+          note.className = 'p-note';
+          note.textContent = '⚠ image failed to load: ' + item.image;
+          wrap.appendChild(note);
+        });
+        wrap.appendChild(img);
+        panel.appendChild(wrap);
+      }
+    }
+
+    function makeItemHead(base, defItems, suiteId) {
+      const head = document.createElement('button');
+      head.type = 'button';
+      head.className = 'item-head';
+      head.setAttribute('aria-expanded', 'false');
+      head.title = 'Tap to show / hide the prompt for this case';
+      const chev = document.createElement('span');
+      chev.className = 'chev';
+      chev.textContent = '▸';
+      const name = document.createElement('span');
+      name.className = 'item-name';
+      name.textContent = base;
+      const hint = document.createElement('span');
+      hint.className = 'hint';
+      hint.textContent = 'tap for prompt';
+      head.append(chev, name, hint);
+      const panel = document.createElement('div');
+      panel.className = 'prompt-box';
+      panel.hidden = true;
+      fillPrompt(panel, defItems[base] || null, suiteId);
+      head.addEventListener('click', () => {
+        const open = panel.hidden;
+        panel.hidden = !open;
+        chev.textContent = open ? '▾' : '▸';
+        head.setAttribute('aria-expanded', String(open));
+      });
+      return [head, panel];
     }
 
     function shortFp(fp) {
@@ -251,6 +391,19 @@ function $(id) { return document.getElementById(id); }
         ]);
         if (!res.ok) throw new Error('HTTP ' + res.status + ': ' + await res.text());
         const rows = await res.json();
+        // definition snapshot (optional too): feeds the expandable prompt
+        // panels. 404/parse failure just leaves '(not in the current
+        // definition snapshot)' inside the panel.
+        const defItems = {};
+        try {
+          const dRes = await fetch('/api/eval-suites/' + suiteId + '/definition');
+          if (dRes.ok) {
+            const def = await dRes.json();
+            for (const it of (def.items || [])) {
+              if (it && it.id) defItems[it.id] = it;
+            }
+          }
+        } catch (err) { /* prompt panels degrade gracefully */ }
         if (sumRes && sumRes.ok) {
           renderSummary(await sumRes.json());
         } else {
@@ -283,10 +436,8 @@ function $(id) { return document.getElementById(id); }
           const base = row.item_id.split('#')[0];
           if (base !== lastItem) {
             lastItem = base;
-            const h = document.createElement('div');
-            h.className = 'item-head';
-            h.textContent = base;
-            box.appendChild(h);
+            const [head, panel] = makeItemHead(base, defItems, suiteId);
+            box.append(head, panel);
           }
           const sxs = document.createElement('div');
           sxs.className = 'sxs';
