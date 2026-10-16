@@ -48,6 +48,31 @@ def test_nav_judgments_first_under_evals():
         f"Judgments must be the FIRST Evals sub-element, got {evals_links}")
 
 
+def test_nav_pills_constant_across_pages(client):
+    """2026-10-15: the sub-nav menu must be IDENTICAL on every page — the
+    per-section pill swap read as 'the menu changed' when moving between
+    pages. All 9 pills ship in the partial and stay visible; section
+    boundaries are thin separators, not show/hide."""
+    nav = (Path(STATIC_DIR) / "partials" / "nav.html").read_text()
+    sub_m = re.search(r'<nav class="topnav-sub">(.*?)</nav>', nav, re.S)
+    assert sub_m, "nav partial must keep the sub-level nav"
+    sub = sub_m.group(1)
+    all_pages = ["kickoff", "compare", "judgments", "evalsuite", "evalrun",
+                 "evals", "reports", "models", "baselines"]
+    for page in all_pages:
+        assert f'data-page="{page}"' in sub, f"nav is missing pill {page}"
+    assert sub.count('class="sub-sep"') == 2       # one between each pair
+    # the hide-non-active-section rule is gone from the stylesheet
+    css = (Path(STATIC_DIR) / "nav.css").read_text()
+    assert ".topnav-sub a { display: none; }" not in css
+    # and the served page really renders every pill in the sub row
+    page = client.get("/judgments").text
+    sub_dom = re.search(r'<nav class="topnav-sub">(.*?)</nav>', page, re.S)
+    assert sub_dom, "judgments page must carry the shared nav"
+    for page_id in all_pages:
+        assert f'data-page="{page_id}"' in sub_dom.group(1)
+
+
 def test_judgments_page_baseline_picker_and_run_list(client):
     res = client.get("/judgments")
     assert res.status_code == 200
