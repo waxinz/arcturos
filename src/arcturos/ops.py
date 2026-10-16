@@ -771,7 +771,8 @@ def dispatch_eval(
 
     ``reasoning_effort``/``reasoning_budget`` (2026-10-15, optional):
     per-MODEL reasoning depth sent with every item's chat call —
-    'minimal'|'low'|'medium'|'high' and a max-thinking-tokens int.
+    'minimal'|'low'|'medium'|'high'|'xhigh'|'max' and a max-thinking-tokens
+    int.
     Optional: omitted from the wire body when unset.
     """
     try:

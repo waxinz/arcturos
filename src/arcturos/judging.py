@@ -992,7 +992,8 @@ def run_judge_job(
     name for the judge-not-contestant guard and the pair scoping.
 
     Per-model reasoning (2026-10-15): target_a/target_b may each carry
-    optional reasoning_effort ('minimal'|'low'|'medium'|'high') and
+    optional reasoning_effort ('minimal'|'low'|'medium'|'high'|'xhigh'|
+    'max') and
     reasoning_budget (max thinking tokens) — applied to that side's
     replay only; B's are inert in mixed mode (B is not replayed).
     """

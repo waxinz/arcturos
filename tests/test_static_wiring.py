@@ -131,7 +131,7 @@ def test_reasoning_fields_on_every_run_start_surface(client):
     assert 'id="eval-budget"' in run
     assert "body.reasoning_effort" in run          # wired into the POST body
     assert "body.reasoning_budget" in run
-    for effort in ("minimal", "low", "medium", "high"):
+    for effort in ("minimal", "low", "medium", "high", "xhigh", "max"):
         assert f"<option>{effort}</option>" in run
     # 2) Judgements: both model cards carry the pair of controls
     j = client.get("/judgments").text
