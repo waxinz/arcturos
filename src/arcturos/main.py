@@ -1023,19 +1023,22 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
 
         Body: {suite_id, judge_model?, judge_url?, model_a?, model_b?,
         retries?, allow_contestant_judge?, judge_api_key?, eval_run_ids?,
-        target_a?, target_b?, eval_max_tokens?, eval_temperature?,
-        eval_concurrency?, eval_retries?}.
+        target_a?, target_b?, eval_run_b?, eval_max_tokens?,
+        eval_temperature?, eval_concurrency?, eval_retries?}.
 
-        Two modes. (1) Judge stored results (model_a/model_b or
+        Modes. (1) Judge stored results (model_a/model_b or
         eval_run_ids scope). (2) Combined kick-off (2026-10-15): give
         target_a AND target_b ({url, model, api_key?}) and the job first
         replays the suite's latest definition snapshot on both models,
         then judges the two fresh runs — the Judgements page as the one
-        kick-off surface for evals + judging. Every judgeable item is
-        judged in BOTH presentation orders — position swap — and both
-        raw judgments stored. judge_url falls back to the config layer
-        ([eval] judge_url, then legacy [demo] judge_url). Returns
-        {job_id}; poll GET /api/ops/judge/jobs/{id}; stop with
+        kick-off surface for evals + judging. (3) Mixed kick-off: give
+        target_a plus eval_run_b (a stored eval run id on the same
+        suite) — model A replays fresh, model B is NOT replayed and the
+        stored run is judged as the baseline instead. Every judgeable
+        item is judged in BOTH presentation orders — position swap —
+        and both raw judgments stored. judge_url falls back to the
+        config layer ([eval] judge_url, then legacy [demo] judge_url).
+        Returns {job_id}; poll GET /api/ops/judge/jobs/{id}; stop with
         POST .../abort.
         """
         suite_id = body.get("suite_id")
@@ -1049,6 +1052,7 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
         eval_run_ids = body.get("eval_run_ids")
         target_a = body.get("target_a")
         target_b = body.get("target_b")
+        eval_run_b = body.get("eval_run_b")
         eval_max_tokens = body.get("eval_max_tokens", 1024)
         eval_temperature = body.get("eval_temperature", 0.0)
         eval_concurrency = body.get("eval_concurrency", 4)
@@ -1066,8 +1070,32 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
                     status_code=422,
                     detail="eval_run_ids must be a list of >= 2 positive ints")
         if (target_a is None) != (target_b is None):
-            raise HTTPException(status_code=422,
-                                detail="target_a and target_b must be given together")
+            # target_a alone is legal ONLY in the mixed kick-off (with
+            # eval_run_b); anything else needs both targets together.
+            if not (target_a is not None and eval_run_b is not None
+                    and target_b is None):
+                raise HTTPException(
+                    status_code=422,
+                    detail="target_a and target_b must be given together "
+                           "— or pair target_a with eval_run_b (stored "
+                           "baseline run)")
+        if eval_run_b is not None:
+            if (not isinstance(eval_run_b, int)
+                    or isinstance(eval_run_b, bool) or eval_run_b < 1):
+                raise HTTPException(
+                    status_code=422,
+                    detail="eval_run_b must be a positive int when set")
+            if target_b is not None:
+                raise HTTPException(
+                    status_code=422,
+                    detail="target_b and eval_run_b are mutually exclusive "
+                           "— model B is either a fresh replay or a stored "
+                           "run")
+            if target_a is None:
+                raise HTTPException(
+                    status_code=422,
+                    detail="eval_run_b requires target_a (model A must "
+                           "replay fresh)")
         for side, tgt in (("a", target_a), ("b", target_b)):
             if tgt is None:
                 continue
@@ -1084,9 +1112,10 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
             if key is not None and not isinstance(key, str):
                 raise HTTPException(status_code=422,
                                     detail=f"target_{side}.api_key must be a string when set")
-        if eval_run_ids is not None and target_a is not None:
+        if eval_run_ids is not None and (target_a is not None
+                                         or eval_run_b is not None):
             raise HTTPException(status_code=422,
-                                detail="eval_run_ids is mutually exclusive with target_a/target_b")
+                                detail="eval_run_ids is mutually exclusive with target_a/target_b/eval_run_b")
         for field, value in (("eval_max_tokens", eval_max_tokens),
                              ("eval_concurrency", eval_concurrency),
                              ("eval_retries", eval_retries)):
@@ -1126,6 +1155,7 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
                 judge_api_key=judge_api_key,
                 eval_run_ids=eval_run_ids,
                 target_a=target_a, target_b=target_b,
+                eval_run_b=eval_run_b,
                 eval_max_tokens=eval_max_tokens,
                 eval_temperature=eval_temperature,
                 eval_concurrency=eval_concurrency,

@@ -101,24 +101,31 @@
     .bp-pct { position: absolute; inset: 0; display: flex; align-items: center;
               justify-content: center; font-size: .72rem; font-weight: 700;
               color: var(--bar-text); text-shadow: 0 0 3px rgba(255,255,255,.7); }
-    .bp-toggle { background: none; border: none; color: var(--link); font-size: .78rem;
-                 padding: 0; margin-top: .3rem; cursor: pointer; text-decoration: underline; }
-    .bp-detail { display: none; margin-top: .4rem; font-size: .78rem;
-                 border-top: 1px dashed var(--input-border); padding-top: .4rem; }
-    .bp-detail.open { display: block; }
+    /* ---- recent judgment runs (one card per judged A/B run pair) ---- */
+    .jr-list { display: grid; gap: .55rem; margin-bottom: 1.5rem; }
+    .jr-item { display: flex; justify-content: space-between; gap: .8rem;
+               align-items: baseline; background: var(--surface);
+               border: 1px solid var(--border); border-radius: 6px;
+               padding: .7rem .9rem; text-decoration: none;
+               color: var(--text); }
+    .jr-item:hover { border-color: var(--link); }
+    .jr-item:visited { color: var(--text); }
+    .jr-runs { font-weight: 700; }
+    .jr-meta { color: var(--text-muted); font-size: .82rem; margin-top: .15rem; }
+    .jr-side { text-align: right; font-size: .82rem; color: var(--text-soft);
+               white-space: nowrap; }
+    .jr-side .jr-count { font-weight: 700; color: var(--text); }
+    @media (max-width: 640px) {
+      .jr-item { flex-direction: column; gap: .2rem; }
+      .jr-side { text-align: left; white-space: normal; }
+    }
     .stop-btn { display: inline-block; padding: .28rem .7rem; font-size: .8rem;
                 background: var(--neutral-bg); color: var(--neutral-text);
                 border: 1px solid var(--border); border-radius: 4px;
                 cursor: pointer; }
     .stop-btn:not([hidden]) { display: inline-block; }
     .stop-btn[hidden] { display: none; }
-    .bp-detail table { width: 100%; border-collapse: collapse; min-width: 420px; }
     .table-scroll { overflow-x: auto; }   /* narrow screens: scroll, not wrap */
-    .bp-detail .table-scroll { overflow-x: auto; }
-    .bp-detail th, .bp-detail td { text-align: left; padding: 2px 4px;
-                                   border-bottom: 1px solid var(--border);
-                                   white-space: nowrap; }
-    .bp-detail th { color: var(--text-muted); font-weight: 600; }
     @media (max-width: 640px) {
       .bp-head2 { align-items: flex-start; flex-direction: column; gap: .1rem; }
       .minors { grid-template-columns: 1fr; }
@@ -127,6 +134,7 @@
   <script src="/static/app-time.js"></script>
   <script src="/static/theme.js"></script>
   <script src="/static/nav.js"></script>
+  <script src="/static/sticky-inputs.js"></script>
 </head>
 <body class="shell" data-page="judgments" data-section="Evals">
   <!--NAV-->
@@ -139,6 +147,8 @@
       cards (endpoint URL, optional API key, model name) to <strong>run the
       suite on both models, then judge</strong> the two fresh runs — or leave
       the URLs blank and give model names to judge already-stored results.
+      For model B you can instead <strong>reuse a recent run</strong> on the
+      chosen suite as the baseline: model A replays fresh, B is not re-run.
       Every item is judged in BOTH presentation orders (position swap) and
       both raw judgments are stored. The judge must not be a contestant.</p>
     <form id="judge-form" autocomplete="off" onsubmit="return false;">
@@ -188,6 +198,13 @@
             <label for="judge-mb">Model name</label>
             <input id="judge-mb" placeholder="e.g. model-beta">
           </div>
+          <div class="field">
+            <label for="judge-mb-run">…or reuse a recent run on this suite
+              <span class="opt">(baseline — B is not replayed)</span></label>
+            <select id="judge-mb-run">
+              <option value="">— fresh replay (fields above) —</option>
+            </select>
+          </div>
         </fieldset>
       </div>
       <div class="field wide" style="display:flex; gap:.6rem; flex-wrap:wrap; margin-top:.7rem; align-items:center;">
@@ -209,16 +226,13 @@
       </div>
       <div class="bp-barwrap"><div id="jbp-bar" class="bp-bar"></div>
         <div id="jbp-pct" class="bp-pct"></div></div>
-      <button id="jbp-zoom" class="bp-toggle" type="button">▾ details</button>
-      <div id="jbp-detail" class="bp-detail">
-        <div class="table-scroll">
-        <table><thead><tr><th>#</th><th>item</th><th>order</th><th>verdict</th>
-          <th>judge</th></tr></thead>
-          <tbody id="jbp-rows"></tbody></table>
-        </div>
-      </div>
     </div>
   </div>
+
+  <h2>Recent judgment runs</h2>
+  <div id="judgrun-list" class="jr-list"></div>
+  <p id="judgrun-empty" class="note" hidden>No judgment runs yet — kick one
+    off above, then each run pair shows up here (most recent first).</p>
 
   <div class="controls">
     <label>Judge model
@@ -372,6 +386,74 @@
       return s;
     }
 
+    // ---- recent judgment runs (one card per judged A/B run pair) -------
+    // Groups stored judgments by (canonical run pair, judge model) and
+    // lists them most recent first; each card deep-links to the existing
+    // SxS pair page for that suite + model pair.
+    function renderJudgRuns() {
+      const listEl = document.getElementById('judgrun-list');
+      const emptyEl = document.getElementById('judgrun-empty');
+      listEl.innerHTML = '';
+      const groups = new Map();
+      for (const j of judgments) {
+        const ra = resultsById[j.eval_result_a];
+        const rb = resultsById[j.eval_result_b];
+        if (!ra || !rb) continue;
+        const runA = ra.eval_run_id, runB = rb.eval_run_id;
+        const lo = Math.min(runA, runB), hi = Math.max(runA, runB);
+        const key = lo + '|' + hi + '|' + j.judge_model;
+        let g = groups.get(key);
+        if (!g) {
+          g = {runLo: lo, runHi: hi, judge: j.judge_model, count: 0,
+               latest: j.id || 0, suiteId: ra.suite_id,
+               fpLo: null, fpHi: null, createdAt: j.created_at || ''};
+          groups.set(key, g);
+        }
+        g.count += 1;
+        if ((j.id || 0) >= g.latest) {
+          g.latest = j.id || 0;
+          g.createdAt = j.created_at || '';
+        }
+        if (runA === lo) { g.fpLo = ra.model_fingerprint; g.fpHi = rb.model_fingerprint; }
+        else { g.fpLo = rb.model_fingerprint; g.fpHi = ra.model_fingerprint; }
+      }
+      const ordered = [...groups.values()].sort((a, b) => b.latest - a.latest);
+      if (!ordered.length) { emptyEl.hidden = false; return; }
+      emptyEl.hidden = true;
+      for (const g of ordered) {
+        const a = document.createElement('a');
+        a.className = 'jr-item';
+        a.href = '/judgments/pair?suite_id=' + g.suiteId +
+                 '&model_a=' + encodeURIComponent(g.fpLo || '') +
+                 '&model_b=' + encodeURIComponent(g.fpHi || '');
+        const left = document.createElement('div');
+        const runs = document.createElement('div');
+        runs.className = 'jr-runs';
+        runs.textContent = 'Run #' + g.runLo + ' vs #' + g.runHi;
+        const meta = document.createElement('div');
+        meta.className = 'jr-meta';
+        meta.textContent = (g.fpLo || '?') + ' vs ' + (g.fpHi || '?') +
+          ' · judged by ' + g.judge;
+        left.appendChild(runs);
+        left.appendChild(meta);
+        const side = document.createElement('div');
+        side.className = 'jr-side';
+        const cntWrap = document.createElement('div');
+        const cnt = document.createElement('span');
+        cnt.className = 'jr-count';
+        cnt.textContent = g.count + ' judgment' + (g.count === 1 ? '' : 's');
+        cntWrap.appendChild(cnt);
+        const when = document.createElement('div');
+        when.textContent = window.fmtLocalTime
+          ? window.fmtLocalTime(g.createdAt) : (g.createdAt || '');
+        side.appendChild(cntWrap);
+        side.appendChild(when);
+        a.appendChild(left);
+        a.appendChild(side);
+        listEl.appendChild(a);
+      }
+    }
+
     document.getElementById('judge-filter').addEventListener('change', render);
     document.getElementById('clear-filter').addEventListener('click', () => {
       document.getElementById('judge-filter').value = '';
@@ -387,6 +469,7 @@
       if (r && /^\d+$/.test(r)) resultFilter = parseInt(r, 10);
       populateJudgeFilter(judgments);
       render();
+      renderJudgRuns();
     }).catch(err => {
       document.getElementById('status').textContent = 'Failed to load judgments: ' + err;
     });
@@ -424,10 +507,62 @@
             opt.textContent = s.name + ' ' + s.version + ' (#' + s.id + ')';
             sel.appendChild(opt);
           }
+          refreshRunBOptions();
         } catch (err) { /* nicety */ }
       })();
 
-      const poll = { timer: null, zoom: false, jobId: null, stopBusy: false,
+      // Model B "reuse a recent run" picker: recent runs on the chosen
+      // suite, newest first (/api/eval-runs orders id DESC). Selecting a
+      // run disables the B endpoint fields — the mixed kick-off replays
+      // only model A and judges the stored run as the baseline.
+      let evalRunsCache = null;
+      async function refreshRunBOptions() {
+        const sel = $('judge-mb-run');
+        const suiteId = $('judge-suite').value;
+        const current = sel.value;
+        while (sel.options.length > 1) sel.remove(1);
+        if (suiteId) {
+          try {
+            if (!evalRunsCache) {
+              const res = await fetch('/api/eval-runs');
+              evalRunsCache = res.ok ? await res.json() : [];
+            }
+            for (const r of evalRunsCache) {
+              if (String(r.suite_id) !== String(suiteId)) continue;
+              const opt = document.createElement('option');
+              opt.value = r.id;
+              opt.textContent = '#' + r.id + ' · ' + r.model_fingerprint +
+                ' · ' + (window.fmtLocalTime
+                          ? window.fmtLocalTime(r.created_at)
+                          : (r.created_at || '')) +
+                ' · ' + r.result_count + ' results';
+              sel.appendChild(opt);
+            }
+          } catch (err) { /* nicety: the dropdown just stays short */ }
+        }
+        sel.value = [...sel.options].some(o => o.value === current)
+          ? current : '';
+        syncRunBFields();
+      }
+      function syncRunBFields() {
+        const useRun = !!$('judge-mb-run').value;
+        for (const id of ['judge-mb-url', 'judge-mb-key', 'judge-mb']) {
+          const el = document.getElementById(id);
+          el.disabled = useRun;
+          if (useRun && el.value) el.value = '';
+        }
+        updateKickLabel();
+      }
+      $('judge-suite').addEventListener('change', refreshRunBOptions);
+      $('judge-mb-run').addEventListener('change', syncRunBFields);
+      $('judge-mb-url').addEventListener('input', () => {
+        if ($('judge-mb-run').value) {
+          $('judge-mb-run').value = '';
+          syncRunBFields();
+        }
+      });
+
+      const poll = { timer: null, jobId: null, stopBusy: false,
                      retries: 0 };
       function stopBtnShow(on) {
         const b = $('judge-stop-btn');
@@ -458,12 +593,6 @@
         const m = Math.floor(s / 60), r = Math.round(s % 60);
         return m ? (m + 'm ' + String(r).padStart(2, '0') + 's') : (r + 's');
       }
-      function rowHtml(w, i) {
-        return '<tr><td>' + (i + 1) + '</td><td>' + (w.item_id || '?') +
-          '</td><td>' + (w.order || '?') + '</td>' +
-          '<td>' + (w.verdict || (w.error ? '✘ ' + w.error : '…')) + '</td>' +
-          '<td>' + (w.judge_model || '') + '</td></tr>';
-      }
       const STAGE_LABELS = {
         'replay-a': '1/3 · replay A',
         'replay-b': '2/3 · replay B',
@@ -491,11 +620,6 @@
         $('jbp-clock').textContent =
           'elapsed ' + fmtSecs(st.elapsed_s) +
           ' · remaining ~' + fmtSecs(st.eta_s);
-        const rows = $('jbp-rows');
-        (st.work_items || []).forEach((w, i) => {
-          if (!rows.rows[i]) rows.insertRow(i).innerHTML = rowHtml(w, i);
-          else rows.rows[i].innerHTML = rowHtml(w, i);
-        });
       }
       function stopPoll() { if (poll.timer) { clearTimeout(poll.timer); poll.timer = null; } }
       async function pollLoop(jobId) {
@@ -539,8 +663,11 @@
             $('jbp-status').textContent = st.status_line || st.status;
             $('jbp-clock').textContent = 'elapsed ' + fmtSecs(st.elapsed_s);
             // refresh the list behind the card
-            load().then(() => { populateJudgeFilter(judgments); render(); })
+            load().then(() => { populateJudgeFilter(judgments); render();
+                                renderJudgRuns(); })
                   .catch(() => {});
+            evalRunsCache = null;      // the fresh A run is now pickable
+            refreshRunBOptions();
           } else {
             poll.timer = setTimeout(() => pollLoop(jobId), 1000);
           }
@@ -551,8 +678,9 @@
         }
       }
       function updateKickLabel() {
+        const useRun = !!$('judge-mb-run').value;
         const anyUrl = $('judge-ma-url').value.trim() || $('judge-mb-url').value.trim();
-        $('judge-btn').textContent = anyUrl
+        $('judge-btn').textContent = (anyUrl || useRun)
           ? '▶ Run evals + judging'
           : '▶ Kick off judging';
       }
@@ -574,7 +702,21 @@
           if ($('judge-url').value.trim()) body.judge_url = $('judge-url').value.trim();
           if ($('judge-key').value.trim()) body.judge_api_key = $('judge-key').value.trim();
           if ($('judge-model').value.trim()) body.judge_model = $('judge-model').value.trim();
-          if (maUrl || mbUrl) {
+          const runB = $('judge-mb-run').value;
+          if (runB) {
+            // Mixed kick-off: model A replays fresh, model B is the stored
+            // baseline run picked from the suite's recent runs.
+            if (!maUrl || !maName) {
+              setMsg('Model A needs an endpoint URL and a name to judge ' +
+                     'against the stored run chosen for B');
+              return;
+            }
+            body.target_a = {url: maUrl, model: maName};
+            if ($('judge-ma-key').value.trim()) {
+              body.target_a.api_key = $('judge-ma-key').value.trim();
+            }
+            body.eval_run_b = parseInt(runB, 10);
+          } else if (maUrl || mbUrl) {
             // Combined kick-off: replay the suite on both models, then judge
             // the two fresh runs. Auth is optional per model.
             if (!maUrl || !mbUrl) {
@@ -619,12 +761,10 @@
           }
           $('judge-progress').classList.add('active');
           poll.jobId = data.job_id;
-          $('jbp-rows').innerHTML = '';
           $('jbp-bar').style.width = '0%';
           $('jbp-status').textContent = body.target_a
             ? 'replay A — starting…' : 'selecting pairs…';
           $('jbp-clock').textContent = '';
-          $('jbp-detail').classList.add('open');
           stopBtnShow(true);
           setMsg('Job ' + data.job_id + ' accepted — run in progress', true);
           poll.retries = 0;
@@ -635,11 +775,6 @@
       $('judge-btn').onclick = () => kickJudge();
       $('judge-warn-go').onclick =
         () => kickJudge({allow_contestant_judge: true});
-      $('jbp-zoom').onclick = () => {
-        poll.zoom = !poll.zoom;
-        $('jbp-detail').classList.toggle('open', poll.zoom);
-        $('jbp-zoom').textContent = poll.zoom ? '▾ details' : '▸ details';
-      };
     })();
   </script>
   </main>
