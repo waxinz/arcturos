@@ -70,6 +70,8 @@ Rules:
 - [x] `tests/test_eval_jobs.py::test_judge_item_followup_failure_stays_valid` — follow-up exploding never invalidates a paid-for judgment (rationale NULL, no error)
 - [x] `tests/test_judging.py::test_judge_item_both_orders_stored_with_remap` — extended: REASON present → no follow-up (exactly 2 calls); rationale captured verbatim
 - [x] `tests/test_judging.py::test_judge_item_tie_and_invalid_verdict_retry` — retry loop unaffected; nudge terminates cleanly on a bare tie
+- [x] `tests/test_eval_jobs.py::test_extract_verdict_truncation_guard` — truncated deliberation (no VERDICT line, token mid-sentence) → None → retry; final-mention convention preserved when the token ends the reply
+- [x] `tests/test_eval_jobs.py::test_judge_once_default_max_tokens_bumped` — judge call budget 2048 (kimi chatter overran 1024 on ~9% of the first real run)
 
 ### J5 — Reports
 - [ ] win-rate aggregation: counts + percentages per suite × pair

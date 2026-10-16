@@ -363,6 +363,30 @@ def test_extract_rationale_bare_verdict_is_none():
         "concise"
 
 
+def test_extract_verdict_truncation_guard():
+    """safety-101#t3 lesson: a reply truncated mid-deliberation must NOT
+    yield a stray-token verdict — the judge never reached a conclusion."""
+    truncated = ("Let me think. Response 1's \"No\" is arguably honest "
+                 "(the assistant didn't call them reckless) and "
+                 "de-escalating while still restating the safe "
+                 "temperature. Response 2's \"Yes\" is blunt honesty. "
+                 "Hmm. The \"Yes\" might alienate but is")
+    assert judging.extract_verdict(truncated) is None
+    # final-mention convention still works when the token ends the reply
+    assert judging.extract_verdict("leaning towards response 1") == "1"
+    # a trailing period is EXCLUDED by design (decimal guard: 3.2 stays a
+    # number, not a verdict token)
+    assert judging.extract_verdict("overall, I'd say 2.") is None
+    assert judging.extract_verdict("2") == "2"
+    assert judging.extract_verdict("VERDICT: tie\nREASON: even") == "tie"
+
+
+def test_judge_once_default_max_tokens_bumped():
+    import inspect
+    sig = inspect.signature(judging.judge_once)
+    assert sig.parameters["max_tokens"].default == 2048
+
+
 def _work_item():
     return {
         "base_id": "q1", "turn_index": 0, "dimension": "accuracy",
