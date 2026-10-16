@@ -350,6 +350,42 @@ the launch surface, not only the reading surface).
   📌 baseline label, diff headers, CSV exports. Honest fallback: unset
   names render `—` in tables; legends/headers fall back to the model
   fingerprint.
+- **Judgements mixed kick-off — baseline reuse (added 2026-10-15):** the
+  Model B card on /judgments gains a "reuse a recent run on this suite"
+  dropdown listing the suite's recent eval runs NEWEST FIRST (`#id ·
+  fingerprint · date · result count`, from `/api/eval-runs`). Selecting a
+  run disables B's endpoint fields and submits the MIXED kick-off —
+  `POST /api/ops/judge/jobs` with `target_a` (fresh replay) +
+  `eval_run_b` (stored run id): model A replays, B is NOT replayed, and
+  the stored run is judged as the baseline via the same run-scoped
+  pairing as `eval_run_ids`. Validation is honest at the boundary: 422
+  when `eval_run_b` lacks `target_a`, collides with `target_b` or
+  `eval_run_ids`, names an unknown run, a run from another suite, or a
+  run with zero stored results. Choosing the dropdown's default option
+  (or typing in B's URL) returns to the fresh-replay flow.
+- **Recent judgment runs list (added 2026-10-15):** the per-item
+  work-detail table under the judging progress bar is REMOVED (the bar +
+  status + Stop remain). In its place the Judgements page shows a
+  "Recent judgment runs" list: one card per judged A/B run pair × judge
+  model (`Run #6 vs #7 · model-a vs model-b · judged by Kimi · N
+  judgments · date`), MOST RECENT FIRST, each card deep-linking to the
+  existing SxS pair page (`/judgments/pair?suite_id=…&model_a=…&model_b=…`).
+  The list is mobile-friendly (stacks under 640px) and refreshes when a
+  job finishes.
+- **Sticky inputs (added 2026-10-15, replaces config defaults in the
+  UI):** every text box on every page (text/url/number/password/email/
+  search/tel inputs + textareas, keyed by field id) remembers the last
+  typed value in browser localStorage (`arcturos-sticky:<id>`) and
+  restores it as the default on the next page load. Sticky values SHADOW
+  the form's shipped defaults; emptying a field un-sticks it; the
+  config-file defaults remain the server-side fallback for fields left
+  empty. Password fields are included by design (operator convenience) —
+  localStorage is plain text, keys never leave the browser. The script
+  (`static/sticky-inputs.js`) is a global contract: every page loads it
+  (enforced by test).
+- **Nav order (added 2026-10-15):** Judgments is the FIRST sub-element
+  under the Evals section in the top nav (operator's standing
+  preference: the judging kick-off leads the menu).
 - **Append-only preserved:** dispatch only ever INSERTs. Re-runs supersede.
   There is no edit/delete of stored data anywhere in the UI or API.
 - **Power provenance (ADR 002):** `benchmarks.power_host` /
@@ -367,6 +403,8 @@ the launch surface, not only the reading surface).
 - [x] First real benchmark captured via /create dispatch (openai transport, run 9 vs demo host B tabbyAPI GLM-5.3-Flash).
 - [x] Async bench jobs with live progress (bar + status + ETA + zoom) on /create.
 - [x] Runs can be soft-hidden from list/compare views and unhidden, without deleting data.
+- [x] Judgements kick-off: model B can be a stored baseline run (mixed `target_a` + `eval_run_b`), with the suite's recent runs listed newest first; recent judgment runs surface as one-line cards linking to the SxS pair view.
+- [x] Sticky inputs: every text box restores the operator's last value on page load (localStorage, shadowing shipped defaults; config remains the server fallback).
 
 ## 4. Non-goals (v1)
 - Distributed multi-node orchestration; multi-tenant UI; managed cloud.

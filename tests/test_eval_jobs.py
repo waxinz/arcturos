@@ -438,3 +438,113 @@ def test_judge_item_followup_failure_stays_valid(monkeypatch):
     assert len(judgments) == 2
     assert all(j["winner"] == "tie" for j in judgments)
     assert all(j["rationale"] is None for j in judgments)
+
+
+# ------------- mixed kick-off: target_a + eval_run_b (baseline reuse) ----
+
+def _seed_baseline_run(db_path, run_id=2, fp="m-b", suite_id=1,
+                       item_id="q1", with_result=True):
+    """One stored eval run to stand in as the model-B baseline."""
+    conn = dbmod.connect(db_path)
+    dbmod.init_db(conn)
+    if conn.execute("SELECT 1 FROM eval_suites WHERE id = ?",
+                    (suite_id,)).fetchone() is None:
+        conn.execute("INSERT INTO eval_suites (id, name, version) "
+                     "VALUES (?, 's-alt', 'v1')", (suite_id,))
+    conn.execute(
+        "INSERT INTO eval_runs (id, suite_id, model_fingerprint, name, "
+        "status, created_at) VALUES (?, ?, ?, 'baseline', 'complete', 'now')",
+        (run_id, suite_id, fp))
+    if with_result:
+        conn.execute(
+            "INSERT INTO eval_results (suite_id, model_fingerprint, item_id,"
+            " output, prompt_tokens, completion_tokens, latency_ms,"
+            " eval_run_id, created_at)"
+            " VALUES (?, ?, ?, 'beta-out', 3, 2, 1.0, ?, 'now')",
+            (suite_id, fp, item_id, run_id))
+    conn.commit()
+    conn.close()
+
+
+def test_mixed_job_end_to_end(client, monkeypatch):
+    """target_a + eval_run_b: A replays fresh, B is the stored baseline."""
+    tc, db_path = client
+    _seed_baseline_run(db_path)
+    _ok_preflight(monkeypatch)
+    monkeypatch.setattr("arcturos.multiturn.post_openai_chat",
+                        _fake_replay_chat())
+    monkeypatch.setattr(judging, "_post_chat", _fake_judge("VERDICT: 1"))
+    res = tc.post("/api/ops/judge/jobs", json={
+        "suite_id": 1, "judge_url": "http://judge:9/v1", "judge_model": "j",
+        "target_a": {"url": "http://a:1/v1", "model": "m-a",
+                     "api_key": "secret-a"},
+        "eval_run_b": 2})
+    assert res.status_code == 200, res.text
+    job_id = res.json()["job_id"]
+    st = _wait_job(lambda jid: tc.get(f"/api/ops/judge/jobs/{jid}"), job_id)
+    assert st["status"] == "done", st
+    assert st["combined"] is True
+    assert st["stage"] == "judging"
+    assert st["eval_run_b"] == 2
+    # fresh A run + the stored baseline, and B is NOT a fresh replay
+    assert len(st["eval_run_ids"]) == 2
+    assert st["eval_run_ids"][1] == 2
+    assert st["eval_run_ids"][0] != 2
+    # no model B replay: only target_a on the job record (key never echoes)
+    assert st["targets"].keys() == {"a"}
+    assert st["targets"]["a"] == {"url": "http://a:1/v1", "model": "m-a"}
+    assert "secret-a" not in json.dumps(st)
+    assert st["judgments_stored"] == 2          # 1 item × both orders
+    conn = dbmod.connect(db_path)
+    dbmod.init_db(conn)
+    fps = {r["model_fingerprint"] for r in conn.execute(
+        "SELECT er.model_fingerprint AS model_fingerprint FROM judgments j "
+        "JOIN eval_results er ON er.id IN (j.eval_result_a, j.eval_result_b)")}
+    assert fps == {"m-a", "m-b"}
+    conn.close()
+
+
+def test_mixed_job_validation(client):
+    tc, db_path = client
+    body = {"suite_id": 1, "judge_url": "http://judge:9/v1"}
+    # eval_run_b without target_a — there is nothing to replay
+    r = tc.post("/api/ops/judge/jobs", json={**body, "eval_run_b": 2})
+    assert r.status_code == 422 and "requires target_a" in r.json()["detail"]
+    # target_b AND eval_run_b — model B can't be both
+    r = tc.post("/api/ops/judge/jobs", json={
+        **body, "target_a": {"url": "http://a/v1", "model": "m-a"},
+        "target_b": {"url": "http://b/v1", "model": "m-b"},
+        "eval_run_b": 2})
+    assert r.status_code == 422 and "mutually exclusive" in r.json()["detail"]
+    # target_a alone without eval_run_b keeps the original 'together' rule
+    r = tc.post("/api/ops/judge/jobs", json={
+        **body, "target_a": {"url": "http://a/v1", "model": "m-a"}})
+    assert r.status_code == 422 and "together" in r.json()["detail"]
+    # bad eval_run_b type / value
+    r = tc.post("/api/ops/judge/jobs", json={
+        **body, "target_a": {"url": "http://a/v1", "model": "m-a"},
+        "eval_run_b": "x"})
+    assert r.status_code == 422 and "positive int" in r.json()["detail"]
+    # unknown run
+    r = tc.post("/api/ops/judge/jobs", json={
+        **body, "target_a": {"url": "http://a/v1", "model": "m-a"},
+        "eval_run_b": 999})
+    assert r.status_code == 422 and "999" in r.json()["detail"]
+    # run on a different suite
+    _seed_baseline_run(db_path, run_id=5, fp="m-z", suite_id=2)
+    r = tc.post("/api/ops/judge/jobs", json={
+        **body, "target_a": {"url": "http://a/v1", "model": "m-a"},
+        "eval_run_b": 5})
+    assert r.status_code == 422 and "belongs to suite 2" in r.json()["detail"]
+    # run with zero stored results
+    _seed_baseline_run(db_path, run_id=6, fp="m-e", with_result=False)
+    r = tc.post("/api/ops/judge/jobs", json={
+        **body, "target_a": {"url": "http://a/v1", "model": "m-a"},
+        "eval_run_b": 6})
+    assert r.status_code == 422 and "no stored results" in r.json()["detail"]
+    # eval_run_ids stays mutually exclusive with the mixed mode too
+    r = tc.post("/api/ops/judge/jobs", json={
+        **body, "eval_run_ids": [1, 2],
+        "target_a": {"url": "http://a/v1", "model": "m-a"},
+        "eval_run_b": 2})
+    assert r.status_code == 422 and "mutually exclusive" in r.json()["detail"]
