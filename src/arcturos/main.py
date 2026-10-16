@@ -457,6 +457,55 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
                                 detail=f"no definition snapshot for suite {suite_id}")
         return json.loads(row["payload"])
 
+    @app.get("/api/eval-suites/{suite_id}/image")
+    def get_suite_item_image(suite_id: int, item: str, db=Depends(get_db)):
+        """Data URL for one item's suite image (prompt expander on the
+        judgment-details page).
+
+        The image ref MUST appear as an item's ``image`` in the suite's
+        latest definition snapshot — the endpoint never accepts raw paths
+        from the query string, so there is no arbitrary filesystem read
+        (evals.load_image_part's local-path candidates are dispatch-time
+        only). http(s) refs pass through as ``url`` (the browser fetches
+        them directly); local refs are inlined as base64 ``data_url`` —
+        same resolution rules as replay (SUITE_ASSETS_DIR, then repo
+        root). 404 is honest and actionable at every miss.
+        """
+        require_parent(db, "eval_suites", suite_id)
+        row = db.execute(
+            "SELECT payload FROM suite_definitions WHERE suite_id = ? "
+            "ORDER BY id DESC LIMIT 1", (suite_id,)).fetchone()
+        if row is None:
+            raise HTTPException(
+                status_code=404,
+                detail=f"no definition snapshot for suite {suite_id}")
+        definition = json.loads(row["payload"])
+        item_row = next(
+            (i for i in (definition.get("items") or [])
+             if isinstance(i, dict) and i.get("id") == item),
+            None)
+        if item_row is None:
+            raise HTTPException(
+                status_code=404,
+                detail=f"item {item!r} not in suite {suite_id}'s definition")
+        ref = item_row.get("image")
+        if not ref or not isinstance(ref, str):
+            raise HTTPException(
+                status_code=404,
+                detail=f"item {item!r} has no image in its definition")
+        if ref.startswith(("http://", "https://")):
+            return {"url": ref, "data_url": None}
+        try:
+            data_url = evals_mod.image_data_url(ref)
+        except FileNotFoundError as exc:
+            raise HTTPException(status_code=404, detail=str(exc))
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc))
+        except Exception as exc:  # noqa: BLE001 — decode/IO failures → 502
+            raise HTTPException(status_code=502,
+                                detail=f"image load failed: {exc}")
+        return {"url": None, "data_url": data_url}
+
     # ------------------------------------------------------- eval results --
     @app.post("/api/eval-suites/{suite_id}/results", status_code=201)
     def add_eval_result(suite_id: int, body: EvalResultCreate, db=Depends(get_db)):

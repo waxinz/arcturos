@@ -63,3 +63,23 @@ def test_judgments_page_baseline_picker_and_run_list(client):
     assert 'id="jbp-detail"' not in text
     assert 'id="jbp-zoom"' not in text
     assert 'id="jbp-rows"' not in text
+
+
+def test_judgment_detail_prompt_expander(client):
+    """J8 (2026-10-15): tapping an item name on the SxS pair page expands
+    the case's prompt underneath (definition-snapshot sourced)."""
+    res = client.get("/judgments/pair")
+    assert res.status_code == 200
+    text = res.text
+    assert "makeItemHead" in text                 # button-style item head
+    assert "fillPrompt" in text
+    assert "definition" in text                   # snapshot data source
+    assert "prompt-box" in text                   # collapsible panel
+    assert "aria-expanded" in text                # accessible toggle
+    assert "Turn " in text                        # multi-turn turn labels
+    # image support: http refs load directly; suite-relative refs go
+    # through the guarded suite-image endpoint; failures degrade to a note
+    assert "p-img" in text
+    assert "/api/eval-suites/' + suiteId + '/image?item=" in text
+    assert "image failed to load" in text
+    assert "loading" in text                      # lazy loading
