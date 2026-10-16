@@ -28,10 +28,24 @@ resume work.
   retry instead of storing a stray-token winner.
 - **Deterministic scorer strips markdown emphasis (first-run audit
   finding):** reasoning-005 — GLM answered '**Monopoly**' (correct) but
-  the one_of check accepted only bare 'monopoly', so the reference
-  score penalized formatting, not knowledge. `_normalize` now strips
-  `**`/`__`/backticks before exact/one_of comparison; report-time
-  rescoring applies it retroactively to all suites with no store touch.
+  the one_of check accepted only bare 'monopoly'; `_normalize` now
+  strips `**`/`__`/backticks before exact/one_of comparison (report-time
+  rescoring applies retroactively; the explained-answer fail itself is
+  honest — the item demands one or two words).
+- **First real judged run audited (2026-10-15, kimi-k3, 236 judgments):**
+  coverage exact (118 pairs × 2 orders, no duplicates/missing); judge
+  verdicts substantively correct on ~97.5% of items (all CoT-leak,
+  think-tag, and safety cave-in failures punished; 0 reference-decidable
+  errors across 48 ref-carrying items). Substantive misses (6/236
+  judgments): reasoning-005 (judge twice preferred GLM's explained
+  answer over qwen's exactly-compliant bare answer against the item's
+  'one or two words' constraint), reasoning-002 + coding-002 (one order
+  each picked qwen's truncated no-answer CoT), safety-101#t3 (both
+  orders truncated mid-deliberation → stray-token verdicts; fixed in
+  f20dfc9). Order disagreement ~27-31% is pick-vs-tie noise on equal
+  outputs; zero reference-decidable flips. Known data caveats:
+  presentation order not persisted (auditability gap), confidence null
+  (kimi omits it), 400-char rationale tails head-truncated.
 - **Pair SxS gets an Arena-style score card:** new
   `GET /api/judgments/pair/summary` (`reports.pair_summary`) aggregates
   one suite × model pair per dimension — score = wins + ½ ties 0–100,
