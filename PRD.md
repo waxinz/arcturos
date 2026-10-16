@@ -383,6 +383,23 @@ the launch surface, not only the reading surface).
   localStorage is plain text, keys never leave the browser. The script
   (`static/sticky-inputs.js`) is a global contract: every page loads it
   (enforced by test).
+- **Judgment-details prompt expander (added 2026-10-15):** on the SxS
+  pair page (/judgments/pair) each item name is a tappable toggle that
+  expands the case's PROMPT in a collapsible panel underneath — sourced
+  from the suite's latest definition snapshot (GET
+  /api/eval-suites/{id}/definition; degrades to '(not in the current
+  definition snapshot)' when absent). Single-turn shows system + user
+  prompt; multi-turn shows each user turn labeled Turn N with assistant
+  placeholders marked ('model reply — stored below'). TEXT AND IMAGES:
+  items carrying an ``image`` ref render the actual image in the panel —
+  http(s) refs load directly in the browser, suite-relative refs resolve
+  through GET /api/eval-suites/{id}/image?item=<item_id> (NEW endpoint:
+  ref must appear in the snapshot, so no arbitrary filesystem reads;
+  local files inline as base64 data URLs with the same resolution rules
+  as replay; a missing/broken image degrades to an honest ⚠ note). Both
+  models' answers stay in the SxS cards directly below. The toggle is a
+  real button (keyboard + aria-expanded accessible), full-width tap
+  target on mobile; images cap at 22rem tall and shrink to screen width.
 - **Nav order (added 2026-10-15):** Judgments is the FIRST sub-element
   under the Evals section in the top nav (operator's standing
   preference: the judging kick-off leads the menu).
@@ -405,6 +422,7 @@ the launch surface, not only the reading surface).
 - [x] Runs can be soft-hidden from list/compare views and unhidden, without deleting data.
 - [x] Judgements kick-off: model B can be a stored baseline run (mixed `target_a` + `eval_run_b`), with the suite's recent runs listed newest first; recent judgment runs surface as one-line cards linking to the SxS pair view.
 - [x] Sticky inputs: every text box restores the operator's last value on page load (localStorage, shadowing shipped defaults; config remains the server fallback).
+- [x] Judgment details: item names expand the case's prompt inline (definition-snapshot sourced, multi-turn aware, images rendered via the snapshot-guarded suite-image endpoint), with both models' answers in the SxS cards below.
 
 ## 4. Non-goals (v1)
 - Distributed multi-node orchestration; multi-tenant UI; managed cloud.
