@@ -784,8 +784,13 @@ def dispatch_judge(
 def _worker_combined(job, flag, db_path, suite_id, definition, targets, *,
                      judge_url, judge_model, judge_api_key, retries,
                      allow_contestant_judge, eval_max_tokens,
-                     eval_temperature, eval_concurrency, eval_retries) -> None:
+                     eval_temperature, eval_concurrency, eval_retries,
+                     eval_run_b=None, run_b_model=None) -> None:
     """Staged combined kick-off: replay A → replay B → judge the two runs.
+
+    Mixed kick-off: with eval_run_b set (and no target_b), model B is the
+    stored baseline run — only A replays, and the judge stage pairs the
+    fresh A run with the stored run (run-scoped, same semantics).
 
     Runs inside the judge-job thread. The same AbortFlag flows through all
     three stages (dispatch_eval checks it per item, dispatch_judge per
@@ -841,6 +846,8 @@ def _worker_combined(job, flag, db_path, suite_id, definition, targets, *,
 
     try:
         for side in ("a", "b"):
+            if side not in targets:
+                continue          # mixed kick-off: no stored-run replay
             t = targets[side]
             res = replay(side)
             status = res.get("status", "complete")
@@ -875,6 +882,12 @@ def _worker_combined(job, flag, db_path, suite_id, definition, targets, *,
         job["items_total"] = 0
         job["items_done"] = 0
         job["results_stored"] = 0
+        if eval_run_b is not None:
+            # Mixed kick-off: the stored baseline run stands in for the
+            # replay-B stage. Its model fingerprint is the pair-scoping
+            # name (same normalize_fingerprint semantics as select_pairs).
+            runs["b"] = eval_run_b
+            job["eval_run_ids"] = [runs[s] for s in ("a", "b") if s in runs]
         job["status_line"] = "judging — selecting pairs…"
 
         def on_progress(done, total, label, n_judgments, n_invalid, rows):
@@ -895,7 +908,8 @@ def _worker_combined(job, flag, db_path, suite_id, definition, targets, *,
         result = dispatch_judge(
             db_path, suite_id, judge_url=judge_url,
             judge_model=judge_model, model_a=targets["a"]["model"],
-            model_b=targets["b"]["model"], retries=retries,
+            model_b=(targets["b"]["model"] if "b" in targets
+                     else run_b_model), retries=retries,
             allow_contestant_judge=allow_contestant_judge,
             judge_api_key=judge_api_key,
             eval_run_ids=[runs["a"], runs["b"]],
@@ -946,6 +960,7 @@ def run_judge_job(
     eval_run_ids: list[int] | None = None,
     target_a: dict | None = None,
     target_b: dict | None = None,
+    eval_run_b: int | None = None,
     eval_max_tokens: int = 1024,
     eval_temperature: float = 0.0,
     eval_concurrency: int = 4,
@@ -966,13 +981,34 @@ def run_judge_job(
     (run-scoped, same pairing semantics as the Results-page flow). The
     stored targets echo url+model only — API keys never land on the
     job record.
+
+    Mixed kick-off (2026-10-15): pass target_a plus eval_run_b (a
+    stored eval run id on the same suite) to replay model A fresh and
+    judge it against the existing baseline run — model B is not
+    replayed. The stored run's model fingerprint stands in as model B's
+    name for the judge-not-contestant guard and the pair scoping.
     """
-    combined = target_a is not None or target_b is not None
-    if combined and (target_a is None or target_b is None):
-        raise ValueError("target_a and target_b must be given together")
+    combined = target_a is not None
+    mixed_run_b = eval_run_b is not None
+    if mixed_run_b and (not isinstance(eval_run_b, int)
+                        or isinstance(eval_run_b, bool) or eval_run_b < 1):
+        raise ValueError("eval_run_b must be a positive int when set")
+    if mixed_run_b and target_b is not None:
+        raise ValueError(
+            "target_b and eval_run_b are mutually exclusive — model B is "
+            "either a fresh replay or a stored run")
+    if mixed_run_b and target_a is None:
+        raise ValueError(
+            "eval_run_b requires target_a (model A must replay fresh)")
+    if combined and target_b is None and not mixed_run_b:
+        raise ValueError(
+            "target_a and target_b must be given together — or pair "
+            "target_a with eval_run_b (stored baseline run)")
     targets: dict[str, dict] = {}
     if combined:
         for side, tgt in (("a", target_a), ("b", target_b)):
+            if tgt is None:
+                continue
             if not isinstance(tgt, dict):
                 raise ValueError(f"target_{side} must be an object")
             url = tgt.get("url")
@@ -997,16 +1033,36 @@ def run_judge_job(
             raise ValueError(f"eval suite {suite_id} not found")
         definition: Any = None
         n_items = 0
+        run_b_model: str | None = None
         if combined:
             ma = (model_a or targets["a"]["model"] or "").strip()
-            mb = (model_b or targets["b"]["model"] or "").strip()
+            if mixed_run_b:
+                run_row = conn.execute(
+                    "SELECT model_fingerprint, suite_id, "
+                    "(SELECT COUNT(*) FROM eval_results"
+                    "  WHERE eval_run_id = eval_runs.id) AS n "
+                    "FROM eval_runs WHERE id = ?", (eval_run_b,)).fetchone()
+                if run_row is None:
+                    raise ValueError(f"eval run {eval_run_b} not found")
+                if run_row["suite_id"] != suite_id:
+                    raise ValueError(
+                        f"eval run {eval_run_b} belongs to suite "
+                        f"{run_row['suite_id']}, not {suite_id}")
+                if not run_row["n"]:
+                    raise ValueError(
+                        f"eval run {eval_run_b} has no stored results")
+                run_b_model = run_row["model_fingerprint"]
+                mb = (model_b or run_b_model or "").strip()
+            else:
+                mb = (model_b or targets["b"]["model"] or "").strip()
             if not ma or not mb:
                 raise ValueError("both models must have a name")
             if ma.casefold() == mb.casefold():
                 raise ValueError(
                     f"model A and model B must be distinct (both are '{ma}')")
             targets["a"]["model"] = ma
-            targets["b"]["model"] = mb
+            if not mixed_run_b:
+                targets["b"]["model"] = mb
             row = conn.execute(
                 "SELECT payload FROM suite_definitions WHERE suite_id = ? "
                 "ORDER BY id DESC LIMIT 1", (suite_id,)).fetchone()
@@ -1047,6 +1103,7 @@ def run_judge_job(
         "suite_id": suite_id,
         "judge_model": judge_model or "(default)",
         "eval_run_ids": list(eval_run_ids) if eval_run_ids else [],
+        "eval_run_b": eval_run_b,
         # url+model only — API keys are never echoed on the job record
         "targets": ({s: {"url": t["url"], "model": t["model"]}
                      for s, t in targets.items()} if combined else {}),
@@ -1081,7 +1138,9 @@ def run_judge_job(
                                  eval_max_tokens=eval_max_tokens,
                                  eval_temperature=eval_temperature,
                                  eval_concurrency=eval_concurrency,
-                                 eval_retries=eval_retries)
+                                 eval_retries=eval_retries,
+                                 eval_run_b=eval_run_b,
+                                 run_b_model=run_b_model)
                 return
             def on_progress(done, total, label, n_judgments, n_invalid, rows):
                 with _JOBS_LOCK:
