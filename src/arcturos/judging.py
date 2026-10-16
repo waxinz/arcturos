@@ -26,7 +26,7 @@ from arcturos import config
 from arcturos import db as dbmod
 from arcturos import evals
 
-JUDGE_TEMPLATE_VERSION = "blind-pair-v2"
+JUDGE_TEMPLATE_VERSION = "blind-pair-v3"
 
 # Position-swap order marker: which presentation order a judgment used.
 # Stored in the rationale-free template field? No — the row keeps only
@@ -139,10 +139,11 @@ CRITERION: {rubric}
 [RESPONSE 2]
 {resp2}
 
-Reply with EXACTLY one line in this format and nothing else:
+Reply with EXACTLY these two lines and nothing else:
 VERDICT: 1      (if response 1 is better)
 VERDICT: 2      (if response 2 is better)
-VERDICT: tie    (if neither is clearly better)"""
+VERDICT: tie    (if neither is clearly better)
+REASON: <one short sentence, max ~25 words, why>"""
 
 
 def rubric_for(dimension: str | None) -> str:
@@ -172,12 +173,37 @@ def extract_verdict(raw: str) -> str | None:
     return tokens[-1] if tokens else None
 
 
-def extract_rationale(raw: str) -> str | None:
-    """Keep the judge's tail text as an auditable rationale (trimmed)."""
+def extract_reason(raw: str) -> str | None:
+    """Pull the judge's REASON line (one short sentence) when present."""
     if not raw:
         return None
-    tail = raw.strip()[-400:]
-    return tail or None
+    m = re.search(r"REASON\s*[:\-]?\s*(.+)", raw, re.IGNORECASE)
+    if not m:
+        return None
+    reason = re.sub(r"\s+", " ", m.group(1)).strip()
+    if len(reason) > 300:
+        reason = reason[:300].rstrip() + "…"
+    return reason or None
+
+
+def extract_rationale(raw: str) -> str | None:
+    """Audit trail for a judgment: the REASON line when the judge gave one,
+    else the tail of the raw output (reasoning chatter stays inspectable).
+
+    A bare verdict line is NOT a rationale — the user-visible complaint
+    'verdicts just say 1 or 2' — so verdict-only replies return None and
+    the judge_item follow-up can ask for the missing sentence.
+    """
+    if not raw:
+        return None
+    reason = extract_reason(raw)
+    if reason:
+        return reason
+    tail = raw.strip()
+    tail = re.sub(r"(?i)^verdict\s*[:\-]?\s*(1|2|tie)\s*", "", tail).strip()
+    if not tail:
+        return None
+    return tail[-400:] or None
 
 
 # -------------------------------------------------- fingerprint helpers ----
@@ -441,6 +467,33 @@ def judge_once(judge_url: str, judge_model: str, prompt_text: str,
             "rationale": extract_rationale(raw)}
 
 
+def _reason_followup(judge_url: str, judge_model: str, raw: str,
+                     winner: str, api_key: str | None = None) -> str | None:
+    """One cheap supplemental call when a judge skipped the REASON line.
+
+    v3 asks for VERDICT + REASON in one reply; models that still answer
+    verdict-only get exactly one nudge — the judgment is already paid for
+    and stays valid even if this returns nothing (honest None).
+    """
+    what = {"1": "response 1", "2": "response 2"}.get(winner, "a tie")
+    prompt = (
+        "A blind judge compared two AI responses and replied exactly:\n"
+        f"{raw}\n\n"
+        f"The judged winner was: {what} (as presented in that reply).\n"
+        "In one short sentence (max 25 words), state why. Reply with "
+        "exactly one line:\nREASON: <sentence>"
+    )
+    try:
+        resp = _post_chat(judge_url, {
+            "model": judge_model,
+            "messages": [{"role": "user", "content": prompt}],
+            "max_tokens": 120, "temperature": 0.0, "stream": False,
+        }, api_key)
+    except Exception:  # noqa: BLE001 — rationale is best-effort, never fatal
+        return None
+    return extract_reason(_judge_message_text(resp))
+
+
 def judge_item(work_item: dict[str, Any], judge_url: str, judge_model: str,
                retries: int = 1, api_key: str | None = None,
                rng: random.Random | None = None,
@@ -507,6 +560,12 @@ def judge_item(work_item: dict[str, Any], judge_url: str, judge_model: str,
                          "verdict": None, "error": "invalid verdict",
                          "judge_model": judge_model})
             continue
+        if verdict["rationale"] is None:
+            # v3 prompt demands a REASON line; one cheap nudge when the
+            # judge still answered verdict-only. Best-effort, never fatal.
+            verdict["rationale"] = _reason_followup(
+                judge_url, judge_model, verdict["raw"], verdict["winner"],
+                api_key=api_key)
         w = verdict["winner"]
         if w == "tie":
             winner = "tie"

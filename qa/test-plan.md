@@ -51,6 +51,26 @@ Rules:
 - [x] staged job record: `combined`/`stage` (replay-a → replay-b → judging) drive the UI stage chip; one Stop flag flows through all three stages
 - [x] Live smoke: combined kick-off from /judgments against two real models on the smoke suite (2026-10-15, deploy host: guard 422 → override accepted → staged job replay A/B complete on the suite's 6-item snapshot → 12 judgments stored (6 items × both orders), runs #4/#5, status_line honest; winners a=7/tie=5 from the family judge)
 
+### J4 — Pair page — category summary (added 2026-10-15)
+- [x] `tests/test_reports.py::test_pair_summary_per_dimension_math` — exact per-dimension counts/percent/score (wins + ½ ties 0–100) + overall; Wilson 95% present on A's win share; rows sorted n desc then name
+- [x] `tests/test_reports.py::test_pair_summary_orientation_invariant` — calling with model_a/model_b swapped mirrors the a/b columns (counts/percent/score); n, ties, row set, judges, templates unchanged
+- [x] `tests/test_reports.py::test_pair_summary_judge_filter_scoping` — judge_model / judge_template scope counts AND the judges/templates lists (either field alone filters; unknown judge → honest empty)
+- [x] `tests/test_reports.py::test_pair_summary_multiturn_rows_fold_into_base_dimension` — '#t2' turn rows land in the base item's dimension; no '#'-suffixed rows leak
+- [x] `tests/test_reports.py::test_pair_summary_uncategorized_fallback` — no definition snapshot → honest 'uncategorized' bucket
+- [x] `tests/test_reports.py::test_pair_summary_empty_pair_honest` — unknown pair → rows [], overall n=0, null percents, zero scores, no wilson
+- [x] `tests/test_evalviews.py::test_pair_summary_endpoint_caller_orientation` — GET /api/judgments/pair/summary: caller-orientation through HTTP ('a' = caller's model_a won), 404-free shape with judges/templates lists
+- [x] `tests/test_evalviews.py::test_pair_summary_endpoint_404_and_empty_pair` — unknown suite → 404 (require_parent); unjudged pair → 200 with honest empty summary
+- [x] Page contract: `tests/test_evalviews.py::test_pair_page_has_category_summary` + `tests/test_eval_runs_api.py::test_drilldown_pages_carry_shell_identity` pin `id="jsum"` + 'Category summary' on /judgments/pair
+
+### J4 — Judge template v3 — mandatory one-sentence reason (added 2026-10-15)
+- [x] `tests/test_eval_jobs.py::test_extract_reason_cases` — REASON parse: present / absent / whitespace collapse / 300-char cap with ellipsis
+- [x] `tests/test_eval_jobs.py::test_extract_rationale_bare_verdict_is_none` — a bare `VERDICT: X` is NOT a rationale (None), chatter after the verdict still kept, REASON preferred when present
+- [x] `tests/test_eval_jobs.py::test_judge_prompt_demands_reason` — v3 prompt carries the REASON spec; template version bumped
+- [x] `tests/test_eval_jobs.py::test_judge_item_followup_captures_reason` — verdict-only reply → exactly one supplemental call per order; sentence stored as rationale on both judgments
+- [x] `tests/test_eval_jobs.py::test_judge_item_followup_failure_stays_valid` — follow-up exploding never invalidates a paid-for judgment (rationale NULL, no error)
+- [x] `tests/test_judging.py::test_judge_item_both_orders_stored_with_remap` — extended: REASON present → no follow-up (exactly 2 calls); rationale captured verbatim
+- [x] `tests/test_judging.py::test_judge_item_tie_and_invalid_verdict_retry` — retry loop unaffected; nudge terminates cleanly on a bare tie
+
 ### J5 — Reports
 - [ ] win-rate aggregation: counts + percentages per suite × pair
 - [ ] category breakdown

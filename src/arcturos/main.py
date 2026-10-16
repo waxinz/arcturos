@@ -542,6 +542,26 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
             ORDER BY ra.item_id, j.id
         """, (suite_id, model_a, model_b, model_b, model_a))
 
+    @app.get("/api/judgments/pair/summary")
+    def judgments_pair_summary(suite_id: int, model_a: str, model_b: str,
+                               judge_model: str | None = None,
+                               judge_template: str | None = None,
+                               db=Depends(get_db)):
+        """Per-dimension category summary for one suite + model pair.
+
+        Feeds the pair page's headline card (details stay in the SxS list
+        below). Winner orientation is normalized to the CALLER's order:
+        'a' in the response always means the caller's ``model_a`` won,
+        whatever canonical presentation order the judgment rows were
+        stored in — swapping model_a/model_b mirrors the a/b columns
+        without changing n, ties, or the row set. ``judge_model`` /
+        ``judge_template`` scope the aggregate to one judge generation.
+        """
+        require_parent(db, "eval_suites", suite_id)
+        return reports.pair_summary(db, suite_id, model_a, model_b,
+                                    judge_model=judge_model,
+                                    judge_template=judge_template)
+
     @app.get("/api/eval-results")
     def list_all_eval_results(db=Depends(get_db)):
         return fetch_all(db, "SELECT * FROM eval_results ORDER BY id")
