@@ -4,12 +4,12 @@
 //   <body class="shell" data-page="compare" data-section="Benchmarks">
 // The top bar has two rows:
 //   row 1: section tabs (.nav-section[data-nav-section], .active = filled)
-//   row 2: ALL sections' page pills, hidden by CSS default (.topnav-sub a
-//          { display: none }); this painter tags the active section's
-//          pills .in-section so exactly one section's pages show.
-// It also marks the current page's pill (.active) — same contract as the
-// sidebar era. theme.js still owns the <html data-theme> attribute +
-// chart re-theme; this file only paints nav state.
+//   row 2: ALL sections' page pills, ALWAYS visible (constant strip,
+//          2026-10-15 — the per-section swap read as "the menu changed"
+//          when moving between pages). This painter tags the active
+//          section's head (.active) and the current page's pill (.active).
+// theme.js still owns the <html data-theme> attribute + chart re-theme;
+// this file only paints nav state.
 (function () {
   'use strict';
 
@@ -22,13 +22,6 @@
       var sec = document.querySelector(
         '.nav-section[data-nav-section="' + section + '"]');
       if (sec) sec.classList.add('active');
-
-      // Row 2: reveal this section's pills only.
-      var pills = document.querySelectorAll(
-        '.topnav-sub a[data-nav-section="' + section + '"]');
-      for (var i = 0; i < pills.length; i++) {
-        pills[i].classList.add('in-section');
-      }
     }
     if (page) {
       var link = document.querySelector(

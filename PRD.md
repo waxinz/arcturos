@@ -400,6 +400,13 @@ the launch surface, not only the reading surface).
   models' answers stay in the SxS cards directly below. The toggle is a
   real button (keyboard + aria-expanded accessible), full-width tap
   target on mobile; images cap at 22rem tall and shrink to screen width.
+- **Constant sub-nav (added 2026-10-15):** the top bar's second row shows
+  ALL page pills on EVERY page — Start · Compare │ Judgments · Create ·
+  Run · Results · Reports │ Models · Baselines — with thin separators at
+  the section boundaries. Previously only the active section's pills were
+  revealed, so the menu visibly changed when moving between pages (the
+  owner flagged it as inconsistent). The active section's row-1 tab and
+  the current page's pill still fill; narrow screens scroll the strip.
 - **Nav order (added 2026-10-15):** Judgments is the FIRST sub-element
   under the Evals section in the top nav (operator's standing
   preference: the judging kick-off leads the menu).
