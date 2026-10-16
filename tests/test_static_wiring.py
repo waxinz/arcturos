@@ -7,6 +7,9 @@
   (operator's standing preference: the judging kick-off leads the menu).
 - Judgments page: the Model B baseline-reuse picker and the recent
   judgment-runs list exist; the old per-item work-detail table is gone.
+- Reasoning controls (2026-10-15): reasoning_effort + reasoning_budget
+  fields ship on every eval-run start surface (Run page, Judgements
+  Model A/B) and are wired into the kick-off payloads.
 """
 
 import re
@@ -115,3 +118,28 @@ def test_judgment_detail_prompt_expander(client):
     assert "/api/eval-suites/' + suiteId + '/image?item=" in text
     assert "image failed to load" in text
     assert "loading" in text                      # lazy loading
+
+
+def test_reasoning_fields_on_every_run_start_surface(client):
+    """J9 (2026-10-15): optional per-model reasoning_effort +
+    reasoning_budget on EVERY surface that starts an eval suite run —
+    the single-model replay page and both Model A/B cards on Judgements
+    (combined + mixed kick-off)."""
+    # 1) single-model replay page (/evals/run)
+    run = client.get("/evals/run").text
+    assert 'id="eval-reason"' in run
+    assert 'id="eval-budget"' in run
+    assert "body.reasoning_effort" in run          # wired into the POST body
+    assert "body.reasoning_budget" in run
+    for effort in ("minimal", "low", "medium", "high"):
+        assert f"<option>{effort}</option>" in run
+    # 2) Judgements: both model cards carry the pair of controls
+    j = client.get("/judgments").text
+    for prefix in ("judge-ma", "judge-mb"):
+        assert f'id="{prefix}-reason"' in j
+        assert f'id="{prefix}-budget"' in j
+    assert "reasonProps" in j                      # shared body builder
+    assert "...reasonProps('judge-ma')" in j       # spread into target_a
+    assert "...reasonProps('judge-mb')" in j       # …and target_b
+    # picking the stored baseline disables B's reasoning fields too
+    assert "'judge-mb-reason', 'judge-mb-budget'" in j

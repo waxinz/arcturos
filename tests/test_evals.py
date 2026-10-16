@@ -94,7 +94,7 @@ def test_replay_single_turn_posts_messages_and_records(monkeypatch):
     captured = {}
 
     def fake_post(target, messages, api_key=None, model="test",
-                  max_tokens=512, temperature=0.0):
+                  max_tokens=512, temperature=0.0, **kw):
         captured["messages"] = messages
         captured["model"] = model
         captured["max_tokens"] = max_tokens
