@@ -70,6 +70,7 @@ from fastapi.staticfiles import StaticFiles
 from . import compare, ops, reports
 from . import config
 from . import evals as evals_mod
+from . import multiturn as multiturn_mod
 from . import judging
 from . import pagelib
 from .db import DEFAULT_DB_PATH, connect, init_db
@@ -973,6 +974,8 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
         api_key = body.get("api_key")
         suite = body.get("suite")
         name = body.get("name")
+        reasoning_effort = body.get("reasoning_effort")
+        reasoning_budget = body.get("reasoning_budget")
         if not isinstance(suite_id, int) or suite_id < 1:
             raise HTTPException(status_code=422, detail="suite_id must be a positive int")
         if not isinstance(target, str) or not target.startswith("http"):
@@ -985,11 +988,17 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
             raise HTTPException(status_code=422,
                                 detail="name must be a non-empty string when set")
         try:
+            multiturn_mod.validate_reasoning(reasoning_effort, reasoning_budget)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc))
+        try:
             return ops.dispatch_eval(
                 db_path=db_path, suite_id=suite_id, target=target,
                 model_fingerprint=model_fingerprint, suite=suite,
                 api_key=api_key,
-                name=name.strip() if isinstance(name, str) else None)
+                name=name.strip() if isinstance(name, str) else None,
+                reasoning_effort=reasoning_effort,
+                reasoning_budget=reasoning_budget)
         except ops.DispatchError as exc:
             raise HTTPException(status_code=422, detail=str(exc))
         except ops.DispatchFailure as exc:
@@ -1020,6 +1029,8 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
         temperature = body.get("temperature", 0.0)
         retries = body.get("retries", 0)
         concurrency = body.get("concurrency", 1)
+        reasoning_effort = body.get("reasoning_effort")
+        reasoning_budget = body.get("reasoning_budget")
         if not isinstance(suite_id, int) or suite_id < 1:
             raise HTTPException(status_code=422, detail="suite_id must be a positive int")
         if not isinstance(target, str) or not target.startswith("http"):
@@ -1044,7 +1055,9 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
                 api_key=api_key,
                 name=name.strip() if isinstance(name, str) else None,
                 max_tokens=max_tokens, temperature=temperature,
-                retries=retries, concurrency=concurrency)
+                retries=retries, concurrency=concurrency,
+                reasoning_effort=reasoning_effort,
+                reasoning_budget=reasoning_budget)
         except ops.DispatchError as exc:
             raise HTTPException(status_code=422, detail=str(exc))
         except (ValueError, evals_mod.ItemValidationError) as exc:
@@ -1074,6 +1087,10 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
         retries?, allow_contestant_judge?, judge_api_key?, eval_run_ids?,
         target_a?, target_b?, eval_run_b?, eval_max_tokens?,
         eval_temperature?, eval_concurrency?, eval_retries?}.
+        target_a/target_b may each also carry optional per-model
+        reasoning_effort ('minimal'|'low'|'medium'|'high') and
+        reasoning_budget (max thinking tokens) — applied to that side's
+        replay only.
 
         Modes. (1) Judge stored results (model_a/model_b or
         eval_run_ids scope). (2) Combined kick-off (2026-10-15): give

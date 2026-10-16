@@ -746,6 +746,8 @@ def dispatch_eval(
     concurrency: int = 1,
     on_result=None,
     abort: "AbortFlag | None" = None,
+    reasoning_effort: str | None = None,
+    reasoning_budget: int | None = None,
 ) -> dict:
     """Replay one eval suite against a target; store eval_results per item.
 
@@ -766,6 +768,11 @@ def dispatch_eval(
     ``name`` (optional run label, 2026-09-22): names the eval run shown
     on /evals and reports; None stores NULL and the UI falls back to the
     the default 'suite · model · N items' rendering.
+
+    ``reasoning_effort``/``reasoning_budget`` (2026-10-15, optional):
+    per-MODEL reasoning depth sent with every item's chat call —
+    'minimal'|'low'|'medium'|'high' and a max-thinking-tokens int.
+    Optional: omitted from the wire body when unset.
     """
     try:
         items = evals.validate_suite(suite)
@@ -787,6 +794,10 @@ def dispatch_eval(
     if not isinstance(concurrency, int) or isinstance(concurrency, bool) \
             or not (1 <= concurrency <= 8):
         raise DispatchError("concurrency must be an int between 1 and 8")
+    try:
+        mt.validate_reasoning(reasoning_effort, reasoning_budget)
+    except ValueError as exc:
+        raise DispatchError(str(exc)) from exc
 
     from arcturos import db as dbmod
     conn = dbmod.connect(db_path)
@@ -829,11 +840,15 @@ def dispatch_eval(
                             target, item, api_key=api_key,
                             model=model_fingerprint,
                             max_tokens=max_tokens,
-                            temperature=temperature))
+                            temperature=temperature,
+                            reasoning_effort=reasoning_effort,
+                            reasoning_budget=reasoning_budget))
                     rec = evals.replay_single_turn(
                         target, item, api_key=api_key,
                         model=model_fingerprint, max_tokens=max_tokens,
-                        temperature=temperature)
+                        temperature=temperature,
+                        reasoning_effort=reasoning_effort,
+                        reasoning_budget=reasoning_budget)
                     return [rec]
                 except (httpx.HTTPError, URLError, TimeoutError,
                         RuntimeError, ValueError, KeyError) as exc:
@@ -1014,12 +1029,18 @@ def run_eval_job(
     temperature: float = 0.0,
     retries: int = 0,
     concurrency: int = 1,
+    reasoning_effort: str | None = None,
+    reasoning_budget: int | None = None,
 ) -> str:
     """Validate + snapshot an eval job, replay in a daemon thread.
 
     Returns the job id immediately. Validation errors raise DispatchError
     synchronously (422 before any thread starts); everything inside the
     thread is reported via the job record.
+
+    ``reasoning_effort``/``reasoning_budget`` (2026-10-15, optional):
+    per-model reasoning depth forwarded to dispatch_eval — validated here
+    too so a bad value 422s before the thread starts.
     """
     try:
         items = evals.validate_suite(suite)
@@ -1027,6 +1048,7 @@ def run_eval_job(
         raise DispatchError(str(exc)) from exc
     if not items:
         raise DispatchError("suite has no items to replay")
+    mt.validate_reasoning(reasoning_effort, reasoning_budget)
     _prune_eval_jobs()
     job_id = uuid.uuid4().hex[:12]
     flag = AbortFlag()
@@ -1080,7 +1102,9 @@ def run_eval_job(
                 model_fingerprint=model_fingerprint, suite=suite,
                 api_key=api_key, name=name, max_tokens=max_tokens,
                 temperature=temperature, retries=retries,
-                concurrency=concurrency, on_result=on_result, abort=flag)
+                concurrency=concurrency, on_result=on_result, abort=flag,
+                reasoning_effort=reasoning_effort,
+                reasoning_budget=reasoning_budget)
             with _EVAL_JOBS_LOCK:
                 job["eval_run_id"] = result.get("eval_run_id")
                 job["item_errors"] = result.get("item_errors", [])

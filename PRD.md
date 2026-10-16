@@ -411,6 +411,15 @@ the launch surface, not only the reading surface).
   under the Evals section in the top nav, and the EVALS section tab
   itself links to /judgments (operator's standing preference: the
   judging kick-off leads the menu and is the section's default landing).
+- **Per-model reasoning controls (added 2026-10-15):** every surface that
+  starts an eval suite run offers optional reasoning_effort
+  ('minimal'|'low'|'medium'|'high') and reasoning_budget (max thinking
+  tokens, 1–32768) PER MODEL: the Run page (single model) and both Model
+  A/B cards on Judgements (combined + mixed kick-off). Blank fields mean
+  the server default — the fields are omitted from the wire body, so the
+  chat request is byte-identical when unused. Values validate honestly
+  (422 at every API boundary) and each side's settings apply only to
+  that side's replay (B's are inert in mixed mode — B is not replayed).
 - **Append-only preserved:** dispatch only ever INSERTs. Re-runs supersede.
   There is no edit/delete of stored data anywhere in the UI or API.
 - **Power provenance (ADR 002):** `benchmarks.power_host` /
@@ -431,6 +440,7 @@ the launch surface, not only the reading surface).
 - [x] Judgements kick-off: model B can be a stored baseline run (mixed `target_a` + `eval_run_b`), with the suite's recent runs listed newest first; recent judgment runs surface as one-line cards linking to the SxS pair view.
 - [x] Sticky inputs: every text box restores the operator's last value on page load (localStorage, shadowing shipped defaults; config remains the server fallback).
 - [x] Judgment details: item names expand the case's prompt inline (definition-snapshot sourced, multi-turn aware, images rendered via the snapshot-guarded suite-image endpoint), with both models' answers in the SxS cards below.
+- [x] Per-model reasoning: optional reasoning_effort + reasoning_budget on the Run page and on both Judgements model cards, validated at the API boundary, passed through to each side's replay only, and omitted from the wire body when unset.
 
 ## 4. Non-goals (v1)
 - Distributed multi-node orchestration; multi-tenant UI; managed cloud.
