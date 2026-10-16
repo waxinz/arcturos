@@ -73,8 +73,12 @@
                   border: 1px solid var(--border); background: var(--surface);
                   color: var(--text-soft); white-space: nowrap; }
     .stage-chip[hidden] { display: none; }
+    /* per-model reasoning row: level + budget side by side, stacks on phones */
+    .rgrid { display: grid; grid-template-columns: 1fr 1fr; gap: .5rem; }
+    .rgrid label { font-size: .8rem; }
     @media (max-width: 640px) {
       .ab-grid { grid-template-columns: 1fr; }
+      .rgrid { grid-template-columns: 1fr; gap: .45rem; }
     }
     /* judge-not-contestant guard: WARNING with override, not a dead end */
     .warn-card { display: flex; flex-wrap: wrap; align-items: center;
@@ -183,6 +187,21 @@
             <label for="judge-ma">Model name</label>
             <input id="judge-ma" placeholder="e.g. model-alpha">
           </div>
+          <div class="field wide rgrid">
+            <div>
+              <label for="judge-ma-reason">Reasoning <span class="opt">(optional)</span></label>
+              <select id="judge-ma-reason">
+                <option value="">— default —</option>
+                <option>minimal</option><option>low</option>
+                <option>medium</option><option>high</option>
+              </select>
+            </div>
+            <div>
+              <label for="judge-ma-budget">Budget <span class="opt">(tokens)</span></label>
+              <input id="judge-ma-budget" type="number" min="1" max="32768" step="1"
+                     inputmode="numeric" placeholder="e.g. 2048">
+            </div>
+          </div>
         </fieldset>
         <fieldset class="model-card">
           <legend>Model B</legend>
@@ -197,6 +216,21 @@
           <div class="field">
             <label for="judge-mb">Model name</label>
             <input id="judge-mb" placeholder="e.g. model-beta">
+          </div>
+          <div class="field wide rgrid">
+            <div>
+              <label for="judge-mb-reason">Reasoning <span class="opt">(optional)</span></label>
+              <select id="judge-mb-reason">
+                <option value="">— default —</option>
+                <option>minimal</option><option>low</option>
+                <option>medium</option><option>high</option>
+              </select>
+            </div>
+            <div>
+              <label for="judge-mb-budget">Budget <span class="opt">(tokens)</span></label>
+              <input id="judge-mb-budget" type="number" min="1" max="32768" step="1"
+                     inputmode="numeric" placeholder="e.g. 2048">
+            </div>
           </div>
           <div class="field">
             <label for="judge-mb-run">…or reuse a recent run on this suite
@@ -546,7 +580,8 @@
       }
       function syncRunBFields() {
         const useRun = !!$('judge-mb-run').value;
-        for (const id of ['judge-mb-url', 'judge-mb-key', 'judge-mb']) {
+        for (const id of ['judge-mb-url', 'judge-mb-key', 'judge-mb',
+                          'judge-mb-reason', 'judge-mb-budget']) {
           const el = document.getElementById(id);
           el.disabled = useRun;
           if (useRun && el.value) el.value = '';
@@ -686,6 +721,16 @@
       }
       document.getElementById('judge-ma-url').addEventListener('input', updateKickLabel);
       document.getElementById('judge-mb-url').addEventListener('input', updateKickLabel);
+      // per-model reasoning (2026-10-15): only sent when set — the wire
+      // body stays identical for operators who leave the fields blank.
+      function reasonProps(prefix) {
+        const out = {};
+        const eff = $(prefix + '-reason').value;
+        const bud = parseInt($(prefix + '-budget').value, 10);
+        if (eff) out.reasoning_effort = eff;
+        if (bud) out.reasoning_budget = bud;
+        return out;
+      }
       async function kickJudge(extra = {}) {
         const suiteId = parseInt($('judge-suite').value, 10);
         if (!suiteId) { setMsg('Pick a suite to judge'); return; }
@@ -711,7 +756,7 @@
                      'against the stored run chosen for B');
               return;
             }
-            body.target_a = {url: maUrl, model: maName};
+            body.target_a = {url: maUrl, model: maName, ...reasonProps('judge-ma')};
             if ($('judge-ma-key').value.trim()) {
               body.target_a.api_key = $('judge-ma-key').value.trim();
             }
@@ -727,11 +772,11 @@
               setMsg('Give both models a name for the combined kick-off');
               return;
             }
-            body.target_a = {url: maUrl, model: maName};
+            body.target_a = {url: maUrl, model: maName, ...reasonProps('judge-ma')};
             if ($('judge-ma-key').value.trim()) {
               body.target_a.api_key = $('judge-ma-key').value.trim();
             }
-            body.target_b = {url: mbUrl, model: mbName};
+            body.target_b = {url: mbUrl, model: mbName, ...reasonProps('judge-mb')};
             if ($('judge-mb-key').value.trim()) {
               body.target_b.api_key = $('judge-mb-key').value.trim();
             }

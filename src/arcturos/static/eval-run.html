@@ -129,6 +129,21 @@
           <input id="eval-model" list="prev-models" placeholder="e.g. qwen3.8-27b">
           <datalist id="prev-models"></datalist>
         </div>
+        <div class="field wide minors">
+          <div>
+            <label for="eval-reason">Reasoning level <span style="font-weight:400">(optional)</span></label>
+            <select id="eval-reason">
+              <option value="">— server default —</option>
+              <option>minimal</option><option>low</option>
+              <option>medium</option><option>high</option>
+            </select>
+          </div>
+          <div>
+            <label for="eval-budget">Reasoning budget <span style="font-weight:400">(max thinking tokens)</span></label>
+            <input id="eval-budget" type="number" min="1" max="32768" step="1"
+                   inputmode="numeric" placeholder="e.g. 2048">
+          </div>
+        </div>
         <div class="field wide minors4">
           <div>
             <label for="eval-maxtok">max_tokens per item</label>
@@ -431,6 +446,9 @@ function $(id) { return document.getElementById(id); }
         };
         if ($('eval-key').value.trim()) body.api_key = $('eval-key').value.trim();
         if ($('eval-name').value.trim()) body.name = $('eval-name').value.trim();
+        if ($('eval-reason').value) body.reasoning_effort = $('eval-reason').value;
+        const budget = parseInt($('eval-budget').value, 10);
+        if (budget) body.reasoning_budget = budget;
         if (suite) body.suite = suite;
         const res = await fetch('/api/ops/eval/jobs', {method: 'POST',
           headers: {'Content-Type': 'application/json'},

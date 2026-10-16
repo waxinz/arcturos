@@ -23,6 +23,7 @@ import uuid
 from typing import Any
 
 from arcturos import config
+from arcturos import multiturn as mt
 from arcturos import db as dbmod
 from arcturos import evals
 
@@ -833,7 +834,9 @@ def _worker_combined(job, flag, db_path, suite_id, definition, targets, *,
             name=f"{label}: {t['model']} (judgements kick-off)",
             max_tokens=eval_max_tokens, temperature=eval_temperature,
             retries=eval_retries, concurrency=eval_concurrency,
-            on_result=on_result, abort=flag)
+            on_result=on_result, abort=flag,
+            reasoning_effort=t.get("reasoning_effort"),
+            reasoning_budget=t.get("reasoning_budget"))
         with _JOBS_LOCK:
             n_err = len(result.get("item_errors", []))
             job["replay_errors"][side] = n_err
@@ -987,6 +990,11 @@ def run_judge_job(
     judge it against the existing baseline run — model B is not
     replayed. The stored run's model fingerprint stands in as model B's
     name for the judge-not-contestant guard and the pair scoping.
+
+    Per-model reasoning (2026-10-15): target_a/target_b may each carry
+    optional reasoning_effort ('minimal'|'low'|'medium'|'high') and
+    reasoning_budget (max thinking tokens) — applied to that side's
+    replay only; B's are inert in mixed mode (B is not replayed).
     """
     combined = target_a is not None
     mixed_run_b = eval_run_b is not None
@@ -1020,7 +1028,16 @@ def run_judge_job(
                 raise ValueError(f"target_{side}.model must be a non-empty string")
             if key is not None and not isinstance(key, str):
                 raise ValueError(f"target_{side}.api_key must be a string when set")
-            targets[side] = {"url": url, "model": model.strip(), "api_key": key}
+            # Per-model reasoning depth (2026-10-15): optional on each side;
+            # mt.validate_reasoning raises an honest ValueError (→ 422).
+            r_effort = tgt.get("reasoning_effort")
+            r_budget = tgt.get("reasoning_budget")
+            if r_effort is not None or r_budget is not None:
+                mt.validate_reasoning(r_effort, r_budget)
+            targets[side] = {"url": url, "model": model.strip(),
+                             "api_key": key,
+                             "reasoning_effort": r_effort,
+                             "reasoning_budget": r_budget}
         if eval_run_ids is not None:
             raise ValueError(
                 "eval_run_ids (run-scoped judging) is mutually exclusive with "

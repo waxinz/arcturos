@@ -36,7 +36,9 @@ def validate_multiturn_item(item: dict[str, Any]) -> None:
 
 def post_openai_chat(target: str, messages: list[dict],
                      api_key: str | None = None, model: str = "test",
-                     max_tokens: int = 512, temperature: float = 0.0) -> dict:
+                     max_tokens: int = 512, temperature: float = 0.0,
+                     reasoning_effort: str | None = None,
+                     reasoning_budget: int | None = None) -> dict:
     """POST /v1/chat/completions; base URL may or may not include /v1.
 
     ``model`` defaults to 'test' (llama.cpp native servers ignore the model
@@ -50,6 +52,13 @@ def post_openai_chat(target: str, messages: list[dict],
     defaults to 1024 (reasoning models burn budget thinking before
     answering; 512 shipped truncated answers) and 0.0 for reproducibility.
     Defaults here keep the historical 512/0.0 for existing callers.
+
+    ``reasoning_effort`` (2026-10-15, optional): 'minimal'|'low'|'medium'|
+    'high' — sent as the OpenAI-compatible ``reasoning_effort`` body field
+    when set; servers that ignore it are unaffected. ``reasoning_budget``
+    (optional): max thinking tokens — sent as ``reasoning_budget``. Both
+    are OMITTED from the body when unset (never sent as null): the wire
+    contract must stay byte-identical for callers that don't use them.
     """
     base = target.rstrip("/")
     if base.endswith("/v1"):
@@ -57,17 +66,48 @@ def post_openai_chat(target: str, messages: list[dict],
     headers = {"Content-Type": "application/json"}
     if api_key:
         headers["Authorization"] = f"Bearer {api_key}"
+    chat_body: dict = {
+        "model": model, "messages": messages,
+        "max_tokens": max_tokens, "temperature": temperature,
+        "stream": False,
+    }
+    if reasoning_effort is not None:
+        chat_body["reasoning_effort"] = reasoning_effort
+    if reasoning_budget is not None:
+        chat_body["reasoning_budget"] = reasoning_budget
     req = urlreq.Request(
         base + "/v1/chat/completions",
-        data=json.dumps({
-            "model": model, "messages": messages,
-            "max_tokens": max_tokens, "temperature": temperature,
-            "stream": False,
-        }).encode(),
+        data=json.dumps(chat_body).encode(),
         headers=headers, method="POST",
     )
     with urlreq.urlopen(req, timeout=120) as resp:
         return json.loads(resp.read())
+
+
+REASONING_EFFORTS = ("minimal", "low", "medium", "high")
+
+
+def validate_reasoning(reasoning_effort, reasoning_budget) -> tuple[str | None, int | None]:
+    """Validate optional per-model reasoning controls; return them normalized.
+
+    ``reasoning_effort``: None or one of REASONING_EFFORTS ('minimal'…'high').
+    ``reasoning_budget``: None or an int of max thinking tokens (1–32768 —
+    same ceiling as max_tokens). Raises ValueError with an honest message;
+    callers at API boundaries turn that into a 422.
+    """
+    if reasoning_effort is not None:
+        if (not isinstance(reasoning_effort, str)
+                or reasoning_effort not in REASONING_EFFORTS):
+            raise ValueError(
+                "reasoning_effort must be one of: "
+                + ", ".join(REASONING_EFFORTS))
+    if reasoning_budget is not None:
+        if (not isinstance(reasoning_budget, int)
+                or isinstance(reasoning_budget, bool)
+                or not (1 <= reasoning_budget <= 32768)):
+            raise ValueError(
+                "reasoning_budget must be an int between 1 and 32768")
+    return reasoning_effort, reasoning_budget
 
 
 def extract_output(resp: dict) -> tuple[str, int, int]:
@@ -91,7 +131,9 @@ def extract_output(resp: dict) -> tuple[str, int, int]:
 
 def replay_multiturn(target: str, item: dict[str, Any],
                      api_key: str | None = None, model: str = "test",
-                     max_tokens: int = 512, temperature: float = 0.0) -> list[dict[str, Any]]:
+                     max_tokens: int = 512, temperature: float = 0.0,
+                     reasoning_effort: str | None = None,
+                     reasoning_budget: int | None = None) -> list[dict[str, Any]]:
     """Replay one multi-turn item; return one record per assistant turn.
 
     Record: {turn_index, item_id (suffixed), output, prompt_tokens,
@@ -99,7 +141,9 @@ def replay_multiturn(target: str, item: dict[str, Any],
 
     ``max_tokens``/``temperature`` pass through to every turn call (v0.2:
     the eval dispatcher defaults these to 1024/0.0 for the reasoning-model
-    budget lesson).
+    budget lesson). ``reasoning_effort``/``reasoning_budget`` (2026-10-15)
+    pass through to every turn call too — reasoning depth is per MODEL,
+    not per turn.
     """
     validate_multiturn_item(item)
     base_id = item["id"]
@@ -119,7 +163,9 @@ def replay_multiturn(target: str, item: dict[str, Any],
             t0 = time.monotonic()
             resp = post_openai_chat(target, messages, api_key, model=model,
                                     max_tokens=max_tokens,
-                                    temperature=temperature)
+                                    temperature=temperature,
+                                    reasoning_effort=reasoning_effort,
+                                    reasoning_budget=reasoning_budget)
             latency_ms = (time.monotonic() - t0) * 1000
             content, ptok, ctok = extract_output(resp)
             messages.append({"role": "assistant", "content": content})

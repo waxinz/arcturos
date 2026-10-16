@@ -361,11 +361,15 @@ def replay_single_turn(
     model: str = "test",
     max_tokens: int = 1024,
     temperature: float = 0.0,
+    reasoning_effort: str | None = None,
+    reasoning_budget: int | None = None,
 ) -> dict[str, Any]:
     """Replay one single-turn item; return one eval record dict.
 
     v0.2: honors the item's `system` prompt (pre-v0.2 the runner silently
     dropped it) and carries image items as image_url content parts.
+    ``reasoning_effort``/``reasoning_budget`` (2026-10-15, optional) pass
+    through to the chat call — per-model reasoning depth for eval runs.
     """
     item_id = item.get("id") or item.get("item_id")
     prompt = item.get("prompt") or item.get("content")
@@ -380,7 +384,9 @@ def replay_single_turn(
     import time
     t0 = time.monotonic()
     resp = mt.post_openai_chat(target, messages, api_key=api_key, model=model,
-                               max_tokens=max_tokens, temperature=temperature)
+                               max_tokens=max_tokens, temperature=temperature,
+                               reasoning_effort=reasoning_effort,
+                               reasoning_budget=reasoning_budget)
     latency_ms = (time.monotonic() - t0) * 1000
     content, ptok, ctok = mt.extract_output(resp)
     return {
