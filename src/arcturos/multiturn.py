@@ -54,7 +54,8 @@ def post_openai_chat(target: str, messages: list[dict],
     Defaults here keep the historical 512/0.0 for existing callers.
 
     ``reasoning_effort`` (2026-10-15, optional): 'minimal'|'low'|'medium'|
-    'high' — sent as the OpenAI-compatible ``reasoning_effort`` body field
+    'high'|'xhigh'|'max' — sent as the OpenAI-compatible ``reasoning_effort``
+    body field
     when set; servers that ignore it are unaffected. ``reasoning_budget``
     (optional): max thinking tokens — sent as ``reasoning_budget``. Both
     are OMITTED from the body when unset (never sent as null): the wire
@@ -84,13 +85,14 @@ def post_openai_chat(target: str, messages: list[dict],
         return json.loads(resp.read())
 
 
-REASONING_EFFORTS = ("minimal", "low", "medium", "high")
+REASONING_EFFORTS = ("minimal", "low", "medium", "high", "xhigh", "max")
 
 
 def validate_reasoning(reasoning_effort, reasoning_budget) -> tuple[str | None, int | None]:
     """Validate optional per-model reasoning controls; return them normalized.
 
-    ``reasoning_effort``: None or one of REASONING_EFFORTS ('minimal'…'high').
+    ``reasoning_effort``: None or one of REASONING_EFFORTS ('minimal'…
+    'max').
     ``reasoning_budget``: None or an int of max thinking tokens (1–32768 —
     same ceiling as max_tokens). Raises ValueError with an honest message;
     callers at API boundaries turn that into a 422.

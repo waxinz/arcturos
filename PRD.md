@@ -413,8 +413,8 @@ the launch surface, not only the reading surface).
   judging kick-off leads the menu and is the section's default landing).
 - **Per-model reasoning controls (added 2026-10-15):** every surface that
   starts an eval suite run offers optional reasoning_effort
-  ('minimal'|'low'|'medium'|'high') and reasoning_budget (max thinking
-  tokens, 1–32768) PER MODEL: the Run page (single model) and both Model
+  ('minimal'|'low'|'medium'|'high'|'xhigh'|'max') and reasoning_budget
+  (max thinking tokens, 1–32768) PER MODEL: the Run page (single model) and both Model
   A/B cards on Judgements (combined + mixed kick-off). Blank fields mean
   the server default — the fields are omitted from the wire body, so the
   chat request is byte-identical when unused. Values validate honestly
