@@ -41,12 +41,25 @@ def seed_fixture(db, suite_name="smoke", version="v1"):
     return suite_id, result_ids
 
 
-def seed_judgment(db, ra, rb, winner):
+def seed_judgment(db, ra, rb, winner, judge_model="judge-x",
+                  judge_template="blind-pair-v1"):
     db.execute(
         "INSERT INTO judgments (eval_result_a, eval_result_b, judge_model, "
         "judge_template_version, winner, confidence, rationale, created_at) "
         "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-        (ra, rb, "judge-x", "blind-pair-v1", winner, 0.8, None, "now"),
+        (ra, rb, judge_model, judge_template, winner, 0.8, None, "now"),
+    )
+    db.commit()
+
+
+def seed_definition(db, suite_id, items):
+    """Store a definition snapshot mapping item ids to dimensions."""
+    import json as _json
+
+    db.execute(
+        "INSERT INTO suite_definitions (suite_id, payload, created_at) "
+        "VALUES (?, ?, 'now')",
+        (suite_id, _json.dumps({"items": items})),
     )
     db.commit()
 
@@ -159,3 +172,196 @@ def test_category_map_for_reads_definition_snapshot(db):
 
     # No snapshot for an unknown suite -> empty map, report still works.
     assert reports.category_map_for(db, 999) == {}
+
+
+# ------------------------------------------------- pair page summary -------
+
+
+def test_pair_summary_per_dimension_math(db):
+    """Exact per-dimension math: counts, percent, score, Wilson present."""
+    suite_id, result_ids = seed_fixture(db)
+    seed_definition(db, suite_id, [
+        {"id": "sr-001", "dimension": "reasoning"},
+        {"id": "sr-002", "dimension": "reasoning"},
+        {"id": "sr-003", "dimension": "writing"},
+    ])
+    (ra1, rb1), (ra2, rb2), (ra3, rb3) = (result_ids["sr-001"],
+                                          result_ids["sr-002"],
+                                          result_ids["sr-003"])
+    # canonical rows: ra is always model-alpha (seed_fixture order)
+    seed_judgment(db, ra1, rb1, "a")
+    seed_judgment(db, ra1, rb1, "a")
+    seed_judgment(db, ra1, rb1, "tie")
+    seed_judgment(db, ra2, rb2, "b")
+    seed_judgment(db, ra3, rb3, "a")
+
+    s = reports.pair_summary(db, suite_id, "model-alpha", "model-beta")
+    assert s["suite_id"] == suite_id
+    assert s["model_a"] == "model-alpha"
+    assert s["model_b"] == "model-beta"
+    assert s["judges"] == ["judge-x"]
+    assert s["templates"] == ["blind-pair-v1"]
+    assert s["total"] == 5
+
+    # rows sorted n desc, then dimension name asc
+    assert [r["dimension"] for r in s["rows"]] == ["reasoning", "writing"]
+
+    reasoning = s["rows"][0]
+    assert reasoning["counts"] == {"a": 2, "b": 1, "tie": 1}
+    assert reasoning["n"] == 4
+    assert reasoning["percent"] == {"a": 50.0, "b": 25.0, "tie": 25.0}
+    # Arena score: wins + half ties, 0-100
+    assert reasoning["score_a"] == 62.5
+    assert reasoning["score_b"] == 37.5
+    wilson = reasoning["wilson_a"]          # (lo, hi) in percent units
+    assert wilson is not None and len(wilson) == 2
+    assert 0.0 <= wilson[0] <= wilson[1] <= 100.0
+
+    writing = s["rows"][1]
+    assert writing["counts"] == {"a": 1, "b": 0, "tie": 0}
+    assert writing["n"] == 1
+    assert writing["percent"] == {"a": 100.0, "b": 0.0, "tie": 0.0}
+    assert writing["score_a"] == 100.0
+    assert writing["score_b"] == 0.0
+
+    overall = s["overall"]
+    assert overall["dimension"] == "overall"
+    assert overall["counts"] == {"a": 3, "b": 1, "tie": 1}
+    assert overall["n"] == 5
+    assert overall["percent"] == {"a": 60.0, "b": 20.0, "tie": 20.0}
+    assert overall["score_a"] == 70.0
+    assert overall["score_b"] == 30.0
+    assert overall["wilson_a"] is not None
+
+
+def test_pair_summary_orientation_invariant(db):
+    """Swapping model_a/model_b mirrors the a/b columns; n/ties/rows stay."""
+    suite_id, result_ids = seed_fixture(db)
+    (ra1, rb1), (ra2, rb2), (ra3, rb3) = (result_ids["sr-001"],
+                                          result_ids["sr-002"],
+                                          result_ids["sr-003"])
+    seed_judgment(db, ra1, rb1, "a")
+    seed_judgment(db, ra1, rb1, "tie")
+    seed_judgment(db, ra2, rb2, "b")
+    seed_judgment(db, ra3, rb3, "a")
+
+    fwd = reports.pair_summary(db, suite_id, "model-alpha", "model-beta")
+    rev = reports.pair_summary(db, suite_id, "model-beta", "model-alpha")
+
+    assert fwd["total"] == rev["total"] == 4
+    assert [r["dimension"] for r in fwd["rows"]] == \
+        [r["dimension"] for r in rev["rows"]]
+    for f, r in zip(fwd["rows"] + [fwd["overall"]],
+                    rev["rows"] + [rev["overall"]]):
+        assert r["counts"] == {"a": f["counts"]["b"], "b": f["counts"]["a"],
+                               "tie": f["counts"]["tie"]}
+        assert r["n"] == f["n"]
+        assert r["percent"] == {"a": f["percent"]["b"],
+                                "b": f["percent"]["a"],
+                                "tie": f["percent"]["tie"]}
+        assert r["score_a"] == f["score_b"]
+        assert r["score_b"] == f["score_a"]
+        # the interval tracks A's win share, so it mirrors with the columns
+        assert r["wilson_a"] == reports.wilson_interval(
+            f["counts"]["b"] / f["n"], f["n"])
+    assert rev["judges"] == fwd["judges"]
+    assert rev["templates"] == fwd["templates"]
+
+
+def test_pair_summary_judge_filter_scoping(db):
+    """judge_model / judge_template scope counts AND the judges/templates lists."""
+    suite_id, result_ids = seed_fixture(db)
+    (ra1, rb1), (ra2, rb2) = result_ids["sr-001"], result_ids["sr-002"]
+    seed_judgment(db, ra1, rb1, "a")                                   # judge-x / v1
+    seed_judgment(db, ra1, rb1, "b", judge_model="judge-y")            # v1
+    seed_judgment(db, ra2, rb2, "a", judge_model="judge-y",
+                  judge_template="blind-pair-v2")
+
+    base = (suite_id, "model-alpha", "model-beta")
+    all_gen = reports.pair_summary(db, *base)
+    assert all_gen["total"] == 3
+    assert all_gen["judges"] == ["judge-x", "judge-y"]
+    assert all_gen["templates"] == ["blind-pair-v1", "blind-pair-v2"]
+
+    y_only = reports.pair_summary(db, *base, judge_model="judge-y")
+    assert y_only["total"] == 2
+    assert y_only["overall"]["counts"] == {"a": 1, "b": 1, "tie": 0}
+    assert y_only["judges"] == ["judge-y"]
+    assert y_only["templates"] == ["blind-pair-v1", "blind-pair-v2"]
+
+    v2_only = reports.pair_summary(db, *base, judge_template="blind-pair-v2")
+    assert v2_only["total"] == 1
+    assert v2_only["overall"]["counts"] == {"a": 1, "b": 0, "tie": 0}
+    assert v2_only["templates"] == ["blind-pair-v2"]
+
+    both = reports.pair_summary(db, *base, judge_model="judge-y",
+                                judge_template="blind-pair-v2")
+    assert both["total"] == 1
+    assert both["overall"]["counts"] == {"a": 1, "b": 0, "tie": 0}
+
+    unknown_judge = reports.pair_summary(db, *base, judge_model="judge-z")
+    assert unknown_judge["total"] == 0
+    assert unknown_judge["rows"] == []
+
+
+def test_pair_summary_multiturn_rows_fold_into_base_dimension(db):
+    """'#t2' turn rows inherit the base item's dimension (no # rows leak)."""
+    suite_id, result_ids = seed_fixture(db)
+    seed_definition(db, suite_id, [{"id": "sr-001", "dimension": "reasoning"},
+                                   {"id": "sr-002", "dimension": "reasoning"},
+                                   {"id": "sr-003", "dimension": "writing"}])
+    ra_t2 = db.execute(
+        "INSERT INTO eval_results (suite_id, model_fingerprint, item_id, "
+        "output, prompt_tokens, completion_tokens, latency_ms, created_at) "
+        "VALUES (?, 'model-alpha', 'sr-001#t2', 'turn out', 20, 30, 1.0, 'now')",
+        (suite_id,)).lastrowid
+    rb_t2 = db.execute(
+        "INSERT INTO eval_results (suite_id, model_fingerprint, item_id, "
+        "output, prompt_tokens, completion_tokens, latency_ms, created_at) "
+        "VALUES (?, 'model-beta', 'sr-001#t2', 'turn out', 20, 30, 1.0, 'now')",
+        (suite_id,)).lastrowid
+    db.commit()
+    (ra1, rb1), (ra3, rb3) = result_ids["sr-001"], result_ids["sr-003"]
+    seed_judgment(db, ra1, rb1, "a")
+    seed_judgment(db, ra_t2, rb_t2, "b")
+    seed_judgment(db, ra3, rb3, "a")               # writing stays its own row
+
+    s = reports.pair_summary(db, suite_id, "model-alpha", "model-beta")
+    assert [r["dimension"] for r in s["rows"]] == ["reasoning", "writing"]
+    reasoning = s["rows"][0]
+    assert reasoning["n"] == 2                      # base + #t2 folded in
+    assert reasoning["counts"] == {"a": 1, "b": 1, "tie": 0}
+    assert s["rows"][1]["n"] == 1
+    assert all("#" not in r["dimension"] for r in s["rows"])
+
+
+def test_pair_summary_uncategorized_fallback(db):
+    """No definition snapshot -> every judgment lands in 'uncategorized'."""
+    suite_id, result_ids = seed_fixture(db)
+    (ra, rb) = result_ids["sr-001"]
+    seed_judgment(db, ra, rb, "a")
+
+    s = reports.pair_summary(db, suite_id, "model-alpha", "model-beta")
+    assert s["total"] == 1
+    assert [r["dimension"] for r in s["rows"]] == ["uncategorized"]
+    assert s["rows"][0]["counts"] == {"a": 1, "b": 0, "tie": 0}
+    assert s["overall"]["n"] == 1
+
+
+def test_pair_summary_empty_pair_honest(db):
+    """Unknown pair -> rows [], overall n=0, null percents, zero scores."""
+    suite_id, _ = seed_fixture(db)
+
+    s = reports.pair_summary(db, suite_id, "model-none", "model-other")
+    assert s["rows"] == []
+    assert s["total"] == 0
+    assert s["judges"] == []
+    assert s["templates"] == []
+    o = s["overall"]
+    assert o["dimension"] == "overall"
+    assert o["counts"] == {"a": 0, "b": 0, "tie": 0}
+    assert o["n"] == 0
+    assert o["percent"] == {"a": None, "b": None, "tie": None}
+    assert o["wilson_a"] is None
+    assert o["score_a"] == 0
+    assert o["score_b"] == 0
