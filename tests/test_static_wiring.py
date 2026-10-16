@@ -46,6 +46,13 @@ def test_nav_judgments_first_under_evals():
     assert evals_links, "Evals section must have sub-elements"
     assert evals_links[0] == "/judgments", (
         f"Judgments must be the FIRST Evals sub-element, got {evals_links}")
+    # The EVALS section tab itself lands on Judgments (owner call
+    # 2026-10-15: clicking 'Evals' defaults to the judging kick-off).
+    head = re.search(
+        r'<a class="nav-section-head" href="([^"]+)"'
+        r'[^>]*>Evals</a>', nav)
+    assert head and head.group(1) == "/judgments", (
+        "the Evals section tab must link to /judgments")
 
 
 def test_nav_pills_constant_across_pages(client):
