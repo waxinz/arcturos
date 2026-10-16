@@ -86,17 +86,34 @@ surface v1 does not accept.
   rows, so an order-flipped item contributes one win to each side (a tie in
   aggregate) instead of trusting a coin flip. Per-item disagreement is
   visible as the flip count.
-- The judge prompt template is versioned (`blind-pair-v2`) and
-  **dimension-aware**: the item's dimension selects a rubric paragraph
-  (correctness-first for reasoning/knowledge/coding; instruction-fidelity
-  for instruction-following; prose quality for writing; visual grounding
-  for vision; calibration for safety). Template version is stored on every
-  judgment row, so reports can scope to a generation.
+- The judge prompt template is versioned (`blind-pair-v2`, then
+  `blind-pair-v3`) and **dimension-aware**: the item's dimension selects a
+  rubric paragraph (correctness-first for reasoning/knowledge/coding;
+  instruction-fidelity for instruction-following; prose quality for
+  writing; visual grounding for vision; calibration for safety). Template
+  version is stored on every judgment row, so reports can scope to a
+  generation.
+- **v3 (first real run, kimi-k3, 2026-10-15): every verdict carries a
+  one-sentence reason.** v2 asked for "EXACTLY one line … nothing else",
+  and the judge obeyed — 91% of the 236 real judgments stored no
+  rationale at all. v3 requires `VERDICT: X` + `REASON: <one short
+  sentence>`; a verdict-only reply triggers exactly one cheap follow-up
+  call asking for the sentence (failure leaves rationale NULL — honest,
+  never fatal), and a bare verdict line no longer counts as a rationale.
+- **Truncation guard (first-run audit finding):** kimi's reasoning
+  chatter overran the 1024-token judge budget on ~9% of calls; those
+  replies were cut mid-deliberation and the bare-token fallback stored a
+  verdict the judge never concluded (safety-101#t3: both stored winners
+  contradicted the judge's own visible reasoning). Two fixes: judge
+  `max_tokens` default 1024 → 2048, and the final-mention bare token is
+  trusted ONLY when it ends the reply — a truncated reply returns None
+  and routes to the retry instead of storing a stray-token verdict.
 - Verdict parsing tolerates reasoning-model chatter: prefer a
-  `VERDICT: <1|2|tie>` line, fall back to the LAST bare 1/2/tie token.
-  Invalid verdicts retry per policy (default 1); after exhaustion they are
-  COUNTED in the job summary, never silently dropped, and never stored as
-  fabricated verdicts.
+  `VERDICT: <1|2|tie>` line, fall back to the LAST bare 1/2/tie token
+  (end-anchored per the truncation guard above). Invalid verdicts retry
+  per policy (default 1); after exhaustion they are COUNTED in the job
+  summary, never silently dropped, and never stored as fabricated
+  verdicts.
 - Judge model + judge URL come from the dispatch body with config fallback
   (`[eval] judge_url`, then legacy `[demo] judge_url`). The judge must not
   be a contestant: normalized fingerprints (server suffixes stripped, the
@@ -137,6 +154,13 @@ endpoint stays for scripted use.
 - Every win-rate surface (overall, per pair, per dimension) carries its n
   and a Wilson 95% score interval — closed-form, no bootstrap needed at
   this scale; small-n cells are already UX-tinted below n=20.
+- **Pair-scoped aggregation (v0.3):** `pair_summary` recomputes the same
+  per-dimension math for ONE suite × model pair (Arena-style score =
+  wins + ½ ties, 0–100, orientation normalized to the caller's
+  model_a/model_b), powering the category summary table that leads the
+  judgment-detail page; the per-item SxS rows remain below it as the
+  detail view. Column order on that page follows the kick-off's
+  `A:`/`B:` run naming (URL order as fallback).
 
 ## Rejected alternatives
 

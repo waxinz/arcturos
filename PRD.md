@@ -163,7 +163,9 @@ model must not be a contestant.)*
   table — Arena-style blind pairwise score = wins + ½ ties scaled 0–100,
   win/tie %, n, and a Wilson 95% CI on A's win share — served by
   `GET /api/judgments/pair/summary`; winner orientation is normalized to
-  the caller's model_a/model_b order. The per-item SxS rows stay below
+  the caller's model_a/model_b order. Column order follows the kick-off's
+  `A:`/`B:` run naming (A displays on the left; URL order is the
+  fallback). The per-item SxS rows stay below
   as the detail view.
 - **Judge template v3 — always capture a reason (v0.3, 2026-10-15):** the
   v2 prompt demanded "EXACTLY one line … nothing else", so 91% of real

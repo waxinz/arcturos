@@ -65,7 +65,7 @@ resume work.
   9 added (`test_reports.py` ×6, `test_evalviews.py` ×3) + pair-page
   contract markers.
 
-## 2026-10-15 (latest) — Combined kick-off: Judgements page runs evals + judging
+## 2026-10-15 — Combined kick-off: Judgements page runs evals + judging
 
 - **One kick-off surface:** `POST /api/ops/judge/jobs` accepts
   `target_a`/`target_b` ({url, model, api_key?}) plus optional
