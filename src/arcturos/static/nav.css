@@ -10,10 +10,16 @@
    container, not the paint:
 
      Row 1:  [A] Arcturos   |  BENCHMARKS  EVALS  SETTINGS  |  (☾)
-     Row 2:  Start  Compare            ← active section's pages only
+     Row 2:  Start  Compare | Judgments  Create  Run  Results  Reports | …
+             ← ALL page pills on EVERY page (2026-10-15: the owner found
+             the per-section swap inconsistent — the menu changed when
+             moving between pages. Row 2 is now one constant strip; thin
+             separators mark the section boundaries; the active section's
+             row-1 tab fills and the current page's pill fills.)
 
    - Top tabs: section heads; the ACTIVE section's head is filled.
-   - Sub-row pills: one section's pages; the current page is filled.
+   - Sub-row pills: ALL sections' pages, always visible (constant strip);
+     the current page's pill is filled.
    - Alignment: every row is one flex line with shared heights —
      nothing to overlap by construction.
    - Content takes the FULL viewport width; the table pages gain back
@@ -146,12 +152,14 @@ body.shell {
   font-weight: 700;
 }
 
-/* Hidden sections' pills: row 2 shows only the active section's pages.
-   nav.js tags matching pills .in-section; without JS row 2 is empty but
-   row 1's section tabs are real links (each to its section's first
-   page), so navigation still works. */
-.topnav-sub a { display: none; }
-.topnav-sub a.in-section { display: inline-flex; }
+/* Section boundaries inside the constant pill strip. */
+.topnav-sub .sub-sep {
+  flex: 0 0 auto;
+  width: 1px;
+  height: 18px;
+  margin: 0 .3rem;
+  background: var(--border);
+}
 
 /* ---------- theme toggle --------------------------------------------- */
 .sidebar-foot {
