@@ -26,6 +26,12 @@ resume work.
   `extract_verdict` now accepts the final-mention bare token ONLY when
   it ends the reply — a truncated reply returns None and routes to the
   retry instead of storing a stray-token winner.
+- **Deterministic scorer strips markdown emphasis (first-run audit
+  finding):** reasoning-005 — GLM answered '**Monopoly**' (correct) but
+  the one_of check accepted only bare 'monopoly', so the reference
+  score penalized formatting, not knowledge. `_normalize` now strips
+  `**`/`__`/backticks before exact/one_of comparison; report-time
+  rescoring applies it retroactively to all suites with no store touch.
 - **Pair SxS gets an Arena-style score card:** new
   `GET /api/judgments/pair/summary` (`reports.pair_summary`) aggregates
   one suite × model pair per dimension — score = wins + ½ ties 0–100,

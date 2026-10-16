@@ -163,6 +163,19 @@ def test_score_output_one_of():
     assert evals.score_output("maybe", ref)[0] is False
 
 
+def test_score_output_strips_markdown_emphasis():
+    """reasoning-005 lesson: '**Monopoly**' is a correct answer to a
+    one_of that accepts 'monopoly' — the scorer judges the words, not
+    the markdown wrapper."""
+    ref = {"check": "one_of", "values": ["monopoly"]}
+    assert evals.score_output("**Monopoly**", ref)[0] is True
+    ref2 = {"check": "exact", "value": "Monopoly"}
+    assert evals.score_output("**Monopoly**", ref2)[0] is True
+    assert evals.score_output("`Monopoly`", ref2)[0] is True
+    # emphasis is NOT itself part of the expected answer here
+    assert evals.score_output("Monopoly**Go**", ref2)[0] is False
+
+
 def test_score_output_regex():
     ref = {"check": "regex", "pattern": r"\d{1,3}(,\d{3})+"}
     assert evals.score_output("result: 1,024 tokens", ref)[0] is True
