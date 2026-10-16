@@ -162,6 +162,14 @@ def extract_verdict(raw: str) -> str | None:
     1/2/tie token anywhere in the text (final-mention convention —
     reasoning models restate their verdict at the end).
     Returns '1' | '2' | 'tie' or None when unparseable.
+
+    Truncation guard: with no VERDICT line, the last bare token is only
+    trusted when it sits at the very end of the reply. A reply cut off
+    mid-deliberation (kimi overrunning max_tokens — safety-101#t3 in the
+    first real run) leaves the 'token' as a stray mention like
+    "Response 1's" from the middle of the reasoning; returning None
+    routes to the retry instead of storing a verdict the judge never
+    reached.
     """
     if not raw:
         return None
@@ -169,8 +177,14 @@ def extract_verdict(raw: str) -> str | None:
     m = re.search(r"VERDICT\s*[:\-]?\s*(1|2|tie)", text, re.IGNORECASE)
     if m:
         return m.group(1).lower()
-    tokens = re.findall(r"(?<![\w.])(1|2|tie)(?![\w.])", text.lower())
-    return tokens[-1] if tokens else None
+    last = None
+    for t in re.finditer(r"(?<![\w.])(1|2|tie)(?![\w.])", text.lower()):
+        last = t
+    if last is None:
+        return None
+    if not re.fullmatch(r"[\s.,!?)\]:;\"']*", text[last.end():]):
+        return None
+    return last.group(1)
 
 
 def extract_reason(raw: str) -> str | None:
@@ -439,10 +453,15 @@ def judge_once(judge_url: str, judge_model: str, prompt_text: str,
                resp1: str, resp2: str, dimension: str | None,
                image_url: str | None = None,
                api_key: str | None = None,
-               max_tokens: int = 1024) -> dict[str, Any]:
+               max_tokens: int = 2048) -> dict[str, Any]:
     """One blind pairwise judge call. Returns a verdict dict:
     {valid, winner ('1'|'2'|'tie'), raw, rationale} — winner is in
-    PRESENTATION order (response 1 vs 2), mapped by the caller."""
+    PRESENTATION order (response 1 vs 2), mapped by the caller.
+
+    2048 default: chatty reasoning judges (kimi) overran 1024 in the
+    first real run — 9% of verdicts were truncated mid-deliberation and
+    parsed from stray tokens; the retry + truncation guard only help if
+    the reply has room to finish."""
     text = JUDGE_PROMPT_TEMPLATE.format(
         rubric=rubric_for(dimension), prompt=prompt_text,
         resp1=resp1 or "(empty)", resp2=resp2 or "(empty)")

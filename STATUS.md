@@ -16,6 +16,16 @@ resume work.
   rationale. `JUDGE_TEMPLATE_VERSION` → `blind-pair-v3` (generation
   scoping distinguishes old rows). Tests: 6 added
   (`test_eval_jobs.py` ×5, `test_judging.py` extensions ×2 updated).
+- **Truncation guard on verdict parsing (first-run audit finding):**
+  kimi's reasoning chatter overran the judge `max_tokens=1024` on ~9% of
+  the first real run's judgments — those replies were cut mid-
+  deliberation, never reached a VERDICT line, and the bare-token
+  fallback stored a verdict the judge never concluded (safety-101#t3:
+  both stored winners contradict the judges' own visible reasoning).
+  Fix: `judge_once` default max_tokens 1024 → 2048, and
+  `extract_verdict` now accepts the final-mention bare token ONLY when
+  it ends the reply — a truncated reply returns None and routes to the
+  retry instead of storing a stray-token winner.
 - **Pair SxS gets an Arena-style score card:** new
   `GET /api/judgments/pair/summary` (`reports.pair_summary`) aggregates
   one suite × model pair per dimension — score = wins + ½ ties 0–100,
