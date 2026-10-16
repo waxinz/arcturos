@@ -173,9 +173,22 @@ def validate_suite(suite: dict[str, Any]) -> list[dict[str, Any]]:
 
 # --------------------------------------------------- deterministic checks
 
+_MD_EMPHASIS_RE = re.compile(r"\*\*|__|`")
+
+
 def _normalize(text: str) -> str:
-    """Exact-match normalization: trim outer whitespace, casefold."""
-    return text.strip().casefold()
+    """Exact/one_of normalization: trim outer whitespace, casefold, and
+    strip markdown emphasis (**) and backticks.
+
+    The emphasis strip is the reasoning-005 lesson from the first real
+    run: GLM answered '**Monopoly**' — correct content, but the literal
+    asterisks failed a one_of check that accepted only bare 'monopoly'.
+    Models wrap answers in markdown emphasis far more often than an
+    emphasis character is itself the expected answer; the deterministic
+    scorer should judge the words, not the wrapper. (The qwen '\\n\\n'
+    preamble is already handled by strip.)
+    """
+    return _MD_EMPHASIS_RE.sub("", text).strip().casefold()
 
 
 # LAST number in the text (GSM8K convention: the final answer carries the
