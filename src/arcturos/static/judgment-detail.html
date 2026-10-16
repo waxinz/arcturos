@@ -197,17 +197,45 @@ function $(id) { return document.getElementById(id); }
       return div;
     }
 
+    async function displayOrder(suiteId, ma, mb) {
+      // Column order: the combined kick-off names its runs 'A: <model>'
+      // and 'B: <model>'. Honor that labeling over URL order so the page
+      // shows the run the operator kicked off as A on the LEFT. Falls
+      // back to URL order when the runs carry no A/B naming.
+      try {
+        const rr = await fetch('/api/eval-runs');
+        if (!rr.ok) return [ma, mb];
+        const runs = await rr.json();
+        const tagged = {};
+        for (const r of runs) {
+          if (r.suite_id !== Number(suiteId)) continue;
+          const m = /^([AB]):\s+(.+)$/.exec(r.name || '');
+          if (!m || String(r.model_fingerprint || '') !== m[2].trim()) continue;
+          if (!(r.model_fingerprint in tagged) || r.id > tagged[r.model_fingerprint].id) {
+            tagged[r.model_fingerprint] = { tag: m[1], id: r.id };
+          }
+        }
+        const ta = tagged[ma];
+        const tb = tagged[mb];
+        if (ta && tb && ta.tag !== tb.tag && ta.tag === 'B') return [mb, ma];
+        return [ma, mb];
+      } catch (err) {
+        return [ma, mb];
+      }
+    }
+
     async function load() {
       const q = new URLSearchParams(location.search);
       const suiteId = q.get('suite_id');
-      const ma = q.get('model_a') || '';
-      const mb = q.get('model_b') || '';
+      let ma = q.get('model_a') || '';
+      let mb = q.get('model_b') || '';
       if (!suiteId || !ma || !mb) {
         $('items').innerHTML = '<p class="empty">Need ?suite_id=&model_a=&model_b= ' +
           '(select two runs on the Results page).</p>';
         return;
       }
       try {
+        [ma, mb] = await displayOrder(suiteId, ma, mb);
         const pairQs = 'suite_id=' + suiteId +
                        '&model_a=' + encodeURIComponent(ma) +
                        '&model_b=' + encodeURIComponent(mb);
@@ -230,16 +258,20 @@ function $(id) { return document.getElementById(id); }
             '“Judgements”.</p>';
           return;
         }
+        // Rows are stored canonically (fingerprint_a = slot A); map the
+        // aggregate counts onto the DISPLAY order chosen above.
         const counts = {a: 0, b: 0, tie: 0};
         for (const r of rows) counts[r.winner] = (counts[r.winner] || 0) + 1;
-        // Column labels: use the row-stored fingerprints (stable across orders).
+        const leftIsA = rows[0].fingerprint_a === ma;
+        const winsLeft = leftIsA ? counts.a : counts.b;
+        const winsRight = leftIsA ? counts.b : counts.a;
         $('meta').innerHTML =
           '<span><b>Suite</b> #' + suiteId + '</span>' +
           '<span><b>Items judged</b> ' + rows.length + '</span>' +
-          '<span><b>' + rows[0].fingerprint_a + ' wins</b> ' + counts.a + '</span>' +
-          '<span><b>' + rows[0].fingerprint_b + ' wins</b> ' + counts.b + '</span>' +
+          '<span><b>' + esc(ma) + ' wins</b> ' + winsLeft + '</span>' +
+          '<span><b>' + esc(mb) + ' wins</b> ' + winsRight + '</span>' +
           '<span><b>Ties</b> ' + (counts.tie || 0) + '</span>' +
-          '<span><b>Judge</b> ' + rows[0].judge_model + '</span>';
+          '<span><b>Judge</b> ' + esc(rows[0].judge_model) + '</span>';
         const box = $('items');
         box.innerHTML = '';
         let lastItem = null;
@@ -254,7 +286,10 @@ function $(id) { return document.getElementById(id); }
           }
           const sxs = document.createElement('div');
           sxs.className = 'sxs';
-          sxs.append(respCard(row, 'a'), respCard(row, 'b'));
+          // detail cards follow the same display order as the summary
+          const firstSlot = row.fingerprint_a === ma ? 'a' : 'b';
+          const secondSlot = firstSlot === 'a' ? 'b' : 'a';
+          sxs.append(respCard(row, firstSlot), respCard(row, secondSlot));
           box.append(sxs, verdictCard(row));
         }
         $('status').textContent = rows.length + ' judgment row(s) — both presentation ' +

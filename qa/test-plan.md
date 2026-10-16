@@ -61,6 +61,7 @@ Rules:
 - [x] `tests/test_evalviews.py::test_pair_summary_endpoint_caller_orientation` — GET /api/judgments/pair/summary: caller-orientation through HTTP ('a' = caller's model_a won), 404-free shape with judges/templates lists
 - [x] `tests/test_evalviews.py::test_pair_summary_endpoint_404_and_empty_pair` — unknown suite → 404 (require_parent); unjudged pair → 200 with honest empty summary
 - [x] Page contract: `tests/test_evalviews.py::test_pair_page_has_category_summary` + `tests/test_eval_runs_api.py::test_drilldown_pages_carry_shell_identity` pin `id="jsum"` + 'Category summary' on /judgments/pair
+- [x] Column order honors the kick-off's run naming (live check): the page reads `/api/eval-runs`, maps each URL fingerprint to its newest `A:`/`B:`-prefixed run on that suite, and displays A on the LEFT (URL order as fallback) — applied to the summary table, the meta win counts, and the detail SxS cards below
 
 ### J4 — Judge template v3 — mandatory one-sentence reason (added 2026-10-15)
 - [x] `tests/test_eval_jobs.py::test_extract_reason_cases` — REASON parse: present / absent / whitespace collapse / 300-char cap with ellipsis
