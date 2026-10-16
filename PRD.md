@@ -158,16 +158,32 @@ model must not be a contestant.)*
   → replay B → judging, live per-stage progress, one Stop that preserves
   completed work). Leaving the URLs blank keeps the stored-results
   judging path (model names only). API keys never echo on job records.
+- **Pair page category summary (v0.3, 2026-10-15):** the judgment detail
+  page (`/judgments/pair`) leads with a per-dimension category summary
+  table — Arena-style blind pairwise score = wins + ½ ties scaled 0–100,
+  win/tie %, n, and a Wilson 95% CI on A's win share — served by
+  `GET /api/judgments/pair/summary`; winner orientation is normalized to
+  the caller's model_a/model_b order. The per-item SxS rows stay below
+  as the detail view.
+- **Judge template v3 — always capture a reason (v0.3, 2026-10-15):** the
+  v2 prompt demanded "EXACTLY one line … nothing else", so 91% of real
+  judgments stored a bare `VERDICT: X` with no rationale. v3 requires
+  `VERDICT: X` + `REASON: <one short sentence>`; a verdict-only reply
+  triggers exactly one cheap follow-up asking for the sentence (failure
+  leaves rationale NULL — honest, never fatal), and a bare verdict line
+  no longer counts as a rationale. `JUDGE_TEMPLATE_VERSION` bumped to
+  `blind-pair-v3` so reports can scope generations.
 
 **Acceptance criteria**
 - [x] Blind randomized pairwise judging (v0.1, scripts/ab_judge.py — API still valid).
 - [x] Judgment records link eval item + both model result IDs + judge template version + judge model.
 - [x] Every item judged in both response orders; both judgments stored (position swap; the swap changes what the judge SEES).
-- [x] Dimension rubrics in the judge template; rubric selection driven by item dimension (blind-pair-v2).
+- [x] Dimension rubrics in the judge template; rubric selection driven by item dimension (blind-pair-v2; v3 adds a mandatory one-sentence REASON with a follow-up nudge for verdict-only replies).
 - [x] In-process judge jobs: live progress, operator stop, invalid-verdict retry policy (`POST /api/ops/judge/jobs`).
 - [x] Judge-not-contestant enforced at the dispatch boundary (normalized fingerprints; substring match trips).
 - [x] Combined kick-off (`target_a`/`target_b`): one staged job replays both models from the definition snapshot, then judges the two fresh runs; staged progress + operator stop; API keys stay off the job record (v0.3).
 - [x] Vision items carry the image into the judge payload (image_url content part).
+- [x] Pair page leads with a per-dimension category summary (Arena-style score = wins + ½ ties 0–100, win/tie %, n, Wilson 95% CI on A win share); per-item details below (v0.3).
 
 ### J5 — Eval performance reports
 **Actor:** P2 · **Goal:** report how eval suites performed on models, e.g.

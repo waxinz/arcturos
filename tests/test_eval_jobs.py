@@ -1,6 +1,7 @@
 """API-level tests for the v0.2 async eval + judge job endpoints."""
 
 import json
+import random
 import time
 
 import pytest
@@ -331,3 +332,85 @@ def test_combined_job_replay_failure_is_honest(client, monkeypatch):
     conn = dbmod.connect(db_path)
     assert conn.execute("SELECT COUNT(*) FROM judgments").fetchone()[0] == 0
     conn.close()
+
+
+# ----------------------------------------------- v3 REASON enforcement ----
+
+def test_extract_reason_cases():
+    assert judging.extract_reason(
+        "VERDICT: 1\nREASON: response 1 matched the reference exactly") == \
+        "response 1 matched the reference exactly"
+    assert judging.extract_reason("VERDICT: 1") is None
+    assert judging.extract_reason("") is None
+    assert judging.extract_reason(
+        "reason:   collapsed   space ") == "collapsed space"
+    long = "word " * 80
+    out = judging.extract_reason(f"REASON: {long}")
+    assert out is not None and len(out) <= 301 and out.endswith("…")
+
+
+def test_judge_prompt_demands_reason():
+    assert "REASON:" in judging.JUDGE_PROMPT_TEMPLATE
+    assert judging.JUDGE_TEMPLATE_VERSION == "blind-pair-v3"
+
+
+def test_extract_rationale_bare_verdict_is_none():
+    assert judging.extract_rationale("VERDICT: 1") is None
+    assert judging.extract_rationale("verdict: tie") is None
+    assert judging.extract_rationale("VERDICT: 1\nConfidence: high") == \
+        "Confidence: high"
+    assert judging.extract_rationale("VERDICT: 1\nREASON: concise") == \
+        "concise"
+
+
+def _work_item():
+    return {
+        "base_id": "q1", "turn_index": 0, "dimension": "accuracy",
+        "is_multiturn": False,
+        "item": {"id": "q1", "prompt": "What is 2+2?"},
+        "out_a": "alpha output", "out_b": "beta output",
+        "result_a": {"id": 11}, "result_b": {"id": 12},
+    }
+
+
+def test_judge_item_followup_captures_reason(monkeypatch):
+    """Verdict-only reply -> one supplemental call stores the sentence."""
+    seen = []
+
+    def fake_post(url, payload, api_key=None):
+        seen.append(payload["messages"][0]["content"])
+        if "A blind judge compared" in payload["messages"][0]["content"]:
+            return {"choices": [{"message": {
+                "content": "REASON: response 1 matched the reference"}}]}
+        return {"choices": [{"message": {"content": "VERDICT: 1"}}]}
+
+    monkeypatch.setattr(judging, "_post_chat", fake_post)
+    judgments, errors, rows = judging.judge_item(
+        _work_item(), "http://judge:9/v1", "kimi-k3", retries=1,
+        rng=random.Random(1))
+    assert not errors
+    assert len(judgments) == 2
+    assert all(j["judge_template_version"] == "blind-pair-v3"
+               for j in judgments)
+    assert all(j["rationale"] == "response 1 matched the reference"
+               for j in judgments)
+    # the follow-up fired once per order (2 verdict-only replies)
+    followups = [c for c in seen if "A blind judge compared" in c]
+    assert len(followups) == 2
+
+
+def test_judge_item_followup_failure_stays_valid(monkeypatch):
+    """Follow-up exploding must NOT fail an already-valid judgment."""
+    def fake_post(url, payload, api_key=None):
+        if "A blind judge compared" in payload["messages"][0]["content"]:
+            raise RuntimeError("follow-up upstream down")
+        return {"choices": [{"message": {"content": "VERDICT: tie"}}]}
+
+    monkeypatch.setattr(judging, "_post_chat", fake_post)
+    judgments, errors, rows = judging.judge_item(
+        _work_item(), "http://judge:9/v1", "kimi-k3", retries=0,
+        rng=random.Random(1))
+    assert not errors
+    assert len(judgments) == 2
+    assert all(j["winner"] == "tie" for j in judgments)
+    assert all(j["rationale"] is None for j in judgments)

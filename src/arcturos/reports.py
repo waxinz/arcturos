@@ -338,6 +338,99 @@ def suite_report(db: sqlite3.Connection, suite_id: int,
     }
 
 
+def pair_summary(db: sqlite3.Connection, suite_id: int, model_a: str,
+                 model_b: str, judge_model: str | None = None,
+                 judge_template: str | None = None) -> dict[str, Any]:
+    """Per-dimension win-rate summary for ONE suite x model pair.
+
+    Pair-page lens over the same judgment scope as /api/judgments/pair:
+    rows aggregate by the base item's dimension (multi-turn '#tN' rows
+    fold into the base item; absent metadata -> 'uncategorized').
+
+    Orientation is normalized to the CALLER's order: the stored winner is
+    relative to the canonical eval_result_a/b columns, so when the row's
+    fingerprint_a is not the caller's ``model_a`` the verdict is flipped
+    ('a'<->'b', ties stay ties). In the response, 'a' ALWAYS means the
+    caller's model_a won — calling with the pair swapped mirrors the
+    a/b columns, it never changes n, ties, or the row set.
+
+    ``judge_model`` / ``judge_template`` scope the aggregate to ONE judge
+    generation when truthy (either field alone filters on that field).
+    Unknown pair -> honest empty: rows [], overall n=0 (no fabricated
+    numbers). The Wilson 95% interval applies to model a's win share.
+
+    Returns {"suite_id", "model_a", "model_b", "judges", "templates",
+             "total", "rows", "overall"}; rows sorted n desc then
+             dimension name asc.
+    """
+    sql = """SELECT j.winner, j.judge_model,
+                    j.judge_template_version AS template,
+                    ra.model_fingerprint AS fa, rb.model_fingerprint AS fb,
+                    ra.item_id AS item_id
+             FROM judgments j
+             JOIN eval_results ra ON ra.id = j.eval_result_a
+             JOIN eval_results rb ON rb.id = j.eval_result_b
+             WHERE ra.suite_id = ?
+               AND ((ra.model_fingerprint = ? AND rb.model_fingerprint = ?)
+                 OR (ra.model_fingerprint = ? AND rb.model_fingerprint = ?))"""
+    params: list[Any] = [suite_id, model_a, model_b, model_b, model_a]
+    if judge_model:
+        sql += " AND j.judge_model = ?"
+        params.append(judge_model)
+    if judge_template:
+        sql += " AND j.judge_template_version = ?"
+        params.append(judge_template)
+    rows = _fetch(db, sql, tuple(params))
+    metadata = metadata_map_for(db, suite_id)
+
+    flip = {"a": "b", "b": "a"}
+    overall = {"a": 0, "b": 0, "tie": 0}
+    per_dim: dict[str, dict[str, int]] = {}
+    judges: set[str] = set()
+    templates: set[str] = set()
+    for r in rows:
+        winner: str = r["winner"]
+        if r["fa"] != model_a:  # stored canonical order != caller order
+            winner = flip.get(winner, winner)
+        winner = winner if winner in ("a", "b", "tie") else "tie"
+        dimension = (metadata.get(r["item_id"].split("#")[0], {})
+                     ).get("dimension", "uncategorized")
+        bucket = per_dim.setdefault(dimension, {"a": 0, "b": 0, "tie": 0})
+        bucket[winner] += 1
+        overall[winner] += 1
+        judges.add(r["judge_model"])
+        templates.add(r["template"])
+
+    def _row(dimension: str, counts: dict[str, int]) -> dict[str, Any]:
+        n = counts["a"] + counts["b"] + counts["tie"]
+        return {
+            "dimension": dimension,
+            "counts": dict(counts),
+            "percent": {k: (round(counts[k] / n * 100, 1) if n else None)
+                        for k in ("a", "b", "tie")},
+            "n": n,
+            "wilson_a": wilson_interval(counts["a"] / n if n else None, n),
+            "score_a": round(100 * (counts["a"] + 0.5 * counts["tie"]) / n, 1)
+                       if n else 0,
+            "score_b": round(100 * (counts["b"] + 0.5 * counts["tie"]) / n, 1)
+                       if n else 0,
+        }
+
+    dim_rows = [ _row(d, c) for d, c in
+                 sorted(per_dim.items(), key=lambda kv: (-sum(kv[1].values()), kv[0])) ]
+    overall_row = _row("overall", overall)
+    return {
+        "suite_id": suite_id,
+        "model_a": model_a,
+        "model_b": model_b,
+        "judges": sorted(judges),
+        "templates": sorted(templates),
+        "total": overall_row["n"],
+        "rows": dim_rows,
+        "overall": overall_row,
+    }
+
+
 def export_report_csv(report: dict[str, Any]) -> str:
     """CSV lines: suite-level pair win rates. Header row included."""
     import csv

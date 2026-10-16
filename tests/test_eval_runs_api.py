@@ -230,3 +230,6 @@ def test_drilldown_pages_carry_shell_identity(client):
     assert jp.status_code == 200
     assert 'data-page="jpair"' in jp.text
     assert 'class="topnav"' in jp.text
+    # category summary card (leads the page, above the meta strip)
+    assert 'id="jsum"' in jp.text
+    assert "Category summary" in jp.text

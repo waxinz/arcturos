@@ -164,7 +164,9 @@ def test_judge_item_both_orders_stored_with_remap(monkeypatch):
     def fake_post(url, payload, api_key=None):
         calls.append(payload)
         # The judge always prefers response 2 regardless of presentation.
-        return _judge_resp("VERDICT: 2")
+        # v3-style two-line reply: with a REASON present the follow-up
+        # nudge must NOT fire (asserted below — exactly 2 calls).
+        return _judge_resp("VERDICT: 2\nREASON: response 2 was sharper")
 
     monkeypatch.setattr(judging, "_post_chat", fake_post)
     work_item = {
@@ -194,6 +196,8 @@ def test_judge_item_both_orders_stored_with_remap(monkeypatch):
     assert {j["winner"] for j in judgments} == {"a", "b"}
     assert all(j["judge_template_version"] == judging.JUDGE_TEMPLATE_VERSION
                for j in judgments)
+    # v3: the REASON line is captured verbatim as the stored rationale
+    assert all(j["rationale"] == "response 2 was sharper" for j in judgments)
     assert sorted(r["order"] for r in rows) == ["a→b", "b→a"]
     # progress verdicts match the judgments' winners as a set
     assert {r["verdict"] for r in rows} == {"a", "b"}
@@ -203,6 +207,10 @@ def test_judge_item_tie_and_invalid_verdict_retry(monkeypatch):
     seq = ["garbage without a verdict", "still nothing", "VERDICT: tie"]
 
     def fake_post(url, payload, api_key=None):
+        if not seq:
+            # v3 follow-up nudge for the bare "VERDICT: tie" — reply with
+            # a reason so the nudge path terminates cleanly.
+            return _judge_resp("REASON: neither response stood out")
         return _judge_resp(seq.pop(0))
 
     monkeypatch.setattr(judging, "_post_chat", fake_post)

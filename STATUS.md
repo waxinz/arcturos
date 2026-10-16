@@ -5,6 +5,29 @@ stays the conventions/ground-truth file; this file is the living status).
 Newest first. Read AGENTS.md first for conventions; read this file to
 resume work.
 
+## 2026-10-15 — Pair page leads with a per-dimension category summary
+
+- **Judge template v3 — verdicts always carry a reason:** the v2 prompt
+  said "EXACTLY one line … nothing else", so the first real run (kimi-k3,
+  236 judgments) stored 91% bare verdicts. v3 demands `VERDICT: X` +
+  `REASON: <one short sentence>`; verdict-only replies get exactly one
+  `_reason_followup` nudge (failure → rationale NULL, judgment stays
+  valid); `extract_rationale` no longer counts a bare verdict as a
+  rationale. `JUDGE_TEMPLATE_VERSION` → `blind-pair-v3` (generation
+  scoping distinguishes old rows). Tests: 6 added
+  (`test_eval_jobs.py` ×5, `test_judging.py` extensions ×2 updated).
+- **Pair SxS gets an Arena-style score card:** new
+  `GET /api/judgments/pair/summary` (`reports.pair_summary`) aggregates
+  one suite × model pair per dimension — score = wins + ½ ties 0–100,
+  win/tie %, n, Wilson 95% CI on A's win share, rows sorted n desc —
+  with winner orientation normalized to the caller's model_a/model_b
+  order and honest empties for unknown pairs; judgment-detail.html
+  renders it above the meta strip (table ≥721px, tile grid ≤720px,
+  zero page overflow at 390px, graceful hide when the summary is
+  empty/404) while the per-item SxS list stays unchanged below. Tests:
+  9 added (`test_reports.py` ×6, `test_evalviews.py` ×3) + pair-page
+  contract markers.
+
 ## 2026-10-15 (latest) — Combined kick-off: Judgements page runs evals + judging
 
 - **One kick-off surface:** `POST /api/ops/judge/jobs` accepts

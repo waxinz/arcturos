@@ -39,6 +39,39 @@
     .empty { color: var(--text-muted); padding: 2rem 0; }
     .tie-tag { color: var(--text-muted); font-weight: 800; font-size: .74rem;
                text-transform: uppercase; letter-spacing: .06em; }
+    /* category summary card — leads the page, SxS details stay below */
+    .jsum { background: var(--surface); border: 1px solid var(--border);
+            border-radius: 6px; padding: .7rem .8rem; margin: 0 0 1.1rem; }
+    #jsum[hidden] { display: none; }
+    .jsum h3 { margin: 0 0 .1rem; font-size: .9rem; }
+    .jsum-cap { margin: 0 0 .55rem; color: var(--text-muted); font-size: .73rem; }
+    .jsum .table-wrap { overflow-x: auto; }
+    .jsum table { width: 100%; border-collapse: collapse; font-size: .8rem; }
+    .jsum th, .jsum td { text-align: left; padding: .28rem .5rem;
+                         border-bottom: 1px solid var(--border); }
+    .jsum tbody tr:last-child td { border-bottom: 0; }
+    .jsum th { color: var(--text-muted); font-weight: 600; font-size: .73rem; }
+    .jsum th.num, .jsum td.num { text-align: right; }
+    .jsum .score { font-weight: 700; }
+    .jsum td.winner .score { color: var(--accent); }
+    .jsum .sub { display: block; color: var(--text-muted); font-size: .7rem;
+                 font-weight: 400; }
+    .jsum tbody tr.total td { font-weight: 700; }
+    .jsum tbody tr.total td .sub { font-weight: 400; }
+    .jsum-tiles { display: none; grid-template-columns: 1fr 1fr; gap: .5rem; }
+    .jsum-tile { border: 1px solid var(--border); border-radius: 6px;
+                 padding: .45rem .55rem; min-width: 0; }
+    .jsum-tile .t-name { font-weight: 700; font-size: .76rem; margin: 0 0 .2rem;
+                         word-break: break-word; }
+    .jsum-tile .t-line { display: flex; flex-wrap: wrap; gap: .15rem .45rem;
+                         font-size: .76rem; }
+    .jsum-tile .t-vs { color: var(--text-muted); }
+    .jsum-tile .t-win { color: var(--accent); font-weight: 700; }
+    .jsum-tile .t-sub { color: var(--text-muted); font-size: .7rem; margin-top: .15rem; }
+    @media (max-width: 720px) {
+      .jsum .table-wrap { display: none; }   /* desktop table stays ≥721px */
+      .jsum-tiles { display: grid; }
+    }
   </style>
   <script src="/static/app-time.js"></script>
   <script src="/static/theme.js"></script>
@@ -50,6 +83,12 @@
   <main class="page">
     <h1>Judgment details</h1>
     <p class="page-sub" id="sub">Side-by-side responses with the judge's verdict per item.</p>
+    <section id="jsum" class="jsum" hidden>
+      <h3>Category summary</h3>
+      <p class="jsum-cap">Blind pairwise score = wins + ½ ties, scaled 0–100 · n per category</p>
+      <div class="table-wrap"></div>
+      <div class="jsum-tiles"></div>
+    </section>
     <div class="meta" id="meta"></div>
     <div id="items"><p class="empty">Loading…</p></div>
     <p id="status" class="status"></p>
@@ -76,6 +115,59 @@ function $(id) { return document.getElementById(id); }
         (out === null || out === undefined || out === '')
           ? '(empty output stored)' : out;
       return div;
+    }
+
+    function esc(s) {
+      return String(s).replace(/[&<>"']/g,
+        c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;',
+               "'": '&#39;'}[c]));
+    }
+
+    function shortFp(fp) {
+      fp = String(fp || '');
+      return fp.length > 18 ? fp.slice(0, 17) + '…' : fp;
+    }
+
+    function ciTitle(wilson) {
+      // wilson_a is [lo, hi] in percent units (null when n = 0)
+      return wilson ? 'Wilson 95%: ' + wilson[0] + '–' + wilson[1] + '%' : '';
+    }
+
+    function renderSummary(sum) {
+      const card = $('jsum');
+      if (!sum || !sum.total) { card.hidden = true; return; }
+      const ma = shortFp(sum.model_a), mb = shortFp(sum.model_b);
+      const rows = [sum.overall].concat(sum.rows || []);
+      let trs = '';
+      let tiles = '';
+      for (const r of rows) {
+        const isTotal = r.dimension === 'overall';
+        const winA = r.score_a > r.score_b, winB = r.score_b > r.score_a;
+        const wil = esc(ciTitle(r.wilson_a));
+        trs += '<tr' + (isTotal ? ' class="total"' : '') + '>' +
+          '<td>' + esc(r.dimension) + '</td>' +
+          '<td' + (winA ? ' class="winner"' : '') + '>' +
+            '<span class="score" title="' + wil + '">' + r.score_a + '</span>' +
+            '<span class="sub">win ' + r.percent.a + '% · tie ' + r.percent.tie + '%</span></td>' +
+          '<td' + (winB ? ' class="winner"' : '') + '>' +
+            '<span class="score" title="' + wil + '">' + r.score_b + '</span>' +
+            '<span class="sub">win ' + r.percent.b + '% · tie ' + r.percent.tie + '%</span></td>' +
+          '<td class="num">' + r.n + '</td></tr>';
+        tiles += '<div class="jsum-tile">' +
+          '<div class="t-name">' + esc(r.dimension) + '</div>' +
+          '<div class="t-line">' +
+            '<span class="' + (winA ? 't-win' : 't-side') + '">' + esc(ma) + ': ' + r.score_a + '</span>' +
+            '<span class="t-vs">vs</span>' +
+            '<span class="' + (winB ? 't-win' : 't-side') + '">' + esc(mb) + ': ' + r.score_b + '</span>' +
+          '</div>' +
+          '<div class="t-sub">n ' + r.n + '</div></div>';
+      }
+      card.querySelector('.table-wrap').innerHTML =
+        '<table><thead><tr><th>Category</th><th>' + esc(ma) + '</th><th>' +
+        esc(mb) + '</th><th class="num">Judged</th></tr></thead><tbody>' +
+        trs + '</tbody></table>';
+      card.querySelector('.jsum-tiles').innerHTML = tiles;
+      card.hidden = false;
     }
 
     function verdictCard(row) {
@@ -116,11 +208,22 @@ function $(id) { return document.getElementById(id); }
         return;
       }
       try {
-        const res = await fetch('/api/judgments/pair?suite_id=' + suiteId +
-                                '&model_a=' + encodeURIComponent(ma) +
-                                '&model_b=' + encodeURIComponent(mb));
+        const pairQs = 'suite_id=' + suiteId +
+                       '&model_a=' + encodeURIComponent(ma) +
+                       '&model_b=' + encodeURIComponent(mb);
+        // summary + rows in parallel; the summary card is optional — a
+        // failed/404 summary just leaves the page with the existing UI.
+        const [res, sumRes] = await Promise.all([
+          fetch('/api/judgments/pair?' + pairQs),
+          fetch('/api/judgments/pair/summary?' + pairQs).catch(() => null),
+        ]);
         if (!res.ok) throw new Error('HTTP ' + res.status + ': ' + await res.text());
         const rows = await res.json();
+        if (sumRes && sumRes.ok) {
+          renderSummary(await sumRes.json());
+        } else {
+          $('jsum').hidden = true;
+        }
         if (!rows.length) {
           $('items').innerHTML = '<p class="empty">No judgments for this pair yet. ' +
             'Select the two runs on the <a href="/evals">Results</a> page and press ' +

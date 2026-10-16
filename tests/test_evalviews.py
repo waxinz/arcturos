@@ -86,6 +86,15 @@ def test_reports_view_contract(client):
     assert "/api/reports/suite/" in text       # suite selector -> report fetch
 
 
+def test_pair_page_has_category_summary(client):
+    # Pair page (data-page jpair) leads with the per-category summary card;
+    # the card hides itself when the summary endpoint has nothing to show.
+    text = client.get("/judgments/pair").text
+    assert 'id="jsum"' in text
+    assert "Category summary" in text
+    assert "Blind pairwise score" in text
+
+
 def test_nav_links_in_shared_views(client):
     # 2026-10-11 top-nav round: the rail became a two-level top bar.
     # Every page still carries the three section identities and the
@@ -231,3 +240,88 @@ def test_suite_report_empty_suite(client):
     assert report["overall"]["counts"] == {"a": 0, "b": 0, "tie": 0}
     assert report["overall"]["percent"] == {"a": None, "b": None, "tie": None}
     assert report["pairs"] == []
+
+
+# --------------------------------------- pair summary endpoint --------------
+
+
+def _seed_pair_summary_suite(client) -> int:
+    """One suite, two models x two items, BOTH judgments favor model-alpha."""
+    suite = client.post("/api/eval-suites", json={"name": "pairsum", "version": "v1"})
+    assert suite.status_code == 201, suite.text
+    suite_id = suite.json()["id"]
+    ids: list[int] = []
+    for item_id in ("sr-001", "sr-002"):
+        for fp in ("model-alpha", "model-beta"):
+            r = client.post(
+                f"/api/eval-suites/{suite_id}/results",
+                json={
+                    "model_fingerprint": fp,
+                    "item_id": item_id,
+                    "output": f"{fp} answer for {item_id}",
+                    "prompt_tokens": 20,
+                    "completion_tokens": 30,
+                    "latency_ms": 100.0,
+                },
+            )
+            assert r.status_code == 201, r.text
+            ids.append(r.json()["id"])
+    # ids order: [alpha sr-001, beta sr-001, alpha sr-002, beta sr-002]
+    for ra, rb in ((ids[0], ids[1]), (ids[2], ids[3])):
+        j = client.post(
+            "/api/judgments",
+            json={
+                "eval_result_a": ra, "eval_result_b": rb,
+                "judge_model": "judge-x", "judge_template_version": "blind-pair-v1",
+                "winner": "a", "confidence": 0.9,
+            },
+        )
+        assert j.status_code == 201, j.text
+    return suite_id
+
+
+def test_pair_summary_endpoint_caller_orientation(client):
+    # 'a' in the response ALWAYS means the caller's model_a won, whatever
+    # canonical order the judgment rows were stored in.
+    suite_id = _seed_pair_summary_suite(client)
+    res = client.get("/api/judgments/pair/summary", params={
+        "suite_id": suite_id, "model_a": "model-alpha", "model_b": "model-beta"})
+    assert res.status_code == 200, res.text
+    s = res.json()
+    assert s["total"] == 2
+    assert s["overall"]["counts"] == {"a": 2, "b": 0, "tie": 0}
+    assert s["overall"]["score_a"] == 100.0
+    assert s["overall"]["score_b"] == 0.0
+    assert s["overall"]["wilson_a"] is not None
+    assert s["rows"] and s["rows"][0]["dimension"] == "uncategorized"
+    assert s["judges"] == ["judge-x"]
+    assert s["templates"] == ["blind-pair-v1"]
+
+    # swapped call mirrors the a/b columns; totals/ties/rows never move
+    rev = client.get("/api/judgments/pair/summary", params={
+        "suite_id": suite_id, "model_a": "model-beta", "model_b": "model-alpha"})
+    assert rev.status_code == 200, rev.text
+    r = rev.json()
+    assert r["total"] == 2
+    assert r["overall"]["counts"] == {"a": 0, "b": 2, "tie": 0}
+    assert r["overall"]["score_a"] == 0.0
+    assert r["overall"]["score_b"] == 100.0
+    assert [row["dimension"] for row in r["rows"]] == \
+        [row["dimension"] for row in s["rows"]]
+
+
+def test_pair_summary_endpoint_404_and_empty_pair(client):
+    # unknown suite -> 404 (require_parent, same as the rows endpoint)
+    res = client.get("/api/judgments/pair/summary", params={
+        "suite_id": 999, "model_a": "a", "model_b": "b"})
+    assert res.status_code == 404
+    # known suite, unjudged pair -> honest empty summary
+    suite = client.post("/api/eval-suites", json={"name": "empty", "version": "v1"})
+    empty_id = suite.json()["id"]
+    res = client.get("/api/judgments/pair/summary", params={
+        "suite_id": empty_id, "model_a": "model-alpha", "model_b": "model-beta"})
+    assert res.status_code == 200, res.text
+    s = res.json()
+    assert s["rows"] == []
+    assert s["total"] == 0
+    assert s["overall"]["percent"] == {"a": None, "b": None, "tie": None}
