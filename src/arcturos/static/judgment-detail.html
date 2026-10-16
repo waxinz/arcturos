@@ -210,7 +210,10 @@ function $(id) { return document.getElementById(id); }
         for (const r of runs) {
           if (r.suite_id !== Number(suiteId)) continue;
           const m = /^([AB]):\s+(.+)$/.exec(r.name || '');
-          if (!m || String(r.model_fingerprint || '') !== m[2].trim()) continue;
+          if (!m) continue;
+          // the name segment is '<model> (judgements kick-off)' — a
+          // contains-match is the robust check (suffix-tolerant)
+          if (m[2].indexOf(String(r.model_fingerprint || '')) === -1) continue;
           if (!(r.model_fingerprint in tagged) || r.id > tagged[r.model_fingerprint].id) {
             tagged[r.model_fingerprint] = { tag: m[1], id: r.id };
           }
