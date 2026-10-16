@@ -7,6 +7,13 @@ resume work.
 
 ## 2026-10-15 — Pair page leads with a per-dimension category summary
 
+- **Column order follows the kick-off's A/B run naming:** the pair page
+  resolves each URL fingerprint to its newest `A:`/`B:`-prefixed run on
+  the suite and displays A on the LEFT — even when the URL's
+  model_a/model_b order says otherwise (URL order stays the fallback
+  for unnamed runs). Applied to the summary table columns, the meta
+  win counts, and the per-item SxS cards.
+
 - **Judge template v3 — verdicts always carry a reason:** the v2 prompt
   said "EXACTLY one line … nothing else", so the first real run (kimi-k3,
   236 judgments) stored 91% bare verdicts. v3 demands `VERDICT: X` +
