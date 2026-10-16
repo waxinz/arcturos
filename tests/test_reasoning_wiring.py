@@ -25,6 +25,7 @@ from arcturos.main import create_app
 @pytest.mark.parametrize("effort,budget", [
     (None, None), ("minimal", None), ("high", None), (None, 2048),
     ("low", 512), ("medium", 1), ("high", 32768),
+    ("xhigh", None), ("max", 512),
 ])
 def test_validate_reasoning_accepts_valid(effort, budget):
     eff, bud = mt.validate_reasoning(effort, budget)

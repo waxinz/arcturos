@@ -1088,7 +1088,7 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
         target_a?, target_b?, eval_run_b?, eval_max_tokens?,
         eval_temperature?, eval_concurrency?, eval_retries?}.
         target_a/target_b may each also carry optional per-model
-        reasoning_effort ('minimal'|'low'|'medium'|'high') and
+        reasoning_effort ('minimal'|'low'|'medium'|'high'|'xhigh'|'max') and
         reasoning_budget (max thinking tokens) — applied to that side's
         replay only.
 
