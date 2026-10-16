@@ -408,8 +408,9 @@ the launch surface, not only the reading surface).
   owner flagged it as inconsistent). The active section's row-1 tab and
   the current page's pill still fill; narrow screens scroll the strip.
 - **Nav order (added 2026-10-15):** Judgments is the FIRST sub-element
-  under the Evals section in the top nav (operator's standing
-  preference: the judging kick-off leads the menu).
+  under the Evals section in the top nav, and the EVALS section tab
+  itself links to /judgments (operator's standing preference: the
+  judging kick-off leads the menu and is the section's default landing).
 - **Append-only preserved:** dispatch only ever INSERTs. Re-runs supersede.
   There is no edit/delete of stored data anywhere in the UI or API.
 - **Power provenance (ADR 002):** `benchmarks.power_host` /
