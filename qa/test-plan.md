@@ -77,6 +77,12 @@ Rules:
 ### J4 — Judge presentation trims serving-stack wrappers (added 2026-10-23)
 - [x] `tests/test_judging.py::test_select_pairs_trims_serving_preamble` — the judge worklist trims leading/trailing whitespace from out_a/out_b (multiturn history included); the store stays verbatim (append-only doctrine, same as the reference scorer). Audit trigger: evals-101 run #8 vs #9 stored 27 judgments on byte-identical-after-trim answers, every one decided against the side carrying qwen's leading blank-line preamble (e101-vision-003 judgment #480 the owner's example)
 
+### J4 — Mirrored mixed kick-off — reuse a run on either side (added 2026-10-23)
+- [x] `tests/test_eval_jobs.py::test_mirrored_mixed_job_end_to_end` — `eval_run_a` + `target_b`: only model B replays (spy asserts replay list), the stored A run serves its outputs verbatim into judging, 2 judgments stored (both orders), job record echoes the stored side as model-fingerprint-only (no URL), fresh B side url+model, api keys never echo
+- [x] `tests/test_eval_jobs.py::test_mirrored_mixed_validation_422` — `eval_run_a`+`target_a` mutually exclusive; stored A alone → "requires target_b"; `eval_run_a`+`eval_run_b` → steered to `eval_run_ids=[a, b]`; `eval_run_ids` stays exclusive with mirrored mode; unknown run id → "not found"
+- [x] Validation order: side-specific exclusivity fires before the generic asymmetric-target shape check (specific 422 detail wins)
+- [x] UI: "reuse a recent run" picker on BOTH model cards, moved to the top of each card; picker disables that side's endpoint/reasoning fields; runs-on-both-sides → run-scoped re-judge payload (`eval_run_ids`), same-run-twice rejected client-side; kick button label mirrors the mode; `tests/test_static_wiring.py` pins both pickers + payload keys
+
 ### J5 — Reports
 - [ ] win-rate aggregation: counts + percentages per suite × pair
 - [ ] category breakdown

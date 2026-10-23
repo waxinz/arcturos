@@ -1100,7 +1100,9 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
         kick-off surface for evals + judging. (3) Mixed kick-off: give
         target_a plus eval_run_b (a stored eval run id on the same
         suite) — model A replays fresh, model B is NOT replayed and the
-        stored run is judged as the baseline instead. Every judgeable
+        stored run is judged as the baseline instead; mirrored (2026-10-23):
+        eval_run_a plus target_b replays model B fresh against the stored
+        model-A run. Every judgeable
         item is judged in BOTH presentation orders — position swap —
         and both raw judgments stored. judge_url falls back to the
         config layer ([eval] judge_url, then legacy [demo] judge_url).
@@ -1119,6 +1121,7 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
         target_a = body.get("target_a")
         target_b = body.get("target_b")
         eval_run_b = body.get("eval_run_b")
+        eval_run_a = body.get("eval_run_a")
         eval_max_tokens = body.get("eval_max_tokens", 1024)
         eval_temperature = body.get("eval_temperature", 0.0)
         eval_concurrency = body.get("eval_concurrency", 4)
@@ -1135,16 +1138,29 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
                 raise HTTPException(
                     status_code=422,
                     detail="eval_run_ids must be a list of >= 2 positive ints")
-        if (target_a is None) != (target_b is None):
-            # target_a alone is legal ONLY in the mixed kick-off (with
-            # eval_run_b); anything else needs both targets together.
-            if not (target_a is not None and eval_run_b is not None
-                    and target_b is None):
+        if eval_run_a is not None and eval_run_b is not None:
+            raise HTTPException(
+                status_code=422,
+                detail="eval_run_a and eval_run_b are mutually exclusive "
+                       "— to re-judge two stored runs, pass "
+                       "eval_run_ids=[a, b] instead")
+        if eval_run_a is not None:
+            if (not isinstance(eval_run_a, int)
+                    or isinstance(eval_run_a, bool) or eval_run_a < 1):
                 raise HTTPException(
                     status_code=422,
-                    detail="target_a and target_b must be given together "
-                           "— or pair target_a with eval_run_b (stored "
-                           "baseline run)")
+                    detail="eval_run_a must be a positive int when set")
+            if target_a is not None:
+                raise HTTPException(
+                    status_code=422,
+                    detail="target_a and eval_run_a are mutually exclusive "
+                           "— model A is either a fresh replay or a stored "
+                           "run")
+            if target_b is None:
+                raise HTTPException(
+                    status_code=422,
+                    detail="eval_run_a requires target_b (model B must "
+                           "replay fresh)")
         if eval_run_b is not None:
             if (not isinstance(eval_run_b, int)
                     or isinstance(eval_run_b, bool) or eval_run_b < 1):
@@ -1162,6 +1178,22 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
                     status_code=422,
                     detail="eval_run_b requires target_a (model A must "
                            "replay fresh)")
+        if (target_a is None) != (target_b is None):
+            # One target alone is legal ONLY in a mixed kick-off, paired
+            # with the OTHER side's stored run (target_a + eval_run_b, or
+            # target_b + eval_run_a); anything else needs both targets
+            # together.
+            mixed_ok = ((target_a is not None and eval_run_b is not None
+                         and target_b is None)
+                        or (target_b is not None and eval_run_a is not None
+                            and target_a is None))
+            if not mixed_ok:
+                raise HTTPException(
+                    status_code=422,
+                    detail="target_a and target_b must be given together "
+                           "— or pair one target with the other side's "
+                           "stored run (target_a + eval_run_b, or "
+                           "target_b + eval_run_a)")
         for side, tgt in (("a", target_a), ("b", target_b)):
             if tgt is None:
                 continue
@@ -1179,9 +1211,10 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
                 raise HTTPException(status_code=422,
                                     detail=f"target_{side}.api_key must be a string when set")
         if eval_run_ids is not None and (target_a is not None
-                                         or eval_run_b is not None):
+                                         or eval_run_b is not None
+                                         or eval_run_a is not None):
             raise HTTPException(status_code=422,
-                                detail="eval_run_ids is mutually exclusive with target_a/target_b/eval_run_b")
+                                detail="eval_run_ids is mutually exclusive with target_a/target_b/eval_run_b/eval_run_a")
         for field, value in (("eval_max_tokens", eval_max_tokens),
                              ("eval_concurrency", eval_concurrency),
                              ("eval_retries", eval_retries)):
@@ -1222,6 +1255,7 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
                 eval_run_ids=eval_run_ids,
                 target_a=target_a, target_b=target_b,
                 eval_run_b=eval_run_b,
+                eval_run_a=eval_run_a,
                 eval_max_tokens=eval_max_tokens,
                 eval_temperature=eval_temperature,
                 eval_concurrency=eval_concurrency,
