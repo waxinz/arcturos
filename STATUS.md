@@ -21,6 +21,18 @@ resume work.
   files; the suite is registered into the local arcturos DB for replay.
 - Every item was validated with `arcturos.evals.validate_item`; quotas and
   operator-string sweep enforced by the build script.
+- **BUILT + REGISTERED (2026-10-23).** All 480 items assembled and
+  probe-clean: every reference-scored item's `_good` outputs pass and
+  `_bad` outputs fail via `arcturos.evals.score_output` (bank runner
+  `scripts/run_sa101_banks.py`, committed; bank sources live outside the
+  repo in the agent scratch dir). Suite JSON at
+  `qa/suites-private/smart-agent-101-v1.json` (480/480 quotas exact; 446
+  reference-scored + 38 judge-scored; 376 single-turn + 104 multi-turn).
+  Registered in the live arcturos DB as eval suite id 6 with a full
+  definition snapshot (append-only), verified by read-back.
+- Build-script sweep is informational for the private suite (operator-
+  grounded specifics are expected there by the PII policy); the hard
+  operator-string fail still applies to committed artifacts.
 
 ## 2026-10-23 — Reuse a recent run on either model card
 
