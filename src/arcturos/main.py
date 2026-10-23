@@ -1554,7 +1554,8 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
         return _csv_response(
             rows,
             ["judgment_id", "eval_result_a", "eval_result_b", "fp_a", "fp_b",
-             "judge_model", "judge_template_version", "winner", "confidence",
+             "judge_model", "judge_template_version", "winner",
+             "verdict_detail", "confidence",
              "rationale", "created_at"],
             "arcturos-judgments.csv",
         )
