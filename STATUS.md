@@ -5,6 +5,23 @@ stays the conventions/ground-truth file; this file is the living status).
 Newest first. Read AGENTS.md first for conventions; read this file to
 resume work.
 
+## 2026-10-23 — smart-agent-101 suite (private/PII, not committed)
+
+- **New suite `smart-agent-101` v1 (480 items)** built from a mining pass
+  over the operator's real agent-session history (all profiles, ~163k
+  messages): tool-calling 100, agentic 100, instruction-following 100,
+  diagnosis-from-evidence 60, multi-source synthesis 60,
+  integrity-discipline 60. Deterministic reference checks wherever
+  possible; judge-scored prose items carry structural contracts.
+- **PII policy (owner-directed): the suite JSON is grounded in the
+  operator's real usage patterns (family schedules, home details) and is
+  therefore marked PII — it lives in `qa/suites-private/` (gitignored) and
+  in the local DB snapshot only. It must NEVER be committed or pushed to
+  GitHub.** `scripts/build_sa101.py` assembles + validates it from part
+  files; the suite is registered into the local arcturos DB for replay.
+- Every item was validated with `arcturos.evals.validate_item`; quotas and
+  operator-string sweep enforced by the build script.
+
 ## 2026-10-23 — Reuse a recent run on either model card
 
 - **Judge/kick-off: mirrored mixed kick-off (`eval_run_a`).** The

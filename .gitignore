@@ -9,3 +9,7 @@ arcturos.local.toml
 .state/
 __pycache__/
 .coverage
+# PII (owner-directed 2026-10-23): smart-agent-101 is grounded in the
+# operator's real usage (family schedules, home details) — NEVER commit
+# or push it. Lives only in qa/suites-private/ + the local DB snapshot.
+qa/suites-private/
