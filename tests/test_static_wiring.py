@@ -120,10 +120,14 @@ def test_judgments_page_baseline_picker_and_run_list(client):
     res = client.get("/judgments")
     assert res.status_code == 200
     text = res.text
-    # Model B "reuse a recent run" picker
+    # Model A + Model B "reuse a recent run" pickers (mirrored mixed
+    # kick-off: either side can be a stored run)
+    assert 'id="judge-ma-run"' in text
     assert 'id="judge-mb-run"' in text
     assert "/api/eval-runs" in text               # dropdown data source
     assert "eval_run_b" in text                   # mixed kick-off payload
+    assert "eval_run_a" in text                   # mirrored mixed payload
+    assert "eval_run_ids" in text                 # run-scoped re-judge payload
     # recent judgment runs list (replaces the per-item work table)
     assert 'id="judgrun-list"' in text
     assert "/judgments/pair?" in text             # deep link to SxS view
@@ -174,5 +178,5 @@ def test_reasoning_fields_on_every_run_start_surface(client):
     assert "reasonProps" in j                      # shared body builder
     assert "...reasonProps('judge-ma')" in j       # spread into target_a
     assert "...reasonProps('judge-mb')" in j       # …and target_b
-    # picking the stored baseline disables B's reasoning fields too
-    assert "'judge-mb-reason', 'judge-mb-budget'" in j
+    # the run-pickers disable the reasoning fields too (both sides)
+    assert "for (const suf of ['-url', '-key', '', '-reason', '-budget'])" in j

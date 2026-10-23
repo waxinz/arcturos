@@ -5,6 +5,21 @@ stays the conventions/ground-truth file; this file is the living status).
 Newest first. Read AGENTS.md first for conventions; read this file to
 resume work.
 
+## 2026-10-23 — Reuse a recent run on either model card
+
+- **Judge/kick-off: mirrored mixed kick-off (`eval_run_a`).** The
+  judgments page's "reuse a recent run" picker is now on BOTH model cards
+  and moved to the top of each card — the first control you touch. New
+  `eval_run_a` payload mode mirrors `eval_run_b`: a stored run + the other
+  side's fresh URL replays only the fresh side; picking runs on BOTH cards
+  re-judges the two stored replays via the existing run-scoped mode
+  (`eval_run_ids`) — nothing is re-run. Kick button label reflects the
+  mode ("Judge stored runs" when both sides are stored). Stored sides echo
+  model fingerprint only on the job record; endpoint + core validation
+  steer misuses (`eval_run_a` + `eval_run_b` → use `eval_run_ids=[a, b]`;
+  each stored side requires the other side to replay fresh). Tests:
+  mirrored mixed end-to-end + 422 matrix + static wiring pins (387 pass).
+
 ## 2026-10-23 — One top bar on every page + brand-tile favicon
 
 - **Chrome is now identical on every second-tier page.** The owner's

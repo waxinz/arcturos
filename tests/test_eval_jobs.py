@@ -490,9 +490,10 @@ def test_mixed_job_end_to_end(client, monkeypatch):
     assert len(st["eval_run_ids"]) == 2
     assert st["eval_run_ids"][1] == 2
     assert st["eval_run_ids"][0] != 2
-    # no model B replay: only target_a on the job record (key never echoes)
-    assert st["targets"].keys() == {"a"}
+    # no model B replay: A echoes url+model, the stored B side echoes its
+    # model fingerprint only (key never echoes anywhere)
     assert st["targets"]["a"] == {"url": "http://a:1/v1", "model": "m-a"}
+    assert st["targets"]["b"] == {"model": "m-b"}
     assert "secret-a" not in json.dumps(st)
     assert st["judgments_stored"] == 2          # 1 item × both orders
     conn = dbmod.connect(db_path)
@@ -548,3 +549,101 @@ def test_mixed_job_validation(client):
         "target_a": {"url": "http://a/v1", "model": "m-a"},
         "eval_run_b": 2})
     assert r.status_code == 422 and "mutually exclusive" in r.json()["detail"]
+
+
+# ---- mirrored mixed kick-off (stored A run + fresh B replay) --------
+
+
+def _seed_stored_run(db_path, run_id=8, fingerprint="stored-a"):
+    """Seed a complete stored eval run (run row + one result, id q1)."""
+    conn = dbmod.connect(db_path)
+    dbmod.init_db(conn)
+    conn.execute(
+        "INSERT INTO suite_definitions (suite_id, payload, created_at) "
+        "VALUES (1, ?, 'now')",
+        (json.dumps({"items": [{"id": "q1", "dimension": "reasoning",
+                                "prompt": "hi"}]}),))
+    conn.execute(
+        "INSERT INTO eval_runs (id, suite_id, name, status,"
+        " model_fingerprint, created_at)"
+        " VALUES (?, 1, 'stored run', 'complete', ?, 'now')",
+        (run_id, fingerprint))
+    conn.execute(
+        "INSERT INTO eval_results (suite_id, model_fingerprint, item_id,"
+        " output, prompt_tokens, completion_tokens, latency_ms,"
+        " eval_run_id, created_at)"
+        " VALUES (1, ?, 'q1', '  10:10  ', 3, 2, 11, ?, 'now')",
+        (fingerprint, run_id))
+    conn.commit()
+    conn.close()
+
+
+def test_mirrored_mixed_job_end_to_end(client, monkeypatch):
+    tc, db_path = client
+    _ok_preflight(monkeypatch)
+    _seed_stored_run(db_path, run_id=8, fingerprint="stored-a")
+    replayed = []
+
+    def _spy_replay(target, messages, api_key=None, model="test", **kw):
+        replayed.append(model)
+        return {"choices": [{"message": {"content": "ok"}}],
+                "usage": {"prompt_tokens": 3, "completion_tokens": 2}}
+
+    monkeypatch.setattr("arcturos.multiturn.post_openai_chat", _spy_replay)
+    monkeypatch.setattr(judging, "_post_chat", _fake_judge("VERDICT: 1"))
+    res = tc.post("/api/ops/judge/jobs", json={
+        "suite_id": 1, "judge_url": "http://judge:9/v1", "judge_model": "j",
+        "eval_run_a": 8,
+        "target_b": {"url": "http://b:2/v1", "model": "m-b"}})
+    assert res.status_code == 200, res.text
+    job_id = res.json()["job_id"]
+    st = _wait_job(lambda jid: tc.get(f"/api/ops/judge/jobs/{jid}"), job_id)
+    assert st["status"] == "done", st
+    assert st["combined"] is True
+    assert st["stage"] == "judging"
+    assert st["eval_run_a"] == 8
+    # only model B replayed; the stored A run served its outputs verbatim
+    assert replayed == ["m-b"]
+    # run ids: stored A first, fresh B second; judging ran over both
+    assert st["eval_run_ids"][0] == 8 and len(st["eval_run_ids"]) == 2
+    assert st["judgments_stored"] == 2          # 1 item × both orders
+    # stored side echoes model (fingerprint) but no URL, no api key
+    assert st["targets"]["a"] == {"model": "stored-a"}
+    assert st["targets"]["b"] == {"url": "http://b:2/v1", "model": "m-b"}
+    conn = dbmod.connect(db_path)
+    dbmod.init_db(conn)
+    # both stored-run sides participated: every judgment pairs a result
+    # from the stored run 8 with a result from the fresh replay run
+    n = conn.execute(
+        "SELECT COUNT(*) FROM judgments j"
+        " JOIN eval_results ra ON ra.id = j.eval_result_a"
+        " JOIN eval_results rb ON rb.id = j.eval_result_b"
+        " WHERE ra.eval_run_id = 8 OR rb.eval_run_id = 8").fetchone()[0]
+    assert n == 2
+    conn.close()
+
+
+def test_mirrored_mixed_validation_422(client):
+    tc, db_path = client
+    body = {"suite_id": 1, "judge_url": "http://judge:9/v1",
+            "judge_model": "j"}
+    tb = {"url": "http://b/v1", "model": "m-b"}
+    # eval_run_a must pair with target_b, never target_a
+    r = tc.post("/api/ops/judge/jobs", json={
+        **body, "eval_run_a": 8, "target_a": dict(tb)})
+    assert r.status_code == 422 and "mutually exclusive" in r.json()["detail"]
+    # a stored A run alone is not enough — B must replay fresh
+    r = tc.post("/api/ops/judge/jobs", json={**body, "eval_run_a": 8})
+    assert r.status_code == 422 and "requires target_b" in r.json()["detail"]
+    # two stored runs (one per side) → steer to run-scoped mode
+    r = tc.post("/api/ops/judge/jobs", json={
+        **body, "eval_run_a": 8, "eval_run_b": 9})
+    assert r.status_code == 422 and "eval_run_ids=[a, b]" in r.json()["detail"]
+    # run-scoped ids stay exclusive with the mirrored mixed mode
+    r = tc.post("/api/ops/judge/jobs", json={
+        **body, "eval_run_ids": [1, 2], "eval_run_a": 8, "target_b": dict(tb)})
+    assert r.status_code == 422 and "mutually exclusive" in r.json()["detail"]
+    _seed_stored_run(db_path, run_id=8)
+    r = tc.post("/api/ops/judge/jobs", json={**body, "eval_run_a": 99,
+                                             "target_b": dict(tb)})
+    assert r.status_code == 422 and "not found" in r.json()["detail"]
