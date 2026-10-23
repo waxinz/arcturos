@@ -30,6 +30,8 @@
     .winner.a { background: var(--good-bg); color: var(--good-text); }
     .winner.b { background: var(--bad-bg); color: var(--bad-text); }
     .winner.tie { background: var(--border); color: var(--text-soft); }
+    .winner.bothbad { background: var(--bad-bg); color: var(--bad-text);
+                      border: 1px dashed var(--border); }
     td.win-a { background: var(--win-a-bg); }
     td.win-b { background: var(--surface)7ed; }
     td.win-tie { background: var(--bg); }
@@ -384,8 +386,10 @@
 
         const tdWin = document.createElement('td');
         const badge = document.createElement('span');
-        badge.className = winCls;
-        badge.textContent = j.winner;
+        const isBothBad = (j.verdict_detail || '') === 'both_bad';
+        badge.className = winCls + (isBothBad ? ' bothbad' : '');
+        badge.textContent = isBothBad ? 'both-bad' : j.winner;
+        badge.title = isBothBad ? 'both responses wrong (draw: 0.5 each)' : '';
         tdWin.appendChild(badge);
         tr.appendChild(tdWin);
 

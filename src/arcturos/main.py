@@ -577,7 +577,8 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
         return fetch_all(db, """
             SELECT j.id, j.judge_model,
                    j.judge_template_version AS template,
-                   j.winner, j.confidence, j.rationale, j.created_at,
+                   j.winner, j.verdict_detail, j.confidence, j.rationale,
+                   j.created_at,
                    ra.item_id AS item_id,
                    ra.model_fingerprint AS fingerprint_a,
                    rb.model_fingerprint AS fingerprint_b,

@@ -5,6 +5,47 @@ stays the conventions/ground-truth file; this file is the living status).
 Newest first. Read AGENTS.md first for conventions; read this file to
 resume work.
 
+## 2026-10-23 — Reference-guided judging: both-bad verdict + both_bad_rate
+
+- **Judge-side fix for "both answers wrong" blindness** (research-backed:
+  MT-Bench found GPT-4 rated an incorrect answer correct 14/20 times on
+  math pairs without a reference in the prompt, 3/20 with one — Zheng et
+  al. 2023 §3.3/3.4; Arena/AlpacaEval treat a both-bad vote as a draw,
+  0.5/0.5). Items whose definition carries a machine-check reference now
+  get a reference-guided prompt variant (`blind-pair-v4-ref`): the
+  reference is rendered into the judge prompt with the rule "a response
+  that contradicts the reference is WRONG regardless of polish", and the
+  verdict line adds `VERDICT: both_bad`. Items without a usable reference
+  keep the exact v3 template — one prompt variant per judgment, recorded
+  per row via `judge_template_version`.
+- **Storage is append-only-schema-friendly:** `both_bad` is NOT a new
+  `winner` value — the judgments winner CHECK stays `a|b|tie` (no table
+  rebuild against the append-only triggers). A both-bad verdict stores
+  `winner='tie'` + new nullable column `verdict_detail='both_bad'`
+  (migration `_MIGRATIONS` entry, idempotent ALTER; legacy rows keep
+  `verdict_detail=NULL` and mean a plain tie). Old judgments remain valid
+  and old reports math is unchanged for them.
+- **Scoring:** `wins + 0.5·ties` is unchanged — both-bad rides the draw
+  (0.5/0.5) per the Arena/MT-Bench convention. `both_bad_rate` is a new
+  headline metric on the suite report (overall + per pair) and
+  `pair_summary` rows; counts/percent dicts carry a `both_bad` bucket
+  everywhere (overall, per-pair, per-category, per-dimension).
+- **Surfaces:** reports page (overall winner breakdown row "both-bad",
+  Both-bad columns in dimension/category/pair tables), judgments list
+  (dashed `both-bad` badge for qualified ties), judgment-detail page
+  ("both bad (draw)" tags, both-bad % in score sublines, both-bad count in
+  the meta strip, caption notes both-bad counts as a tie), CSV export
+  (`both_bad` + `pct_both_bad` columns).
+- **Judge progress rows** show `both_bad` as the verdict for qualified
+  ties; the reason-followup nudge asks for a reason when the judge says
+  both are wrong, same as ties.
+- Tests: **398 passed** (8 new: verdict parsing both-bad variants +
+  truncation guard, reference rendering for all five check kinds incl.
+  missing-value guards, template-variant selection, judge_item both-bad
+  mapping (both presentation orders), dispatch persistence of
+  verdict_detail, legacy-DB migration, reports bucket + draw math).
+  Deployed to the local host (see commit history for the SHA).
+
 ## 2026-10-23 — smart-agent-101 suite (private/PII, not committed)
 
 - **New suite `smart-agent-101` v1 (480 items)** built from a mining pass

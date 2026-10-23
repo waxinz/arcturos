@@ -117,7 +117,7 @@
     <p class="page-sub" id="sub">Side-by-side responses with the judge's verdict per item. Tap an item name to expand its prompt underneath.</p>
     <section id="jsum" class="jsum" hidden>
       <h3>Category summary</h3>
-      <p class="jsum-cap">Blind pairwise score = wins + ½ ties, scaled 0–100 · n per category</p>
+      <p class="jsum-cap">Blind pairwise score = wins + ½ ties, scaled 0–100 · both-bad counts as a tie · n per category</p>
       <div class="table-wrap"></div>
       <div class="jsum-tiles"></div>
     </section>
@@ -130,7 +130,9 @@
 function $(id) { return document.getElementById(id); }
 
     function winnerTag(row, which) {
+      const bothBad = row.winner === 'tie' && (row.verdict_detail || '') === 'both_bad';
       if (row.winner === which) return '<span class="win-tag">judge preferred</span>';
+      if (bothBad) return '<span class="tie-tag">both bad (draw)</span>';
       if (row.winner === 'tie') return '<span class="tie-tag">tie</span>';
       return '';
     }
@@ -289,10 +291,12 @@ function $(id) { return document.getElementById(id); }
           '<td>' + esc(r.dimension) + '</td>' +
           '<td' + (winA ? ' class="winner"' : '') + '>' +
             '<span class="score" title="' + wil + '">' + r.score_a + '</span>' +
-            '<span class="sub">win ' + r.percent.a + '% · tie ' + r.percent.tie + '%</span></td>' +
+            '<span class="sub">win ' + r.percent.a + '% · tie ' + r.percent.tie + '%' +
+            (r.percent.both_bad ? ' · both-bad ' + r.percent.both_bad + '%' : '') + '</span></td>' +
           '<td' + (winB ? ' class="winner"' : '') + '>' +
             '<span class="score" title="' + wil + '">' + r.score_b + '</span>' +
-            '<span class="sub">win ' + r.percent.b + '% · tie ' + r.percent.tie + '%</span></td>' +
+            '<span class="sub">win ' + r.percent.b + '% · tie ' + r.percent.tie + '%' +
+            (r.percent.both_bad ? ' · both-bad ' + r.percent.both_bad + '%' : '') + '</span></td>' +
           '<td class="num">' + r.n + '</td></tr>';
         tiles += '<div class="jsum-tile">' +
           '<div class="t-name">' + esc(r.dimension) + '</div>' +
@@ -324,7 +328,8 @@ function $(id) { return document.getElementById(id); }
         '<span>' + window.fmtLocalTime(row.created_at) + '</span>';
       head.querySelector('.w').textContent =
         row.winner === 'a' ? row.fingerprint_a
-        : row.winner === 'b' ? row.fingerprint_b : 'tie';
+        : row.winner === 'b' ? row.fingerprint_b
+        : ((row.verdict_detail || '') === 'both_bad' ? 'both bad' : 'tie');
       head.querySelectorAll('b')[1].textContent = String(conf);
       head.querySelectorAll('b')[2].textContent = row.judge_model;
       const det = document.createElement('details');
@@ -418,7 +423,11 @@ function $(id) { return document.getElementById(id); }
         // Rows are stored canonically (fingerprint_a = slot A); map the
         // aggregate counts onto the DISPLAY order chosen above.
         const counts = {a: 0, b: 0, tie: 0};
-        for (const r of rows) counts[r.winner] = (counts[r.winner] || 0) + 1;
+        let bothBad = 0;
+        for (const r of rows) {
+          counts[r.winner] = (counts[r.winner] || 0) + 1;
+          if (r.winner === 'tie' && (r.verdict_detail || '') === 'both_bad') bothBad++;
+        }
         const leftIsA = rows[0].fingerprint_a === ma;
         const winsLeft = leftIsA ? counts.a : counts.b;
         const winsRight = leftIsA ? counts.b : counts.a;
@@ -427,7 +436,8 @@ function $(id) { return document.getElementById(id); }
           '<span><b>Items judged</b> ' + rows.length + '</span>' +
           '<span><b>' + esc(ma) + ' wins</b> ' + winsLeft + '</span>' +
           '<span><b>' + esc(mb) + ' wins</b> ' + winsRight + '</span>' +
-          '<span><b>Ties</b> ' + (counts.tie || 0) + '</span>' +
+          '<span><b>Ties</b> ' + (counts.tie || 0) +
+          (bothBad ? ' <span class="tie-tag">both bad ' + bothBad + '</span>' : '') + '</span>' +
           '<span><b>Judge</b> ' + esc(rows[0].judge_model) + '</span>';
         const box = $('items');
         box.innerHTML = '';
