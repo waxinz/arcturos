@@ -128,6 +128,29 @@ def test_select_pairs_model_pair_filter(conn):
     assert {work[0]["fp_a"], work[0]["fp_b"]} == {"beta", "gamma"}
 
 
+def test_select_pairs_trims_serving_preamble(conn):
+    """The judge sees answers, not serving-stack wrappers (evals-101 #8v#9).
+
+    qwen-style endpoints store a leading blank-line preamble verbatim;
+    left in, it reached the judge as "stray blank lines" and decided
+    otherwise-identical pairs. The worklist trims; the store stays raw
+    (append-only) — same doctrine as the reference scorer.
+    """
+    _mk_suite(conn, items=[{"id": "q1", "dimension": "accuracy",
+                            "prompt": "only the time"}])
+    _mk_result(conn, 1, "alpha", "q1", "\n\n  10:10  \n")
+    _mk_result(conn, 1, "beta", "q1", "10:10")
+    work = judging.select_pairs(conn, 1)
+    assert len(work) == 1
+    assert work[0]["out_a"] == "10:10"
+    assert work[0]["out_b"] == "10:10"
+    # the store itself stays untouched (verbatim, append-only)
+    raw = conn.execute(
+        "SELECT output FROM eval_results WHERE model_fingerprint='alpha'"
+    ).fetchone()[0]
+    assert raw == "\n\n  10:10  \n"
+
+
 def test_select_pairs_multiturn_per_turn_items_with_history(conn):
     _mk_suite(conn, items=[{
         "id": "mt1", "type": "multi-turn", "dimension": "writing",

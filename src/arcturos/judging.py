@@ -147,6 +147,21 @@ VERDICT: tie    (if neither is clearly better)
 REASON: <one short sentence, max ~25 words, why>"""
 
 
+def _judge_view(output: str | None) -> str:
+    """Judge-visible answer text: trimmed.
+
+    Serving-stack wrappers are not answer content: qwen-style endpoints
+    open with a leading blank-line preamble and the store keeps outputs
+    verbatim (append-only). Left in, the preamble reaches the judge as
+    "stray blank lines" and decides otherwise-identical pairs — evals-101
+    runs #8 vs #9 stored 27 judgments where the two answers were
+    byte-identical after trimming and the wrapper side lost every time.
+    Same doctrine as the reference scorer: store verbatim, normalize
+    where the value is consumed.
+    """
+    return (output or "").strip()
+
+
 def rubric_for(dimension: str | None) -> str:
     """Rubric paragraph for an item dimension (default for unknown)."""
     if not dimension:
@@ -343,9 +358,12 @@ def select_pairs(db: sqlite3.Connection, suite_id: int,
                 work.append({
                     "base_id": base_id, "turn_index": idx,
                     "result_a": dict(ra), "result_b": dict(rb),
-                    "out_a": ra["output"], "out_b": rb["output"],
-                    "history_a": [models[fps[0]][p]["output"] for p in prior],
-                    "history_b": [models[fps[1]][p]["output"] for p in prior],
+                    "out_a": _judge_view(ra["output"]),
+                    "out_b": _judge_view(rb["output"]),
+                    "history_a": [_judge_view(models[fps[0]][p]["output"])
+                                  for p in prior],
+                    "history_b": [_judge_view(models[fps[1]][p]["output"])
+                                  for p in prior],
                     "fp_a": fps[0], "fp_b": fps[1],
                     "dimension": item.get("dimension"),
                     "item": item, "is_multiturn": True,
@@ -356,7 +374,8 @@ def select_pairs(db: sqlite3.Connection, suite_id: int,
             work.append({
                 "base_id": base_id, "turn_index": None,
                 "result_a": dict(ra), "result_b": dict(rb),
-                "out_a": ra["output"], "out_b": rb["output"],
+                "out_a": _judge_view(ra["output"]),
+                "out_b": _judge_view(rb["output"]),
                 "history_a": [], "history_b": [],
                 "fp_a": fps[0], "fp_b": fps[1],
                 "dimension": item.get("dimension"),
