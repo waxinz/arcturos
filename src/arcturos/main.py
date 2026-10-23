@@ -624,11 +624,11 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
         require_parent(db, "eval_results", body.eval_result_b)
         cur = db.execute(
             "INSERT INTO judgments (eval_result_a, eval_result_b, judge_model, "
-            "judge_template_version, winner, confidence, rationale, created_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            "judge_template_version, winner, verdict_detail, confidence, "
+            "rationale, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (body.eval_result_a, body.eval_result_b, body.judge_model,
-             body.judge_template_version, body.winner, body.confidence,
-             body.rationale, body.created_at),
+             body.judge_template_version, body.winner, body.verdict_detail,
+             body.confidence, body.rationale, body.created_at),
         )
         db.commit()  # durable before the response is sent (teardown runs after send)
         return fetch_one(db, "SELECT * FROM judgments WHERE id = ?", (cur.lastrowid,))

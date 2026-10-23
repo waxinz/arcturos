@@ -5,6 +5,53 @@ stays the conventions/ground-truth file; this file is the living status).
 Newest first. Read AGENTS.md first for conventions; read this file to
 resume work.
 
+## 2026-10-23 (audit) — Full-day audit: eval-job counter fix, both-bad API completeness, PII sweep
+
+- **Scope:** every commit of the day (`857aba5` judging trim, `56dd30e`
+  nav+favicon, `a4379a1` reuse-run mirror, `50a81d8` PII policy,
+  `3f65e9c` smart-agent-101, `abda579`+`e5264cf` both-bad round) re-read
+  against spec, plus fresh-eyes hunts across every winner/tie surface
+  and the full pytest suite.
+- **REAL BUG (found live by the operator):** the async eval job progress
+  counter divided by `len(items)` — the suite DEFINITION item count —
+  while the numerator counts stored rows, and multi-turn items store one
+  row per assistant turn (v0.2 multiturn contract). smart-agent-101:
+  480 definition items (376 single + 104 multi-turn) but 211 assistant
+  turns → **587 stored rows per full replay** (prior runs 10/11 both
+  stored exactly 587), so the counter ran "553/480 and counting".
+  *The work itself was correct — every turn stored once; only the
+  denominator was wrong.* Fix: new `ops._expected_rows()` computes the
+  denominator as stored-row count (1 per single-turn item, assistant
+  turns per multi-turn item); status lines reworded from "item N/M" to
+  "stored N/M" and the final line now reads "N results from M items".
+  ETA math is correct again. Test:
+  `test_eval_job_counter_counts_rows_not_items` (1 single + 1 multi-turn
+  with 2 assistant turns → 3/3, never 3/2).
+- **Both-bad API completeness gap:** `POST /api/judgments` could not
+  create a qualified both-bad draw (the field existed only on the judge
+  pipeline path). `JudgmentCreate` gained optional
+  `verdict_detail: Literal["both_bad"]` with a validator forcing
+  `winner == "tie"` when present, and the endpoint INSERT passes it
+  through. Tests: `test_judgment_api_accepts_verdict_detail` (201 on a
+  valid qualified draw, 422 when detail rides a non-tie winner).
+- **Reports item drill-down label:** the item-level table on /reports
+  rendered raw `winner` ('tie') for both-bad rows; now renders
+  "both-bad" when `verdict_detail == 'both_bad'`.
+- **PII full-tree sweep (release gate):** all 11 operator strings swept
+  across every TRACKED file — one hit found and fixed:
+  `sticky-inputs.js` carried the operator's first name in a comment
+  (pre-dated today — per-commit sweeps only scan added lines).
+  Reworded to "the operator". The remaining key-pattern matches are
+  fake API-key placeholders inside tests (not real keys).
+  `qa/suites-private/` verified untracked and gitignored (rule
+  line 15). Sweep now CLEAN.
+- **End-to-end glue test added:**
+  `test_both_bad_end_to_end_dispatch_report_csv` — mocked both-bad judge
+  → dispatch (both presentation orders) → suite_report buckets/rates →
+  pair_summary draw math → CSV columns parsed and pinned.
+- **Tests: 401 passed** (398 + 3 new). Released as **v0.3.0** (see
+  release section below).
+
 ## 2026-10-23 — Reference-guided judging: both-bad verdict + both_bad_rate
 
 - **Judge-side fix for "both answers wrong" blindness** (research-backed:

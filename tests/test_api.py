@@ -719,3 +719,33 @@ def test_datetime_surfaces_use_local_time(client):
     assert "fmtLocalTime(b.run_created_at)" in baselines
     models = client.get("/models").text
     assert "fmtLocalTime(m.first_seen)" in models
+
+
+# ---------------------------------------------- audit round (2026-10-23) ----
+
+def test_judgment_api_accepts_verdict_detail(client):
+    """POST /api/judgments can create a qualified both-bad draw (audit fix:
+    verdict_detail was judge-pipeline-only before)."""
+    suite = client.post("/api/eval-suites",
+                        json={"name": "s", "version": "1"}).json()
+    ids = []
+    for i in range(2):
+        r = client.post(f"/api/eval-suites/{suite['id']}/results", json={
+            "model_fingerprint": f"/m/m{i}.gguf", "item_id": "q1",
+            "output": "x", "prompt_tokens": 1, "completion_tokens": 1,
+            "latency_ms": 1.0})
+        assert r.status_code == 201
+        ids.append(r.json()["id"])
+    r = client.post("/api/judgments", json={
+        "eval_result_a": ids[0], "eval_result_b": ids[1],
+        "judge_model": "j", "judge_template_version": "blind-pair-v4-ref",
+        "winner": "tie", "verdict_detail": "both_bad"})
+    assert r.status_code == 201, r.text
+    assert r.json()["winner"] == "tie"
+    assert r.json()["verdict_detail"] == "both_bad"
+    # invalid: detail without a draw
+    r = client.post("/api/judgments", json={
+        "eval_result_a": ids[0], "eval_result_b": ids[1],
+        "judge_model": "j", "judge_template_version": "v",
+        "winner": "a", "verdict_detail": "both_bad"})
+    assert r.status_code == 422

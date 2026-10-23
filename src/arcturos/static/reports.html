@@ -309,8 +309,10 @@
       const tbody = document.createElement('tbody');
       for (const it of report.item_level) {
         const tr = document.createElement('tr');
+        const winLabel = it.winner === 'tie' && (it.verdict_detail || '') === 'both_bad'
+          ? 'both-bad' : it.winner;
         const cells = [
-          ['td', it.item_id, 'mono'], ['td', it.winner, ''],
+          ['td', it.item_id, 'mono'], ['td', winLabel, ''],
           ['td', it.model_a, 'mono'], ['td', it.model_b, 'mono'],
           ['td', it.judge_model, 'mono'], ['td', it.template, 'mono'],
           ['td', it.confidence === null || it.confidence === undefined ? '—' : it.confidence, 'num'],

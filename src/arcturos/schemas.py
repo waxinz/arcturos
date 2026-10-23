@@ -95,6 +95,7 @@ class JudgmentCreate(BaseModel):
     judge_model: str = Field(..., min_length=1)
     judge_template_version: str = Field(..., min_length=1)
     winner: Literal["a", "b", "tie"]
+    verdict_detail: Optional[Literal["both_bad"]] = None
     confidence: Optional[float] = Field(None, ge=0, le=1)
     rationale: Optional[str] = None
     created_at: str = Field(default_factory=_utcnow)
@@ -103,4 +104,7 @@ class JudgmentCreate(BaseModel):
     def _check_distinct_results(self) -> "JudgmentCreate":
         if self.eval_result_a == self.eval_result_b:
             raise ValueError("eval_result_a and eval_result_b must differ")
+        if self.verdict_detail and self.winner != "tie":
+            raise ValueError(
+                "verdict_detail qualifies a draw — winner must be 'tie'")
         return self

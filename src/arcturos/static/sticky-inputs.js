@@ -3,7 +3,7 @@
  * value on the next page load.
  *
  * Storage: browser localStorage under "arcturos-sticky:<field-id>". This
- * is the temp store Alexei asked for — nothing is sent to the server.
+ * is the temp store the operator asked for — nothing is sent to the server.
  * Sticky values SHADOW the form's shipped defaults; the config-file
  * defaults ([eval]/[demo]/bench defaults) remain the server-side fallback
  * for any field left empty.
