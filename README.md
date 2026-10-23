@@ -2,7 +2,7 @@
 
 **Local-first LLM benchmarking & evaluation dashboard**
 
-Arcturos benchmarks LLM inference servers and evaluates their outputs — all data stays in a local SQLite file you own. Compare, diff, and replay every run.
+Arcturos benchmarks LLM inference servers and evaluates their outputs — all data stays in a local SQLite file you own. Compare, replay, and judge every run.
 
 ![Compare view — decode, prefill and TTFT charts across context lengths](docs/compare-screenshot.jpg)
 
@@ -11,10 +11,12 @@ Arcturos benchmarks LLM inference servers and evaluates their outputs — all da
 ## What it does
 
 - **Benchmark** any OpenAI-compatible (or llama.cpp native) inference server — decode tok/s, prefill tok/s, TTFT, wall time, MTP/speculative acceptance, parallel streams, at multiple context lengths
-- **Compare** runs side-by-side with charts, pinned baselines, and per-metric deltas
-- **Evaluate** prompts (single- and multi-turn) scored blind by external LLM judges — pairwise A/B preference with win rates by judge and category
-- **Reports** summarizing suite win rates and coverage
-- **CSV export** of runs, comparisons, eval results, and judgments
+- **Compare** runs side-by-side with charts, pinned baselines, per-metric deltas, and integrated A/B diff tables
+- **Evaluate** suites (single- and multi-turn) with blind pairwise A/B judging — position swapping with both orders stored, an optional reference-guided prompt variant that renders machine-check references to the judge (catches "both answers wrong"), an explicit both-bad outcome scored as a draw with its own `both_bad_rate`, and breakdowns by dimension, category, and model pair — plus a head-to-head pair lens for any two models
+- **Kick off flexibly** — replay a whole suite, one side of a pair from a single run, or mix any two recent runs into one judgment job; combined jobs can replay both models and judge them in one go
+- **Per-model reasoning controls** — reasoning effort (`minimal` → `max`) and thinking-token budget sent with every eval and bench call
+- **Private suites stay private** — suite definitions that must never leave your machine go in gitignored `qa/suites-private/` and live only in your local database; the repo ships the build/sweep tooling, never the suite contents
+- **CSV export** of runs, comparisons, eval results, judgments (including verdict detail), and reports
 - **Append-only storage** — measurement rows are never mutated; visibility and naming are separate, reversible layers
 
 ### Quick start
@@ -29,13 +31,15 @@ That's it — `start.sh` provisions everything (creates the venv, installs depen
 
 Other commands: `./start.sh run` (foreground), `./start.sh remove` (uninstall).
 
-Open `http://localhost:24816` — the sidebar walks you through the three sections:
+Open `http://localhost:24816` — the top navigation walks you through the three sections:
 
 | Section | Pages |
 |---|---|
-| **Benchmarks** | Kick off · Runs · Compare · Diff |
-| **Evals** | Suite create · Results · Judgments · Reports |
+| **Benchmarks** | Start · Compare |
+| **Evals** | Create · Run · Results · Judgments · Reports |
 | **Settings** | Models · Baselines |
+
+Eval replays and judge jobs run as live jobs with per-item progress and an operator stop button; run and judgment drill-downs expand each row to the full prompt (text and images), response, and verdict.
 
 ### Configuring defaults
 
@@ -67,7 +71,7 @@ venv/bin/python scripts/seed_demo.py
 venv/bin/python -m pytest tests -q
 ```
 
-233 tests, append-only semantics included.
+401 tests: append-only storage semantics, schema migrations, API contracts, judge parsing (including truncated-output guards), report math, and static-page wiring.
 
 ## License
 
