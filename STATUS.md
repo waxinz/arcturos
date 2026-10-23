@@ -44,7 +44,9 @@ resume work.
   missing-value guards, template-variant selection, judge_item both-bad
   mapping (both presentation orders), dispatch persistence of
   verdict_detail, legacy-DB migration, reports bucket + draw math).
-  Deployed to the local host (see commit history for the SHA).
+  Deployed to the local host: `abda579` (feature) plus a follow-up export
+  commit (judgments CSV gains verdict_detail); live DB migrated on first
+  connect — legacy rows verified intact (NULL detail) post-deploy.
 
 ## 2026-10-23 — smart-agent-101 suite (private/PII, not committed)
 

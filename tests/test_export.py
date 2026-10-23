@@ -97,6 +97,7 @@ def test_export_judgments_csv_resolves_fingerprints(client):
     assert rows[0]["fp_a"] == "/m/model-0.gguf"
     assert rows[0]["fp_b"] == "/m/model-1.gguf"
     assert rows[0]["winner"] == "a"
+    assert rows[0]["verdict_detail"] == ""  # 2026-10-23: both-bad detail exported
 
 
 # ------------------------------------------ REVIEW-FIX-ROUND regressions ----
