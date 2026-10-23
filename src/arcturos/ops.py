@@ -1018,6 +1018,28 @@ def _prune_eval_jobs() -> None:
         _EVAL_ABORT_FLAGS.pop(job_id, None)
 
 
+def _expected_rows(items: list[dict[str, Any]]) -> int:
+    """Stored-row count a full replay will produce.
+
+    Single-turn items store one eval_result; multi-turn items store one
+    row per assistant turn (v0.2 multiturn contract). Job progress counts
+    stored rows, so the progress denominator must too — ``len(items)``
+    undercounts multi-turn suites (smart-agent-101: 480 definition items
+    but 376 + 211 assistant turns = 587 stored rows, which rendered as
+    "item 553/480" in the live progress view).
+    """
+    n = 0
+    for it in items:
+        turns = it.get("turns")
+        if it.get("type") == "multi-turn" and isinstance(turns, list) \
+                and turns:
+            n += sum(1 for t in turns if isinstance(t, dict)
+                     and t.get("role") == "assistant")
+        else:
+            n += 1
+    return n
+
+
 def run_eval_job(
     db_path,
     suite_id: int,
@@ -1060,7 +1082,7 @@ def run_eval_job(
         "suite_id": suite_id,
         "target": target,
         "model": model_fingerprint,
-        "items_total": len(items),
+        "items_total": _expected_rows(items),
         "items_done": 0,
         "results_stored": 0,
         "items": [],                   # per-item progress rows
@@ -1095,8 +1117,8 @@ def run_eval_job(
                         round(elapsed / job["items_done"] * remaining, 1)
                         if job["items_done"] and remaining > 0 else None)
                     job["status_line"] = (
-                        f"item {job['items_done']}/{job['items_total']}"
-                        f" — {item_id} stored")
+                        f"stored {job['items_done']}/{job['items_total']}"
+                        f" — {item_id}")
 
             result = dispatch_eval(
                 db_path=db_path, suite_id=suite_id, target=target,
@@ -1113,19 +1135,19 @@ def run_eval_job(
                 if status == "aborted":
                     job["status"] = "aborted"
                     job["status_line"] = (
-                        f"stopped by operator after {job['items_done']} item(s)"
+                        f"stopped by operator after {job['items_done']} result(s)"
                         f" — eval run #{result.get('eval_run_id')} (partial) stored")
                 elif status == "partial":
                     job["status"] = "partial"
                     job["error"] = result.get("error")
                     job["status_line"] = (
-                        f"failed after {job['items_done']} item(s) — eval run "
+                        f"failed after {job['items_done']} result(s) — eval run "
                         f"#{result.get('eval_run_id')} (partial) stored")
                 else:
                     job["status"] = "done"
                     job["status_line"] = (
                         f"eval run #{result.get('eval_run_id')} stored "
-                        f"({job['items_total']} items)")
+                        f"({job['items_total']} results from {len(items)} items)")
                 job["finished_at"] = time.monotonic()
                 job["eta_s"] = 0.0 if status == "complete" else None
         except DispatchFailure as exc:

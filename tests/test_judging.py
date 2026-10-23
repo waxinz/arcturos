@@ -521,3 +521,53 @@ def test_migration_adds_verdict_detail_to_legacy_db(tmp_path):
         "'both_bad'").fetchone()[0]
     assert n == 1
     conn.close()
+
+
+def test_both_bad_end_to_end_dispatch_report_csv(conn, monkeypatch):
+    """Audit glue: judge pipeline -> store -> suite_report -> pair_summary ->
+    CSV, one both-bad verdict flowing through every surface."""
+    import csv as _csv
+    import io as _io
+
+    from arcturos import reports
+    _mk_suite(conn, items=[{"id": "q1", "dimension": "reasoning",
+                            "prompt": "7*6?",
+                            "reference": {"check": "exact", "value": "42"}}])
+    _mk_result(conn, 1, "alpha", "q1", "forty-one")
+    _mk_result(conn, 1, "beta", "q1", "48")
+
+    seen_payloads = []
+
+    def fake_post(url, payload, api_key=None):
+        seen_payloads.append(payload["messages"][0]["content"])
+        return _judge_resp("VERDICT: both_bad\nREASON: neither says 42")
+
+    monkeypatch.setattr(judging, "_post_chat", fake_post)
+    result = judging.dispatch_judge(_dbpath(conn), 1,
+                                    judge_url="http://judge/v1",
+                                    judge_model="kimi-k3")
+    assert result["status"] == "complete" and result["stored"] == 2
+    # the reference actually reached the judge prompt (v4-ref variant)
+    assert any("[REFERENCE]" in p and "'42'" in p for p in seen_payloads)
+
+    rep = reports.suite_report(conn, 1)
+    assert rep["overall"]["counts"] == {"a": 0, "b": 0, "tie": 0, "both_bad": 2}
+    assert rep["overall"]["both_bad_rate"] == 100.0
+    assert rep["pairs"][0]["both_bad_rate"] == 100.0
+    assert all(v["counts"]["both_bad"] == 2
+               for v in rep["by_dimension"].values())
+    assert all(it["verdict_detail"] == "both_bad"
+               for it in rep["item_level"])
+    # draw math: both sides 0.5 of 2 -> 50.0
+    s = reports.pair_summary(conn, 1, "alpha", "beta")
+    assert s["overall"]["score_a"] == 50.0
+    assert s["overall"]["score_b"] == 50.0
+    csv_text = reports.export_report_csv(rep)
+    rows = list(_csv.reader(_io.StringIO(csv_text)))
+    header = rows[0]
+    prow = next(r for r in rows[1:] if len(r) > 3
+                and r[2] == "alpha" and r[3] == "beta")
+    cells = dict(zip(header, prow))
+    assert cells["both_bad"] == "2"
+    assert float(cells["pct_both_bad"]) == 100.0
+    assert float(cells["pct_tie"]) == 0.0

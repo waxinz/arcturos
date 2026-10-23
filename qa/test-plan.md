@@ -53,6 +53,12 @@ Rules:
 - [x] `tests/test_judging.py::test_migration_adds_verdict_detail_to_legacy_db` — legacy DB migrates on init_db (idempotent ALTER); legacy tie rows keep NULL detail; new-style insert works
 - [x] `tests/test_reports.py::test_both_bad_counts_as_own_bucket_and_half_draw` — both_bad bucket in overall/pair counts, both_bad_rate headline, 0.5-draw score math; plain ties unaffected
 
+### J4 — Audit round (2026-10-23)
+- [x] `tests/test_eval_jobs.py::test_eval_job_counter_counts_rows_not_items` — progress denominator = stored-row count (multi-turn items store one row per assistant turn): 1 single + 1 multi (2 assistant turns) → 3/3, final line "3 results from 2 items"; fixes live "553/480" on smart-agent-101 (480 items → 587 rows)
+- [x] `tests/test_api.py::test_judgment_api_accepts_verdict_detail` — POST /api/judgments accepts a qualified both-bad draw (winner='tie' + verdict_detail='both_bad'); 422 when detail rides a non-tie winner
+- [x] `tests/test_judging.py::test_both_bad_end_to_end_dispatch_report_csv` — glue: mocked both-bad judge → dispatch (both orders) → suite_report buckets/both_bad_rate → pair_summary draw math → CSV both_bad/pct_both_bad parsed and pinned
+- [x] release-gate PII sweep over the FULL tracked tree (all 11 operator strings) — CLEAN after fixing the sticky-inputs.js first-name comment; qa/suites-private verified untracked + gitignored
+
 ### J4 — Combined kick-off (evals + judging, added 2026-10-15)
 - [x] `tests/test_eval_jobs.py::test_combined_job_end_to_end` — target_a/target_b replays both models from the suite's latest definition snapshot, then judges the two fresh runs run-scoped; two judgments stored (both orders); run names carry the kick-off provenance; API keys never echo on the job record (targets expose url+model only)
 - [x] `tests/test_eval_jobs.py::test_combined_job_validation` — 422s: one target without the other, non-http url, empty model, identical A/B models, judge-is-contestant guard (UI discriminator substring), eval_run_ids+targets mutually exclusive, suite without a definition snapshot

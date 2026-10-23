@@ -647,3 +647,40 @@ def test_mirrored_mixed_validation_422(client):
     r = tc.post("/api/ops/judge/jobs", json={**body, "eval_run_a": 99,
                                              "target_b": dict(tb)})
     assert r.status_code == 422 and "not found" in r.json()["detail"]
+
+
+def test_eval_job_counter_counts_rows_not_items(client, monkeypatch):
+    """Audit fix: the progress denominator must be stored-row count —
+    multi-turn items store one row per assistant turn, so a suite of
+    1 single + 1 multi-turn (2 assistant turns) shows 3/3, never 3/2."""
+    monkeypatch.setattr(
+        "arcturos.ops.preflight.preflight",
+        lambda *a, **k: type("PF", (), {"ok": lambda self: True})())
+    monkeypatch.setattr(
+        "arcturos.multiturn.post_openai_chat",
+        lambda target, messages, api_key=None, model="test", **kw:
+        {"choices": [{"message": {"content": "ok"}}],
+         "usage": {"prompt_tokens": 3, "completion_tokens": 2}})
+    suite = {"items": [
+        {"id": "q1", "dimension": "reasoning", "prompt": "hi"},
+        {"id": "mt1", "type": "multi-turn", "dimension": "reasoning", "turns": [
+            {"role": "user", "content": "a"},
+            {"role": "assistant", "content": "{OPTS}"},
+            {"role": "user", "content": "b"},
+            {"role": "assistant", "content": "{OPTS}"},
+        ]},
+    ]}
+    res = client[0].post("/api/ops/eval/jobs", json={
+        "suite_id": 1, "target": "http://fake:8080/v1",
+        "model_fingerprint": "test-model", "suite": suite})
+    assert res.status_code == 200, res.text
+    job_id = res.json()["job_id"]
+    st = _wait_job(lambda jid: client[0].get(f"/api/ops/eval/jobs/{jid}"), job_id)
+    assert st["status"] == "done", st
+    assert st["items_total"] == 3, st["items_total"]
+    assert st["items_done"] == 3
+    assert st["results_stored"] == 3
+    assert "3 results from 2 items" in st["status_line"]
+    conn = dbmod.connect(client[1])
+    assert conn.execute("SELECT COUNT(*) FROM eval_results").fetchone()[0] == 3
+    conn.close()
