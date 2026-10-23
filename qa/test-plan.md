@@ -74,6 +74,9 @@ Rules:
 - [x] `tests/test_eval_jobs.py::test_extract_verdict_truncation_guard` — truncated deliberation (no VERDICT line, token mid-sentence) → None → retry; final-mention convention preserved when the token ends the reply
 - [x] `tests/test_eval_jobs.py::test_judge_once_default_max_tokens_bumped` — judge call budget 2048 (kimi chatter overran 1024 on ~9% of the first real run)
 
+### J4 — Judge presentation trims serving-stack wrappers (added 2026-10-23)
+- [x] `tests/test_judging.py::test_select_pairs_trims_serving_preamble` — the judge worklist trims leading/trailing whitespace from out_a/out_b (multiturn history included); the store stays verbatim (append-only doctrine, same as the reference scorer). Audit trigger: evals-101 run #8 vs #9 stored 27 judgments on byte-identical-after-trim answers, every one decided against the side carrying qwen's leading blank-line preamble (e101-vision-003 judgment #480 the owner's example)
+
 ### J5 — Reports
 - [ ] win-rate aggregation: counts + percentages per suite × pair
 - [ ] category breakdown

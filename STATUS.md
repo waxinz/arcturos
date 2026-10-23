@@ -5,6 +5,31 @@ stays the conventions/ground-truth file; this file is the living status).
 Newest first. Read AGENTS.md first for conventions; read this file to
 resume work.
 
+## 2026-10-23 — Judge presentation trims serving-stack wrappers (evals-101 #8v#9 audit)
+
+- **The judge now sees answers, not serving-stack wrappers.** Auditing
+  the run #8 (qwen3.8-27b) vs run #9 (Qwen3.8-Flash-Next:IQ2_XS)
+  judgments (236 rows, 100 items) found the qwen leading blank-line
+  preamble stored verbatim on 222/236 run-8 rows and 0 run-9 rows — and
+  the judge citing "stray blank lines" as the deciding reason:
+  **27 judgments chose a winner on pairs whose two answers are
+  byte-identical after trimming** (21 items: extraction ×8,
+  instruction-following ×5, conciseness ×4, accuracy ×3, reasoning ×3,
+  vision ×2, coding ×1, tool-calling ×1), every one for the clean side.
+  Owner's example: e101-vision-003 judgment #480 — both answers '10:10';
+  the preamble side lost on "adds stray blank lines".
+- **Fix:** `judging.select_pairs` normalizes judge-visible text at the
+  worklist boundary (`_judge_view`: strip leading/trailing whitespace on
+  out_a/out_b and multiturn history); the store stays verbatim
+  (append-only untouched) — same doctrine as the reference scorer
+  (normalize where the value is consumed). No template change →
+  `JUDGE_TEMPLATE_VERSION` stays `blind-pair-v3`. Existing #8v#9
+  judgments are historical rows and keep their verdicts (append-only;
+  re-judging the pair with the fix in place is the operator's call —
+  it costs judge tokens).
+- Tests: `test_judging.py::test_select_pairs_trims_serving_preamble`
+  (worklist trimmed, store raw) + qa/test-plan J4 row.
+
 ## 2026-10-15 — Pair page leads with a per-dimension category summary
 
 - **Column order follows the kick-off's A/B run naming:** the pair page
