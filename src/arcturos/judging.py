@@ -146,6 +146,79 @@ VERDICT: 2      (if response 2 is better)
 VERDICT: tie    (if neither is clearly better)
 REASON: <one short sentence, max ~25 words, why>"""
 
+# Reference-guided variant (blind-pair-v4-ref): items whose definition
+# carries a machine-check reference get the ground truth in the prompt so
+# the judge can detect BOTH responses being factually wrong — the MT-Bench
+# finding (Zheng et al. 2023 §3.3/3.4): without a reference, GPT-4 rated an
+# incorrect answer correct 14/20 times on math pairs; with one, 3/20. The
+# both_bad verdict keeps 0-winner semantics (stored as winner='tie' +
+# verdict_detail='both_bad') matching the Arena "both are bad" convention.
+JUDGE_TEMPLATE_VERSION_REF = "blind-pair-v4-ref"
+
+JUDGE_PROMPT_TEMPLATE_REF = """You are a strict blind preference judge. Two anonymous AI assistants
+(assistant 1 and assistant 2) answered the same prompt. Decide which
+response is BETTER for the criterion below. Do not guess which model is
+which. Do not reward length by itself.
+
+CRITERION: {rubric}
+
+[REFERENCE]
+{reference}
+A response that contradicts the reference on the checked fact is WRONG
+regardless of how confident or well-written it is.
+
+[PROMPT]
+{prompt}
+
+[RESPONSE 1]
+{resp1}
+
+[RESPONSE 2]
+{resp2}
+
+Reply with EXACTLY these two lines and nothing else:
+VERDICT: 1         (if response 1 is better)
+VERDICT: 2         (if response 2 is better)
+VERDICT: tie       (if neither is clearly better)
+VERDICT: both_bad  (if BOTH responses are factually wrong / contradict
+                   the reference — even if one wrong answer looks nicer)
+REASON: <one short sentence, max ~25 words, why>"""
+
+
+def _render_reference(reference: dict[str, Any] | None) -> str | None:
+    """Human-readable ground truth from an item's machine-check reference.
+
+    Returns None for absent/unknown shapes — those items keep the plain
+    v3 template (never invent a reference the item does not carry).
+    """
+    if not isinstance(reference, dict):
+        return None
+    kind = reference.get("check")
+    value = reference.get("value")
+    if value is None and kind not in ("one_of", "regex"):
+        return None  # a missing ground truth must never render as 'None'
+    if kind == "exact":
+        return f"The exact correct answer: {value!r}"
+    if kind == "numeric":
+        tol = reference.get("tolerance")
+        tol_txt = f" (tolerance ±{tol})" if tol is not None else ""
+        return f"The correct numeric answer: {value!r}{tol_txt}"
+    if kind == "contains":
+        return f"A correct answer must include this string: {value!r}"
+    if kind == "one_of":
+        vals = reference.get("values") or []
+        if not vals:
+            return None
+        return ("Acceptable answers (any one of): "
+                + ", ".join(repr(v) for v in vals))
+    if kind == "regex":
+        pat = reference.get("pattern", value)
+        if not pat:
+            return None
+        return ("A response is correct only if it matches this pattern: "
+                f"/{pat}/")
+    return None
+
 
 def _judge_view(output: str | None) -> str:
     """Judge-visible answer text: trimmed.
@@ -172,12 +245,12 @@ def rubric_for(dimension: str | None) -> str:
 # ------------------------------------------------------ verdict parsing ----
 
 def extract_verdict(raw: str) -> str | None:
-    """Parse 1/2/tie from judge output, reasoning-chatter tolerant.
+    """Parse 1/2/tie/both_bad from judge output, reasoning-chatter tolerant.
 
     Preference order: a strict ``VERDICT: X`` line; then the last bare
-    1/2/tie token anywhere in the text (final-mention convention —
+    1/2/tie/both_bad token anywhere in the text (final-mention convention —
     reasoning models restate their verdict at the end).
-    Returns '1' | '2' | 'tie' or None when unparseable.
+    Returns '1' | '2' | 'tie' | 'both_bad' or None when unparseable.
 
     Truncation guard: with no VERDICT line, the last bare token is only
     trusted when it sits at the very end of the reply. A reply cut off
@@ -190,17 +263,25 @@ def extract_verdict(raw: str) -> str | None:
     if not raw:
         return None
     text = raw.strip()
-    m = re.search(r"VERDICT\s*[:\-]?\s*(1|2|tie)", text, re.IGNORECASE)
+    m = re.search(r"VERDICT\s*[:\-]?\s*(1|2|tie|both[\s_-]?bad)",
+                  text, re.IGNORECASE)
     if m:
-        return m.group(1).lower()
+        return _norm_verdict(m.group(1))
     last = None
-    for t in re.finditer(r"(?<![\w.])(1|2|tie)(?![\w.])", text.lower()):
+    for t in re.finditer(r"(?<![\w.])(1|2|tie|both[\s_-]?bad)(?![\w.])",
+                         text.lower()):
         last = t
     if last is None:
         return None
     if not re.fullmatch(r"[\s.,!?)\]:;\"']*", text[last.end():]):
         return None
-    return last.group(1)
+    return _norm_verdict(last.group(1))
+
+
+def _norm_verdict(token: str) -> str:
+    """Normalize a parsed verdict token to the stored vocabulary."""
+    t = re.sub(r"[\s_-]+", "_", (token or "").strip().lower())
+    return "both_bad" if t == "both_bad" else t
 
 
 def extract_reason(raw: str) -> str | None:
@@ -230,7 +311,8 @@ def extract_rationale(raw: str) -> str | None:
     if reason:
         return reason
     tail = raw.strip()
-    tail = re.sub(r"(?i)^verdict\s*[:\-]?\s*(1|2|tie)\s*", "", tail).strip()
+    tail = re.sub(r"(?i)^verdict\s*[:\-]?\s*(1|2|tie|both[\s_-]?bad)\s*",
+                  "", tail).strip()
     if not tail:
         return None
     return tail[-400:] or None
@@ -473,18 +555,31 @@ def judge_once(judge_url: str, judge_model: str, prompt_text: str,
                resp1: str, resp2: str, dimension: str | None,
                image_url: str | None = None,
                api_key: str | None = None,
-               max_tokens: int = 2048) -> dict[str, Any]:
+               max_tokens: int = 2048,
+               reference: dict[str, Any] | None = None) -> dict[str, Any]:
     """One blind pairwise judge call. Returns a verdict dict:
-    {valid, winner ('1'|'2'|'tie'), raw, rationale} — winner is in
-    PRESENTATION order (response 1 vs 2), mapped by the caller.
+    {valid, winner ('1'|'2'|'tie'|'both_bad'), raw, rationale,
+    template_version} — winner is in PRESENTATION order (response 1 vs 2),
+    mapped by the caller; template_version records which prompt variant
+    produced the verdict ('blind-pair-v3', or 'blind-pair-v4-ref' when a
+    machine-check reference was rendered into the prompt).
 
     2048 default: chatty reasoning judges (kimi) overran 1024 in the
     first real run — 9% of verdicts were truncated mid-deliberation and
     parsed from stray tokens; the retry + truncation guard only help if
     the reply has room to finish."""
-    text = JUDGE_PROMPT_TEMPLATE.format(
-        rubric=rubric_for(dimension), prompt=prompt_text,
-        resp1=resp1 or "(empty)", resp2=resp2 or "(empty)")
+    ref_text = _render_reference(reference)
+    if ref_text:
+        text = JUDGE_PROMPT_TEMPLATE_REF.format(
+            rubric=rubric_for(dimension), reference=ref_text,
+            prompt=prompt_text,
+            resp1=resp1 or "(empty)", resp2=resp2 or "(empty)")
+        template_version = JUDGE_TEMPLATE_VERSION_REF
+    else:
+        text = JUDGE_PROMPT_TEMPLATE.format(
+            rubric=rubric_for(dimension), prompt=prompt_text,
+            resp1=resp1 or "(empty)", resp2=resp2 or "(empty)")
+        template_version = JUDGE_TEMPLATE_VERSION
     content: Any = text
     if image_url:
         content = [
@@ -499,11 +594,12 @@ def judge_once(judge_url: str, judge_model: str, prompt_text: str,
         }, api_key)
     except Exception as exc:  # noqa: BLE001 — the job record reports it
         return {"valid": False, "winner": None, "raw": f"judge call failed: {exc}",
-                "rationale": None}
+                "rationale": None, "template_version": template_version}
     raw = _judge_message_text(resp)
     winner = extract_verdict(raw)
     return {"valid": winner is not None, "winner": winner, "raw": raw,
-            "rationale": extract_rationale(raw)}
+            "rationale": extract_rationale(raw),
+            "template_version": template_version}
 
 
 def _reason_followup(judge_url: str, judge_model: str, raw: str,
@@ -514,7 +610,8 @@ def _reason_followup(judge_url: str, judge_model: str, raw: str,
     verdict-only get exactly one nudge — the judgment is already paid for
     and stays valid even if this returns nothing (honest None).
     """
-    what = {"1": "response 1", "2": "response 2"}.get(winner, "a tie")
+    what = {"1": "response 1", "2": "response 2"}.get(winner, "a tie"
+            if winner != "both_bad" else "both responses (both wrong)")
     prompt = (
         "A blind judge compared two AI responses and replied exactly:\n"
         f"{raw}\n\n"
@@ -588,7 +685,8 @@ def judge_item(work_item: dict[str, Any], judge_url: str, judge_model: str,
         for attempt in range(retries + 1):
             verdict = judge_once(judge_url, judge_model, prompt_text,
                                  first, second, work_item["dimension"],
-                                 image_url=image_url, api_key=api_key)
+                                 image_url=image_url, api_key=api_key,
+                                 reference=work_item["item"].get("reference"))
             if verdict["valid"]:
                 break
         if not verdict or not verdict["valid"]:
@@ -606,22 +704,30 @@ def judge_item(work_item: dict[str, Any], judge_url: str, judge_model: str,
                 judge_url, judge_model, verdict["raw"], verdict["winner"],
                 api_key=api_key)
         w = verdict["winner"]
-        if w == "tie":
+        if w in ("tie", "both_bad"):
+            # both_bad keeps the draw semantics (0.5/0.5 — Arena/MT-Bench
+            # convention) and qualifies itself via verdict_detail; a plain
+            # tie stores no detail.
             winner = "tie"
+            detail = "both_bad" if w == "both_bad" else None
         else:
             first_won = (w == "1")
             winner = "a" if first_won == first_was_a else "b"
+            detail = None
         judgments.append({
             "eval_result_a": work_item["result_a"]["id"],
             "eval_result_b": work_item["result_b"]["id"],
             "judge_model": judge_model,
-            "judge_template_version": JUDGE_TEMPLATE_VERSION,
+            "judge_template_version": verdict.get(
+                "template_version", JUDGE_TEMPLATE_VERSION),
             "winner": winner,
             "confidence": None,
             "rationale": verdict["rationale"],
+            "verdict_detail": detail,
         })
         rows.append({"item_id": label, "order": order_label,
-                     "verdict": winner, "error": None,
+                     "verdict": (winner if detail is None else detail),
+                     "error": None,
                      "judge_model": judge_model})
     return judgments, errors, rows
 
@@ -765,11 +871,12 @@ def dispatch_judge(
                     conn.execute(
                         "INSERT INTO judgments (eval_result_a, eval_result_b,"
                         " judge_model, judge_template_version, winner,"
-                        " confidence, rationale, created_at)"
-                        " VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                        " confidence, rationale, verdict_detail, created_at)"
+                        " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
                         (j["eval_result_a"], j["eval_result_b"],
                          j["judge_model"], j["judge_template_version"],
-                         j["winner"], j["confidence"], j["rationale"], now))
+                         j["winner"], j["confidence"], j["rationale"],
+                         j.get("verdict_detail"), now))
                     stored += 1
                 conn.commit()  # per-item commit: partial preservation
                 items_progress.append({

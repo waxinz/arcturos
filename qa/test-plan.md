@@ -44,6 +44,15 @@ Rules:
 - [ ] order-randomization audit: stored judgment payload must not leak which model is A/B
 - [ ] re-judging same pair with different template version appends a second row
 
+### J4 — Both-bad judging (reference-guided, added 2026-10-23)
+- [x] `tests/test_judging.py::test_extract_verdict_both_bad_variants` — VERDICT: both_bad / both-bad / "both bad" / case-insensitive / bare-token fallback; mid-sentence stray mention stays None (truncation guard)
+- [x] `tests/test_judging.py::test_render_reference_kinds` — reference rendered for all five check kinds; missing value / unknown kind / non-dict -> None (plain v3 template, never a fabricated reference)
+- [x] `tests/test_judging.py::test_judge_once_uses_ref_template_only_with_reference` — reference-guided prompt (blind-pair-v4-ref) only when a reference renders; template_version recorded per judgment
+- [x] `tests/test_judging.py::test_judge_item_stores_both_bad_as_qualified_tie` / `..._plain_tie_keeps_no_detail` — both-bad stores winner='tie' + verdict_detail='both_bad' (CHECK untouched, append-only schema); plain tie keeps NULL detail
+- [x] `tests/test_judging.py::test_dispatch_judge_persists_verdict_detail` — verdict_detail persisted through the dispatch INSERT for both presentation orders
+- [x] `tests/test_judging.py::test_migration_adds_verdict_detail_to_legacy_db` — legacy DB migrates on init_db (idempotent ALTER); legacy tie rows keep NULL detail; new-style insert works
+- [x] `tests/test_reports.py::test_both_bad_counts_as_own_bucket_and_half_draw` — both_bad bucket in overall/pair counts, both_bad_rate headline, 0.5-draw score math; plain ties unaffected
+
 ### J4 — Combined kick-off (evals + judging, added 2026-10-15)
 - [x] `tests/test_eval_jobs.py::test_combined_job_end_to_end` — target_a/target_b replays both models from the suite's latest definition snapshot, then judges the two fresh runs run-scoped; two judgments stored (both orders); run names carry the kick-off provenance; API keys never echo on the job record (targets expose url+model only)
 - [x] `tests/test_eval_jobs.py::test_combined_job_validation` — 422s: one target without the other, non-http url, empty model, identical A/B models, judge-is-contestant guard (UI discriminator substring), eval_run_ids+targets mutually exclusive, suite without a definition snapshot

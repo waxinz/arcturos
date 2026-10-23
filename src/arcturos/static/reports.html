@@ -103,13 +103,13 @@
       t.innerHTML = '<thead><tr><th>Winner</th><th class="num">Count</th>' +
         '<th class="num">Percent</th><th class="num">A-win 95% CI</th></tr></thead>';
       const tbody = document.createElement('tbody');
-      for (const side of ['a', 'b', 'tie']) {
+      for (const side of ['a', 'b', 'tie', 'both_bad']) {
         const tr = document.createElement('tr');
         const tdName = document.createElement('td');
-        tdName.textContent = side;
+        tdName.textContent = side === 'both_bad' ? 'both-bad' : side;
         const tdCount = document.createElement('td');
         tdCount.className = 'num';
-        tdCount.textContent = o.counts[side];
+        tdCount.textContent = (o.counts && o.counts[side] != null) ? o.counts[side] : 0;
         const tdPct = document.createElement('td');
         tdPct.className = 'num pct';
         tdPct.textContent = pctCell(o.percent[side]);
@@ -140,6 +140,7 @@
       const t = document.createElement('table');
       t.innerHTML = '<thead><tr><th>Dimension</th>' +
         '<th class="num">A wins</th><th class="num">B wins</th><th class="num">Ties</th>' +
+        '<th class="num">Both bad</th>' +
         '<th class="num">n</th><th class="num">A%</th><th class="num">B%</th>' +
         '<th class="num">A-win 95% CI</th></tr></thead>';
       const tbody = document.createElement('tbody');
@@ -150,7 +151,8 @@
         const cells = [
           ['td', dim + (lowN(c.total) ? ' *' : ''), ''],
           ['td', c.counts.a, 'num'], ['td', c.counts.b, 'num'],
-          ['td', c.counts.tie, 'num'], ['td', c.total, 'num'],
+          ['td', c.counts.tie, 'num'], ['td', c.counts.both_bad || 0, 'num'],
+          ['td', c.total, 'num'],
           ['td', pctCell(c.percent.a), 'num pct'],
           ['td', pctCell(c.percent.b), 'num pct'],
           ['td', wilsonCell(c.wilson_a), 'num'],
@@ -229,6 +231,7 @@
       const t = document.createElement('table');
       t.innerHTML = '<thead><tr><th>Model A</th><th>Model B</th>' +
         '<th class="num">A wins</th><th class="num">B wins</th><th class="num">Ties</th>' +
+        '<th class="num">Both bad</th>' +
         '<th class="num">n</th><th class="num">A%</th><th class="num">B%</th><th class="num">Tie%</th></tr></thead>';
       const tbody = document.createElement('tbody');
       for (const p of report.pairs) {
@@ -236,7 +239,8 @@
         const cells = [
           ['td', p.model_a, 'mono'], ['td', p.model_b, 'mono'],
           ['td', p.counts.a, 'num'], ['td', p.counts.b, 'num'],
-          ['td', p.counts.tie, 'num'], ['td', p.total, 'num'],
+          ['td', p.counts.tie, 'num'], ['td', p.counts.both_bad || 0, 'num'],
+          ['td', p.total, 'num'],
           ['td', pctCell(p.percent.a), 'num pct'],
           ['td', pctCell(p.percent.b), 'num pct'],
           ['td', pctCell(p.percent.tie), 'num pct'],
@@ -265,7 +269,8 @@
       }
       const t = document.createElement('table');
       t.innerHTML = '<thead><tr><th>Category</th><th class="num">A</th>' +
-        '<th class="num">B</th><th class="num">Tie</th><th class="num">Total</th>' +
+        '<th class="num">B</th><th class="num">Tie</th><th class="num">Both bad</th>' +
+        '<th class="num">Total</th>' +
         '<th class="num">A%</th></tr></thead>';
       const tbody = document.createElement('tbody');
       for (const cat of cats) {
@@ -273,7 +278,8 @@
         const tr = document.createElement('tr');
         const cells = [
           ['td', cat, ''], ['td', c.counts.a, 'num'], ['td', c.counts.b, 'num'],
-          ['td', c.counts.tie, 'num'], ['td', c.total, 'num'],
+          ['td', c.counts.tie, 'num'], ['td', c.counts.both_bad || 0, 'num'],
+          ['td', c.total, 'num'],
           ['td', pctCell(c.percent ? c.percent.a : null), 'num pct'],
         ];
         for (const [tag, text, cls] of cells) {

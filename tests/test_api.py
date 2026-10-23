@@ -27,7 +27,7 @@ EXPECTED_COLUMNS = {
                   "created_at"},
     "judgments": {
         "id", "eval_result_a", "eval_result_b", "judge_model", "judge_template_version",
-        "winner", "confidence", "rationale", "created_at",
+        "winner", "confidence", "rationale", "created_at", "verdict_detail",
     },
     "suite_definitions": {"id", "suite_id", "payload", "created_at"},
     "run_visibility": {"id", "run_id", "hidden", "reason", "created_at"},

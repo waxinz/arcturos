@@ -102,6 +102,7 @@ CREATE TABLE IF NOT EXISTS judgments (
     confidence             REAL    CHECK (confidence BETWEEN 0 AND 1),
     rationale              TEXT,
     created_at             TEXT    NOT NULL,
+    verdict_detail         TEXT,
     CHECK (eval_result_a <> eval_result_b)
 );
 
@@ -320,6 +321,11 @@ _MIGRATIONS = (
     ("runs", "name", "TEXT"),
     ("eval_results", "eval_run_id", "INTEGER"),
     ("eval_runs", "status", "TEXT NOT NULL DEFAULT 'complete'"),
+    # both-wrong verdicts (2026-10-23): winner stays 'tie' (a draw in the
+    # industry convention — Arena/MT-Bench treat both-bad as 0.5/0.5);
+    # verdict_detail='both_bad' qualifies the draw so reports can surface
+    # a both_bad_rate. Nullable — legacy rows have no detail, by design.
+    ("judgments", "verdict_detail", "TEXT"),
 )
 
 

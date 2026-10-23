@@ -206,14 +206,15 @@ def test_suite_report_happy_path(client):
     assert report["models"] == ["model-alpha", "model-beta"]
     assert report["results_stored"] == 4
     assert report["judgments_stored"] == 2
-    assert report["overall"]["counts"] == {"a": 1, "b": 1, "tie": 0}
+    assert report["overall"]["counts"] == {"a": 1, "b": 1, "tie": 0, "both_bad": 0}
     assert report["overall"]["total"] == 2
-    assert report["overall"]["percent"] == {"a": 50.0, "b": 50.0, "tie": 0.0}
+    assert report["overall"]["percent"] == {"a": 50.0, "b": 50.0, "tie": 0.0,
+                                                "both_bad": 0.0}
     assert len(report["pairs"]) == 1
     pair = report["pairs"][0]
     assert pair["model_a"] == "model-alpha"
     assert pair["model_b"] == "model-beta"
-    assert pair["counts"] == {"a": 1, "b": 1, "tie": 0}
+    assert pair["counts"] == {"a": 1, "b": 1, "tie": 0, "both_bad": 0}
     assert len(report["item_level"]) == 2
 
     csv = data["csv"]
@@ -221,8 +222,8 @@ def test_suite_report_happy_path(client):
     lines = csv.strip().splitlines()
     # v0.2: pair rows + trailing dimension section (5 lines here)
     assert len(lines) == 5
-    assert "smoke,v1,model-alpha,model-beta,1,1,0,2" in lines[1]
-    assert "dimension,wins_a,wins_b,ties,total" in lines[3]
+    assert "smoke,v1,model-alpha,model-beta,1,1,0,0,2" in lines[1]
+    assert "dimension,wins_a,wins_b,ties,both_bad,total" in lines[3]
 
 
 def test_suite_report_unknown_suite_404(client):
@@ -237,8 +238,9 @@ def test_suite_report_empty_suite(client):
     res = client.get(f"/api/reports/suite/{suite_id}")
     assert res.status_code == 200, res.text
     report = res.json()["report"]
-    assert report["overall"]["counts"] == {"a": 0, "b": 0, "tie": 0}
-    assert report["overall"]["percent"] == {"a": None, "b": None, "tie": None}
+    assert report["overall"]["counts"] == {"a": 0, "b": 0, "tie": 0, "both_bad": 0}
+    assert report["overall"]["percent"] == {"a": None, "b": None, "tie": None,
+                                                "both_bad": None}
     assert report["pairs"] == []
 
 
@@ -289,7 +291,7 @@ def test_pair_summary_endpoint_caller_orientation(client):
     assert res.status_code == 200, res.text
     s = res.json()
     assert s["total"] == 2
-    assert s["overall"]["counts"] == {"a": 2, "b": 0, "tie": 0}
+    assert s["overall"]["counts"] == {"a": 2, "b": 0, "tie": 0, "both_bad": 0}
     assert s["overall"]["score_a"] == 100.0
     assert s["overall"]["score_b"] == 0.0
     assert s["overall"]["wilson_a"] is not None
@@ -303,7 +305,7 @@ def test_pair_summary_endpoint_caller_orientation(client):
     assert rev.status_code == 200, rev.text
     r = rev.json()
     assert r["total"] == 2
-    assert r["overall"]["counts"] == {"a": 0, "b": 2, "tie": 0}
+    assert r["overall"]["counts"] == {"a": 0, "b": 2, "tie": 0, "both_bad": 0}
     assert r["overall"]["score_a"] == 0.0
     assert r["overall"]["score_b"] == 100.0
     assert [row["dimension"] for row in r["rows"]] == \
@@ -324,4 +326,5 @@ def test_pair_summary_endpoint_404_and_empty_pair(client):
     s = res.json()
     assert s["rows"] == []
     assert s["total"] == 0
-    assert s["overall"]["percent"] == {"a": None, "b": None, "tie": None}
+    assert s["overall"]["percent"] == {"a": None, "b": None, "tie": None,
+                                           "both_bad": None}

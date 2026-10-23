@@ -152,10 +152,17 @@ def reference_scores(db: sqlite3.Connection, suite_id: int,
 
 
 def _pct_entry(counts: dict[str, int]) -> dict[str, Any]:
-    """counts {a,b,tie} -> {counts, percent, total, wilson}."""
-    total = counts["a"] + counts["b"] + counts["tie"]
-    pct = {k: round(counts[k] / total * 100, 1) if total else None
-           for k in ("a", "b", "tie")}
+    """counts {a,b,tie,both_bad} -> {counts, percent, total, wilson}.
+
+    both_bad rides on the tie/draw semantics (0.5/0.5 — Arena/MT-Bench
+    convention) but is counted and reported as its own bucket so the
+    both-wrong rate stays visible next to the win rates.
+    """
+    total = (counts["a"] + counts["b"] + counts["tie"]
+             + counts.get("both_bad", 0))
+    keys = ("a", "b", "tie", "both_bad")
+    pct = {k: round(counts.get(k, 0) / total * 100, 1) if total else None
+           for k in keys}
     lo_hi = wilson_interval(counts["a"] / total if total else None, total)
     out: dict[str, Any] = {"counts": dict(counts), "percent": pct, "total": total}
     if lo_hi:
@@ -217,7 +224,7 @@ def suite_report(db: sqlite3.Connection, suite_id: int,
         dimension_map = {k: v["dimension"]
                          for k, v in metadata_map_for(db, suite_id).items()}
 
-    overall = {"a": 0, "b": 0, "tie": 0}
+    overall = {"a": 0, "b": 0, "tie": 0, "both_bad": 0}
     per_pair: dict[tuple[str, str], dict[str, Any]] = {}
     per_category: dict[str, dict[str, Any]] = {}
     per_dimension: dict[str, dict[str, Any]] = {}
@@ -232,9 +239,13 @@ def suite_report(db: sqlite3.Connection, suite_id: int,
         pair = tuple(sorted((ra["model_fingerprint"], rb["model_fingerprint"])))
         entry = per_pair.setdefault(
             pair, {"model_a": pair[0], "model_b": pair[1],
-                   "counts": {"a": 0, "b": 0, "tie": 0}})
-        # winner is relative to stored eval_result_a/eval_result_b, not sorted pair
+                   "counts": {"a": 0, "b": 0, "tie": 0, "both_bad": 0}})
+        # winner is relative to stored eval_result_a/eval_result_b, not sorted
+        # pair; both-bad draws (winner='tie' + verdict_detail='both_bad')
+        # count as their own bucket — still 0.5/0.5 in the score math.
         winner = j["winner"]
+        is_both_bad = (winner == "tie"
+                       and (j["verdict_detail"] or "") == "both_bad")
         counted_model = None
         if winner == "a":
             counted_model = ra["model_fingerprint"]
@@ -245,9 +256,11 @@ def suite_report(db: sqlite3.Connection, suite_id: int,
             counted_side = "a" if counted_model == pair[0] else "b"
         if counted_side:
             entry["counts"][counted_side] += 1
+        elif is_both_bad:
+            entry["counts"]["both_bad"] += 1
         else:
             entry["counts"]["tie"] += 1
-        overall[winner] += 1
+        overall["both_bad" if is_both_bad else winner] += 1
 
         base_item_id = ra["item_id"].split("#")[0]
         category = category_map.get(ra["item_id"], "uncategorized")
@@ -256,6 +269,7 @@ def suite_report(db: sqlite3.Connection, suite_id: int,
             "item_id": ra["item_id"],
             "judgment_id": j["id"],
             "winner": winner,
+            "verdict_detail": j["verdict_detail"],
             "model_a": ra["model_fingerprint"],
             "model_b": rb["model_fingerprint"],
             "judge_model": j["judge_model"],
@@ -268,9 +282,12 @@ def suite_report(db: sqlite3.Connection, suite_id: int,
         item_level.append(item)
 
         for key, bucket in ((category, per_category), (dimension, per_dimension)):
-            b = bucket.setdefault(key, {"counts": {"a": 0, "b": 0, "tie": 0}})
+            b = bucket.setdefault(key, {"counts": {"a": 0, "b": 0, "tie": 0,
+                                                   "both_bad": 0}})
             if counted_side:
                 b["counts"][counted_side] += 1
+            elif is_both_bad:
+                b["counts"]["both_bad"] += 1
             else:
                 b["counts"]["tie"] += 1
 
@@ -283,15 +300,17 @@ def suite_report(db: sqlite3.Connection, suite_id: int,
     pairs_out = []
     for (ma, mb), entry in per_pair.items():
         counts = entry["counts"]
-        t = counts["a"] + counts["b"] + counts["tie"]
-        pct = {k: round(counts[k] / t * 100, 1) if t else None
-               for k in ("a", "b", "tie")}
+        t = (counts["a"] + counts["b"] + counts["tie"]
+             + counts.get("both_bad", 0))
+        pct = {k: round(counts.get(k, 0) / t * 100, 1) if t else None
+               for k in ("a", "b", "tie", "both_bad")}
         w = wilson_interval(counts["a"] / t if t else None, t)
         pairs_out.append({
             "model_a": ma, "model_b": mb,
             "counts": dict(counts),
             "percent": pct,
             "total": t,
+            "both_bad_rate": pct["both_bad"],
             **({"wilson_a": {"low": w[0], "high": w[1]}} if w else {}),
         })
 
@@ -323,6 +342,7 @@ def suite_report(db: sqlite3.Connection, suite_id: int,
         "judgments_stored": len(judgments),
         "pairs": pairs_out,
         "overall": {"counts": overall, "percent": overall_pct, "total": total,
+                    "both_bad_rate": overall_pct.get("both_bad"),
                     **({"wilson_a": {"low": lo_hi[0], "high": lo_hi[1]}}
                        if lo_hi else {})},
         "by_category": by_category,
@@ -363,7 +383,7 @@ def pair_summary(db: sqlite3.Connection, suite_id: int, model_a: str,
              "total", "rows", "overall"}; rows sorted n desc then
              dimension name asc.
     """
-    sql = """SELECT j.winner, j.judge_model,
+    sql = """SELECT j.winner, j.judge_model, j.verdict_detail,
                     j.judge_template_version AS template,
                     ra.model_fingerprint AS fa, rb.model_fingerprint AS fb,
                     ra.item_id AS item_id
@@ -384,7 +404,7 @@ def pair_summary(db: sqlite3.Connection, suite_id: int, model_a: str,
     metadata = metadata_map_for(db, suite_id)
 
     flip = {"a": "b", "b": "a"}
-    overall = {"a": 0, "b": 0, "tie": 0}
+    overall = {"a": 0, "b": 0, "tie": 0, "both_bad": 0}
     per_dim: dict[str, dict[str, int]] = {}
     judges: set[str] = set()
     templates: set[str] = set()
@@ -393,27 +413,38 @@ def pair_summary(db: sqlite3.Connection, suite_id: int, model_a: str,
         if r["fa"] != model_a:  # stored canonical order != caller order
             winner = flip.get(winner, winner)
         winner = winner if winner in ("a", "b", "tie") else "tie"
+        # both-bad draws (winner='tie' + verdict_detail='both_bad') count as
+        # their own bucket; in the score math they still ride the 0.5/0.5
+        # draw semantics (Arena/MT-Bench convention).
+        is_both_bad = (winner == "tie"
+                       and (r["verdict_detail"] or "") == "both_bad")
+        bucket_key = "both_bad" if is_both_bad else winner
         dimension = (metadata.get(r["item_id"].split("#")[0], {})
                      ).get("dimension", "uncategorized")
-        bucket = per_dim.setdefault(dimension, {"a": 0, "b": 0, "tie": 0})
-        bucket[winner] += 1
-        overall[winner] += 1
+        bucket = per_dim.setdefault(dimension, {"a": 0, "b": 0, "tie": 0,
+                                                "both_bad": 0})
+        bucket[bucket_key] += 1
+        overall[bucket_key] += 1
         judges.add(r["judge_model"])
         templates.add(r["template"])
 
     def _row(dimension: str, counts: dict[str, int]) -> dict[str, Any]:
-        n = counts["a"] + counts["b"] + counts["tie"]
+        n = (counts["a"] + counts["b"] + counts["tie"]
+             + counts.get("both_bad", 0))
+        draw_half = 0.5 * (counts["tie"] + counts.get("both_bad", 0))
         return {
             "dimension": dimension,
             "counts": dict(counts),
-            "percent": {k: (round(counts[k] / n * 100, 1) if n else None)
-                        for k in ("a", "b", "tie")},
+            "percent": {k: (round(counts.get(k, 0) / n * 100, 1) if n else None)
+                        for k in ("a", "b", "tie", "both_bad")},
             "n": n,
             "wilson_a": wilson_interval(counts["a"] / n if n else None, n),
-            "score_a": round(100 * (counts["a"] + 0.5 * counts["tie"]) / n, 1)
+            "score_a": round(100 * (counts["a"] + draw_half) / n, 1)
                        if n else 0,
-            "score_b": round(100 * (counts["b"] + 0.5 * counts["tie"]) / n, 1)
+            "score_b": round(100 * (counts["b"] + draw_half) / n, 1)
                        if n else 0,
+            "both_bad_rate": round(100 * counts.get("both_bad", 0) / n, 1)
+                             if n else 0,
         }
 
     dim_rows = [ _row(d, c) for d, c in
@@ -439,8 +470,8 @@ def export_report_csv(report: dict[str, Any]) -> str:
     buf = io.StringIO()
     writer = csv.writer(buf)
     writer.writerow(["suite", "version", "model_a", "model_b",
-                     "wins_a", "wins_b", "ties", "total",
-                     "pct_a", "pct_b", "pct_tie",
+                     "wins_a", "wins_b", "ties", "both_bad", "total",
+                     "pct_a", "pct_b", "pct_tie", "pct_both_bad",
                      "wilson_a_low", "wilson_a_high"])
     for pair in report["pairs"]:
         wilson = pair.get("wilson_a") or {}
@@ -448,16 +479,21 @@ def export_report_csv(report: dict[str, Any]) -> str:
             report["suite"]["name"], report["suite"]["version"],
             pair["model_a"], pair["model_b"],
             pair["counts"]["a"], pair["counts"]["b"], pair["counts"]["tie"],
+            pair["counts"].get("both_bad", 0),
             pair["total"],
             pair["percent"]["a"], pair["percent"]["b"], pair["percent"]["tie"],
+            pair["percent"].get("both_bad"),
             wilson.get("low", ""), wilson.get("high", ""),
         ])
     # dimension rows appended (v0.2 headline lens)
     writer.writerow([])
-    writer.writerow(["dimension", "wins_a", "wins_b", "ties", "total"])
+    writer.writerow(["dimension", "wins_a", "wins_b", "ties", "both_bad",
+                     "total"])
     for dim, entry in sorted(report.get("by_dimension", {}).items()):
         writer.writerow([dim, entry["counts"]["a"], entry["counts"]["b"],
-                         entry["counts"]["tie"], entry["total"]])
+                         entry["counts"]["tie"],
+                         entry["counts"].get("both_bad", 0),
+                         entry["total"]])
     return buf.getvalue()
 
 

@@ -73,12 +73,12 @@ def test_by_dimension_is_the_headline_lens(db):
     _judgment(db, ra1, rb1, "a")   # reasoning -> alpha
     _judgment(db, ra2, rb2, "b")   # writing -> beta
     rep = reports.suite_report(db, sid)
-    assert rep["by_dimension"]["reasoning"]["counts"] == {"a": 1, "b": 0, "tie": 0}
-    assert rep["by_dimension"]["writing"]["counts"] == {"a": 0, "b": 1, "tie": 0}
+    assert rep["by_dimension"]["reasoning"]["counts"] == {"a": 1, "b": 0, "tie": 0, "both_bad": 0}
+    assert rep["by_dimension"]["writing"]["counts"] == {"a": 0, "b": 1, "tie": 0, "both_bad": 0}
     assert rep["by_dimension"]["reasoning"]["percent"]["a"] == 100.0
     assert rep["by_dimension"]["reasoning"]["wilson_a"] is not None
     # overall still aggregates both
-    assert rep["overall"]["counts"] == {"a": 1, "b": 1, "tie": 0}
+    assert rep["overall"]["counts"] == {"a": 1, "b": 1, "tie": 0, "both_bad": 0}
 
 
 def test_reference_scores_scored_at_report_time(db):
@@ -141,13 +141,13 @@ def test_judge_generation_scoping(db):
 
     rep_all = reports.suite_report(db, sid)
     assert rep_all["judgments_stored"] == 4
-    assert rep_all["overall"]["counts"] == {"a": 2, "b": 2, "tie": 0}
+    assert rep_all["overall"]["counts"] == {"a": 2, "b": 2, "tie": 0, "both_bad": 0}
     assert len(rep_all["generations"]) == 2
 
     rep_new = reports.suite_report(db, sid, judge_model="judge-new",
                                    judge_template="blind-pair-v2")
     assert rep_new["judgments_stored"] == 2
-    assert rep_new["overall"]["counts"] == {"a": 0, "b": 2, "tie": 0}
+    assert rep_new["overall"]["counts"] == {"a": 0, "b": 2, "tie": 0, "both_bad": 0}
 
     rep_old = reports.suite_report(db, sid, judge_model="judge-old")
     assert rep_old["judgments_stored"] == 2
@@ -186,6 +186,6 @@ def test_flip_detection_via_position_swap_rows(db):
     _judgment(db, ra, rb, "a")
     _judgment(db, ra, rb, "b")  # the other order disagreed
     rep = reports.suite_report(db, sid)
-    assert rep["overall"]["counts"] == {"a": 1, "b": 1, "tie": 0}
+    assert rep["overall"]["counts"] == {"a": 1, "b": 1, "tie": 0, "both_bad": 0}
     # both raw rows visible at item level
     assert len(rep["item_level"]) == 2

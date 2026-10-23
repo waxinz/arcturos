@@ -334,3 +334,190 @@ def test_judge_job_contestant_rejected_synchronously(conn):
     with pytest.raises(ValueError, match="contestant"):
         judging.run_judge_job(_dbpath(conn), 1, judge_url="http://judge/v1",
                               judge_model="alpha")
+
+
+# ------------------------------------------------------- both_bad (v4-ref) --
+
+def test_extract_verdict_both_bad_variants():
+    assert judging.extract_verdict("VERDICT: both_bad") == "both_bad"
+    assert judging.extract_verdict("VERDICT: both-bad") == "both_bad"
+    assert judging.extract_verdict("VERDICT: both bad") == "both_bad"
+    assert judging.extract_verdict("VERDICT: BOTH_BAD") == "both_bad"
+    # bare-token fallback at end (no VERDICT line)
+    assert judging.extract_verdict("thinking... both_bad") == "both_bad"
+    # mid-sentence stray mention -> None (truncation guard)
+    assert judging.extract_verdict("one could be both_bad but ...") is None
+    # tie still parses; 'bad' alone is not a verdict
+    assert judging.extract_verdict("VERDICT: tie") == "tie"
+    assert judging.extract_verdict("both are bad.") is None
+
+
+def test_render_reference_kinds():
+    assert judging._render_reference({"check": "exact", "value": "20"}) == \
+        "The exact correct answer: '20'"
+    assert "±0.5" in judging._render_reference(
+        {"check": "numeric", "value": 2.4, "tolerance": 0.5})
+    assert "must include" in judging._render_reference(
+        {"check": "contains", "value": "bandwidth"})
+    assert "42, 43" in judging._render_reference(
+        {"check": "one_of", "values": [42, 43]})
+    assert "pattern" in judging._render_reference(
+        {"check": "regex", "pattern": r"\A20(\.0+)?\s*\Z"})
+    # absent / unknown shapes -> None (plain v3 template, never invented)
+    assert judging._render_reference(None) is None
+    assert judging._render_reference({"check": "exact"}) is None
+    assert judging._render_reference("20") is None
+    assert judging._render_reference({"check": "mystery", "value": 1}) is None
+    assert judging._render_reference({"check": "one_of", "values": []}) is None
+
+
+def test_judge_once_uses_ref_template_only_with_reference(monkeypatch):
+    seen = {}
+
+    def fake_post(url, payload, api_key=None):
+        seen["text"] = payload["messages"][0]["content"]
+        return _judge_resp("VERDICT: both_bad\nREASON: both contradict 20")
+
+    monkeypatch.setattr(judging, "_post_chat", fake_post)
+    v = judging.judge_once("http://judge/v1", "kimi-k3", "What is 20 C in F?",
+                           "20 C", "293.15 K", "reasoning",
+                           reference={"check": "exact", "value": "68 F"})
+    assert "REFERENCE" in seen["text"]
+    assert "both_bad" in seen["text"]
+    assert "'68 F'" in seen["text"]
+    assert v["winner"] == "both_bad"
+    assert v["template_version"] == judging.JUDGE_TEMPLATE_VERSION_REF
+
+    seen.clear()
+    v3 = judging.judge_once("http://judge/v1", "kimi-k3", "q", "a", "b", None)
+    assert "REFERENCE" not in seen["text"]
+    assert "both_bad" not in seen["text"]
+    assert v3["template_version"] == judging.JUDGE_TEMPLATE_VERSION
+
+
+def test_judge_item_stores_both_bad_as_qualified_tie(monkeypatch):
+    def fake_post(url, payload, api_key=None):
+        return _judge_resp("VERDICT: both_bad\nREASON: both wrong vs 68 F")
+
+    monkeypatch.setattr(judging, "_post_chat", fake_post)
+    work_item = {
+        "base_id": "q1", "turn_index": None,
+        "result_a": {"id": 11}, "result_b": {"id": 22},
+        "out_a": "20 C", "out_b": "293.15 K", "history_a": [], "history_b": [],
+        "fp_a": "alpha", "fp_b": "beta", "dimension": "reasoning",
+        "item": {"id": "q1", "prompt": "convert",
+                 "reference": {"check": "exact", "value": "68 F"}},
+        "is_multiturn": False,
+    }
+    judgments, errors, rows = judging.judge_item(
+        work_item, "http://judge/v1", "kimi-k3", retries=0)
+    assert not errors
+    assert len(judgments) == 2           # both presentation orders
+    for j in judgments:
+        assert j["winner"] == "tie"      # draw semantics preserved
+        assert j["verdict_detail"] == "both_bad"
+        assert j["judge_template_version"] == judging.JUDGE_TEMPLATE_VERSION_REF
+    assert all(r["verdict"] == "both_bad" for r in rows)  # progress rows
+
+
+def test_judge_item_plain_tie_keeps_no_detail(monkeypatch):
+    def fake_post(url, payload, api_key=None):
+        return _judge_resp("VERDICT: tie\nREASON: even quality")
+
+    monkeypatch.setattr(judging, "_post_chat", fake_post)
+    work_item = {
+        "base_id": "q1", "turn_index": None,
+        "result_a": {"id": 11}, "result_b": {"id": 22},
+        "out_a": "A", "out_b": "B", "history_a": [], "history_b": [],
+        "fp_a": "alpha", "fp_b": "beta", "dimension": "writing",
+        "item": {"id": "q1", "prompt": "hi",
+                 "reference": {"check": "exact", "value": "x"}},
+        "is_multiturn": False,
+    }
+    judgments, errors, rows = judging.judge_item(
+        work_item, "http://judge/v1", "kimi-k3", retries=0)
+    assert judgments[0]["winner"] == "tie"
+    assert judgments[0]["verdict_detail"] is None
+    assert rows[0]["verdict"] == "tie"
+
+
+def test_dispatch_judge_persists_verdict_detail(conn, monkeypatch):
+    _seed_pair(conn)
+
+    def fake_post(url, payload, api_key=None):
+        return _judge_resp("VERDICT: both_bad\nREASON: both wrong")
+
+    monkeypatch.setattr(judging, "_post_chat", fake_post)
+    result = judging.dispatch_judge(_dbpath(conn), 1,
+                                    judge_url="http://judge/v1",
+                                    judge_model="kimi-k3")
+    assert result["status"] == "complete"
+    rows = conn.execute(
+        "SELECT winner, verdict_detail FROM judgments ORDER BY id").fetchall()
+    assert len(rows) == 2  # both presentation orders
+    assert all(r["winner"] == "tie" and r["verdict_detail"] == "both_bad"
+               for r in rows)
+
+
+def test_migration_adds_verdict_detail_to_legacy_db(tmp_path):
+    """A pre-both-bad DB (judgments without verdict_detail) migrates on
+    connect: the column appears, legacy rows keep winner='tie' with NULL
+    detail, and a fresh both-bad insert works."""
+    import sqlite3
+
+    p = tmp_path / "legacy.db"
+    c = sqlite3.connect(p)
+    c.row_factory = sqlite3.Row
+    # minimal legacy schema: just the tables/columns the migration touches
+    c.executescript("""
+        CREATE TABLE eval_suites (id INTEGER PRIMARY KEY AUTOINCREMENT,
+                                  name TEXT, version TEXT);
+        CREATE TABLE eval_results (id INTEGER PRIMARY KEY AUTOINCREMENT,
+                                   suite_id INTEGER, model_fingerprint TEXT,
+                                   item_id TEXT, output TEXT,
+                                   prompt_tokens INTEGER, completion_tokens INTEGER,
+                                   latency_ms INTEGER, created_at TEXT);
+        CREATE TABLE judgments (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            eval_result_a INTEGER NOT NULL REFERENCES eval_results(id),
+            eval_result_b INTEGER NOT NULL REFERENCES eval_results(id),
+            judge_model TEXT NOT NULL,
+            judge_template_version TEXT NOT NULL,
+            winner TEXT NOT NULL CHECK (winner IN ('a', 'b', 'tie')),
+            confidence REAL,
+            rationale TEXT,
+            created_at TEXT NOT NULL
+        );
+        INSERT INTO eval_suites (name, version) VALUES ('legacy', 'v1');
+        INSERT INTO eval_results (suite_id, model_fingerprint, item_id, output,
+                                  prompt_tokens, completion_tokens, latency_ms,
+                                  created_at) VALUES
+            (1, 'alpha', 'q1', 'x', 1, 1, 1, 'now'),
+            (1, 'beta', 'q1', 'y', 1, 1, 1, 'now');
+        INSERT INTO judgments (eval_result_a, eval_result_b, judge_model,
+                               judge_template_version, winner, confidence,
+                               rationale, created_at) VALUES
+            (1, 2, 'old-judge', 'blind-pair-v1', 'tie', NULL, NULL, 'now');
+    """)
+    c.commit()
+    c.close()
+
+    conn = dbmod.connect(p)
+    dbmod.init_db(conn)  # runs _migrate (house pattern: explicit init)
+    cols = {r["name"] for r in conn.execute("PRAGMA table_info(judgments)")}
+    assert "verdict_detail" in cols
+    row = conn.execute(
+        "SELECT winner, verdict_detail FROM judgments").fetchone()
+    assert row["winner"] == "tie" and row["verdict_detail"] is None
+    # new-style insert works on the migrated table
+    conn.execute(
+        "INSERT INTO judgments (eval_result_a, eval_result_b, judge_model, "
+        "judge_template_version, winner, confidence, rationale, created_at, "
+        "verdict_detail) VALUES (1, 2, 'j', 'blind-pair-v4-ref', 'tie', "
+        "NULL, NULL, 'now', 'both_bad')")
+    conn.commit()
+    n = conn.execute(
+        "SELECT COUNT(*) FROM judgments WHERE verdict_detail = "
+        "'both_bad'").fetchone()[0]
+    assert n == 1
+    conn.close()
