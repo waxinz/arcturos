@@ -58,6 +58,39 @@ def test_nav_judgments_first_under_evals():
         "the Evals section tab must link to /judgments")
 
 
+def test_no_page_level_nav_or_header_css():
+    """Rail-era page <style> rules must stay dead (2026-10-23 round).
+
+    `nav a { margin-right: 1rem; ... }` / `nav a.active { underline }` /
+    `header { border-bottom; padding; margin }` in a page's <style> hit
+    the INJECTED top bar (pages carry no <nav>/<header> of their own —
+    pagelib injects .topnav at request time). Seven pages shipped with
+    this block and spaced/underlined the top menu differently from the
+    rest. nav.css owns all chrome styling.
+    """
+    assert HTML_PAGES, "static dir must contain HTML pages"
+    for name in HTML_PAGES:
+        html = (Path(STATIC_DIR) / name).read_text()
+        assert "nav a {" not in html, f"{name} carries a legacy nav a rule"
+        assert "nav a.active" not in html, (
+            f"{name} carries a legacy nav a.active rule")
+        assert not re.search(r"^\s*header \{", html, re.M), (
+            f"{name} carries a legacy header rule")
+
+
+def test_nav_css_owns_tab_decoration():
+    """Section tabs must kill the UA link underline themselves.
+
+    theme.css styles link color only; an unstyled anchor renders with
+    Chrome's default underline — which shipped on the pages without the
+    legacy nav rules. The kill now lives in nav.css, the single owner.
+    """
+    css = (Path(STATIC_DIR) / "nav.css").read_text()
+    block = re.search(r"\.nav-section-head \{[^}]*\}", css)
+    assert block, ".nav-section-head rule missing from nav.css"
+    assert "text-decoration: none" in block.group(0)
+
+
 def test_nav_pills_constant_across_pages(client):
     """2026-10-15: the sub-nav menu must be IDENTICAL on every page — the
     per-section pill swap read as 'the menu changed' when moving between

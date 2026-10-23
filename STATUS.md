@@ -5,6 +5,32 @@ stays the conventions/ground-truth file; this file is the living status).
 Newest first. Read AGENTS.md first for conventions; read this file to
 resume work.
 
+## 2026-10-23 — One top bar on every page + brand-tile favicon
+
+- **Chrome is now identical on every second-tier page.** The owner's
+  Chrome screenshots caught the top menu differing per page: underlined
+  section tabs + tighter pill spacing on create/kickoff/compare vs no
+  underline + wider spacing + underlined active pill on
+  judgments/evals/models/baselines/reports. Root cause: seven pages
+  carried rail-era page-`<style>` blocks (`nav a { margin-right: 1rem;
+  … text-decoration: none }`, `nav a.active { underline }`,
+  `header { border-bottom … }`) that hit the INJECTED `.topnav` (pages
+  carry no `<nav>`/`<header>` of their own — pagelib injects the bar).
+  Measured live at 1280px: row-2 pills sat 16px/item further right and
+  the active pill underlined on the seven; tabs fell back to Chrome's
+  UA underline on the rest (theme.css colors links, never un-underlines
+  them). Fix: legacy blocks deleted from all seven pages;
+  `.nav-section-head` gains `text-decoration: none` in nav.css (single
+  owner). Regression tests pin both (no page-level nav/header CSS;
+  nav.css owns tab decoration). Live-verified post-deploy: identical
+  tab/pill geometry + zero underlines on every route.
+- **Favicon is the brand tile now** (owner request): scorpio icon →
+  the header's stylized A (cyan `#8BE9FD` on the Dracula-purple
+  `--accent` `#BD93F9` tile, matching the dark-theme header). Drawn at
+  512 and downscaled to 180/48/32/16; `favicon.ico` regenerated (16/32/
+  48). Filenames unchanged (`scorpio-favicon-*.png`) so no page head or
+  test churns.
+
 ## 2026-10-23 — Judge presentation trims serving-stack wrappers (evals-101 #8v#9 audit)
 
 - **The judge now sees answers, not serving-stack wrappers.** Auditing
