@@ -110,6 +110,8 @@ body.shell {
   letter-spacing: .1em;
   text-transform: uppercase;
   color: var(--text-muted);
+  text-decoration: none;      /* theme.css colors links but never un-underlines
+                                 them — without this the UA underline ships */
   padding: .45rem .8rem;
   border-radius: 8px;
   cursor: pointer;

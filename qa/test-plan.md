@@ -105,6 +105,7 @@ Rules:
 - [x] Live-validated on the deploy host: hide run 9 → gone from /api/runs (reason stored), unhide → back; 144 tests green
 
 ### Cross-cutting
+- [x] Top-bar chrome is page-independent (added 2026-10-23): `tests/test_static_wiring.py::test_no_page_level_nav_or_header_css` — no page `<style>` may style the injected chrome (`nav a` / `header` rules are dead); `tests/test_static_wiring.py::test_nav_css_owns_tab_decoration` — nav.css `.nav-section-head` kills the UA link underline. Seven pages shipped rail-era `nav a { margin-right: 1rem }` + `header { border-bottom … }` blocks that hit the injected `.topnav`: per-page spacing + underline differences (create/kickoff/compare underlined tabs + tighter spacing vs the rest). Live-checked post-deploy: identical pill/tab geometry on every route
 - [x] /health returns ok; index served
 - [ ] concurrent POSTs don't race (commit-before-respond fix regression suite)
 - [ ] DB survives restart (WAL checkpoint recovery)
