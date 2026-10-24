@@ -5,11 +5,14 @@
   silently loses operator-entered defaults).
 - nav order: Judgments is the FIRST sub-element under the Evals section
   (operator's standing preference: the judging kick-off leads the menu).
-- Judgments page: the Model B baseline-reuse picker and the recent
+- Judgments page: the Run A/B completed-run pickers and the recent
   judgment-runs list exist; the old per-item work-detail table is gone.
+  (2026-10-24 run-scoped round: the per-model endpoint/model/reasoning
+  fields were removed — the page only judges previously completed runs.)
 - Reasoning controls (2026-10-15): reasoning_effort + reasoning_budget
-  fields ship on every eval-run start surface (Run page, Judgements
-  Model A/B) and are wired into the kick-off payloads.
+  fields ship on the eval-run start surface (Run page) and are wired
+  into the kick-off payload. (Judgements left the run-start business
+  in the 2026-10-24 run-scoped round.)
 """
 
 import re
@@ -116,18 +119,25 @@ def test_nav_pills_constant_across_pages(client):
         assert f'data-page="{page_id}"' in sub_dom.group(1)
 
 
-def test_judgments_page_baseline_picker_and_run_list(client):
+def test_judgments_page_run_pickers_and_run_list(client):
     res = client.get("/judgments")
     assert res.status_code == 200
     text = res.text
-    # Model A + Model B "reuse a recent run" pickers (mirrored mixed
-    # kick-off: either side can be a stored run)
+    # Run A + Run B completed-run pickers (run-scoped judging round,
+    # 2026-10-24: the ONLY per-side input on this page — endpoint/model/
+    # reasoning fields were removed; mixed/combined kick-offs stay
+    # API-only on POST /api/ops/judge/jobs)
     assert 'id="judge-ma-run"' in text
     assert 'id="judge-mb-run"' in text
     assert "/api/eval-runs" in text               # dropdown data source
-    assert "eval_run_b" in text                   # mixed kick-off payload
-    assert "eval_run_a" in text                   # mirrored mixed payload
     assert "eval_run_ids" in text                 # run-scoped re-judge payload
+    assert "eval_run_a" not in text               # mixed payload left the UI
+    assert "eval_run_b" not in text
+    assert "target_a" not in text                 # combined payload too
+    assert "target_b" not in text
+    assert "reasonProps" not in text              # reasoning fields removed
+    # the pickers list finished runs that stored results only
+    assert "status === 'complete'" in text
     # recent judgment runs list (replaces the per-item work table)
     assert 'id="judgrun-list"' in text
     assert "/judgments/pair?" in text             # deep link to SxS view
@@ -159,10 +169,11 @@ def test_judgment_detail_prompt_expander(client):
 
 def test_reasoning_fields_on_every_run_start_surface(client):
     """J9 (2026-10-15): optional per-model reasoning_effort +
-    reasoning_budget on EVERY surface that starts an eval suite run —
-    the single-model replay page and both Model A/B cards on Judgements
-    (combined + mixed kick-off)."""
-    # 1) single-model replay page (/evals/run)
+    reasoning_budget on the surface that starts an eval suite run —
+    the single-model replay page. (2026-10-24 run-scoped round: Judgements
+    no longer starts eval runs — its model cards became completed-run
+    pickers, so the replay page is the only run-start surface.)"""
+    # single-model replay page (/evals/run)
     run = client.get("/evals/run").text
     assert 'id="eval-reason"' in run
     assert 'id="eval-budget"' in run
@@ -170,13 +181,3 @@ def test_reasoning_fields_on_every_run_start_surface(client):
     assert "body.reasoning_budget" in run
     for effort in ("minimal", "low", "medium", "high", "xhigh", "max"):
         assert f"<option>{effort}</option>" in run
-    # 2) Judgements: both model cards carry the pair of controls
-    j = client.get("/judgments").text
-    for prefix in ("judge-ma", "judge-mb"):
-        assert f'id="{prefix}-reason"' in j
-        assert f'id="{prefix}-budget"' in j
-    assert "reasonProps" in j                      # shared body builder
-    assert "...reasonProps('judge-ma')" in j       # spread into target_a
-    assert "...reasonProps('judge-mb')" in j       # …and target_b
-    # the run-pickers disable the reasoning fields too (both sides)
-    assert "for (const suf of ['-url', '-key', '', '-reason', '-budget'])" in j

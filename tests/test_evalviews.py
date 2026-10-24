@@ -72,13 +72,16 @@ def test_judgments_view_contract(client):
     text = client.get("/judgments").text
     assert "/api/judgments" in text
     assert "/api/eval-results" in text         # item_id resolution via results
-    # Combined kick-off (2026-10-15): model A/B cards with endpoint URL,
-    # optional auth, model name — the page is the evals+judging surface.
-    assert "judge-ma-url" in text and "judge-mb-url" in text
-    assert "judge-ma-key" in text and "judge-mb-key" in text
+    # Run-scoped judging round (2026-10-24): the per-model detail fields
+    # are gone — the page only picks previously completed runs; fresh
+    # replays and live A/B kick-offs live on the Run page.
     assert "/api/ops/judge/jobs" in text
-    assert "Run evals + judging" in text       # dynamic kick-off label
-    assert "stage-chip" in text                # replay-a/b/judging progress
+    assert "/api/eval-runs" in text            # completed-run pickers
+    assert "Run A" in text and "Run B" in text
+    assert "judge-ma-url" not in text          # endpoint fields removed
+    assert "judge-mb-url" not in text
+    assert "/evals/run" in text                # pointer to the Run page
+    assert "stage-chip" in text                # progress chrome retained
 
 
 def test_reports_view_contract(client):

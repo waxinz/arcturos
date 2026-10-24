@@ -56,7 +56,7 @@
     .jmsg.ok { color: var(--ok); }
     .jmsg.warn { color: #b58a2a; }
     .jmsg a { color: var(--link); font-weight: 600; }
-    /* ---- A/B model cards (combined kick-off: evals + judging) ---- */
+    /* ---- A/B run cards (run-scoped judging: pick two completed runs) ---- */
     .ab-grid { display: grid; grid-template-columns: 1fr 1fr; gap: .9rem;
                margin: .1rem 0 .2rem; }
     .model-card { border: 1px solid var(--border); border-radius: 6px;
@@ -71,12 +71,8 @@
                   border: 1px solid var(--border); background: var(--surface);
                   color: var(--text-soft); white-space: nowrap; }
     .stage-chip[hidden] { display: none; }
-    /* per-model reasoning row: level + budget side by side, stacks on phones */
-    .rgrid { display: grid; grid-template-columns: 1fr 1fr; gap: .5rem; }
-    .rgrid label { font-size: .8rem; }
     @media (max-width: 640px) {
       .ab-grid { grid-template-columns: 1fr; }
-      .rgrid { grid-template-columns: 1fr; gap: .45rem; }
     }
     /* judge-not-contestant guard: WARNING with override, not a dead end */
     .warn-card { display: flex; flex-wrap: wrap; align-items: center;
@@ -145,16 +141,12 @@
   <h2>Judgments <button id="export-judgments" title="Download all judgments as CSV">⤓ CSV</button></h2>
 
   <div class="card">
-    <p class="hint">One kick-off surface for evals + judging. Fill both model
-      cards (endpoint URL, optional API key, model name) to <strong>run the
-      suite on both models, then judge</strong> the two fresh runs — or leave
-      the URLs blank and give model names to judge already-stored results.
-      Either model can instead <strong>reuse a recent run</strong> on the
-      chosen suite — the stored side is not re-run (pick one run + the other
-      side's URL, or <strong>two runs</strong> to re-judge stored replays
-      without re-running anything). Every item is judged in BOTH presentation
-      orders (position swap) and
-      both raw judgments are stored. The judge must not be a contestant.</p>
+    <p class="hint">Judge <strong>previously completed runs</strong> against
+      each other: pick a suite, then pick one completed run per side — every
+      stored result is judged in BOTH presentation orders (position swap) and
+      both raw judgments are stored. Fresh replays and live A/B kick-offs
+      live on the <a href="/evals/run">Run page</a>. The judge must not be a
+      contestant.</p>
     <form id="judge-form" autocomplete="off" onsubmit="return false;">
       <div class="field">
         <label for="judge-suite">Suite</label>
@@ -174,84 +166,28 @@
       </div>
       <div class="ab-grid">
         <fieldset class="model-card">
-          <legend>Model A</legend>
+          <legend>Run A</legend>
           <div class="field">
-            <label for="judge-ma-run">…or reuse a recent run on this suite
-              <span class="opt">(stored — A is not replayed)</span></label>
+            <label for="judge-ma-run">Completed run on this suite
+              <span class="opt">(stored results — not replayed)</span></label>
             <select id="judge-ma-run">
-              <option value="">— fresh replay (fields below) —</option>
+              <option value="">— pick a completed run —</option>
             </select>
-          </div>
-          <div class="field">
-            <label for="judge-ma-url">Endpoint URL</label>
-            <input id="judge-ma-url" inputmode="url" placeholder="http://localhost:4000/v1">
-          </div>
-          <div class="field">
-            <label for="judge-ma-key">API key <span class="opt">(optional)</span></label>
-            <input id="judge-ma-key" type="password" placeholder="sk-…">
-          </div>
-          <div class="field">
-            <label for="judge-ma">Model name</label>
-            <input id="judge-ma" placeholder="e.g. model-alpha">
-          </div>
-          <div class="field wide rgrid">
-            <div>
-              <label for="judge-ma-reason">Reasoning <span class="opt">(optional)</span></label>
-              <select id="judge-ma-reason">
-                <option value="">— default —</option>
-                <option>minimal</option><option>low</option>
-                <option>medium</option><option>high</option>
-                <option>xhigh</option><option>max</option>
-              </select>
-            </div>
-            <div>
-              <label for="judge-ma-budget">Budget <span class="opt">(tokens)</span></label>
-              <input id="judge-ma-budget" type="number" min="1" max="32768" step="1"
-                     inputmode="numeric" placeholder="e.g. 2048">
-            </div>
           </div>
         </fieldset>
         <fieldset class="model-card">
-          <legend>Model B</legend>
+          <legend>Run B</legend>
           <div class="field">
-            <label for="judge-mb-run">…or reuse a recent run on this suite
-              <span class="opt">(baseline — B is not replayed)</span></label>
+            <label for="judge-mb-run">Completed run on this suite
+              <span class="opt">(stored results — not replayed)</span></label>
             <select id="judge-mb-run">
-              <option value="">— fresh replay (fields below) —</option>
+              <option value="">— pick a completed run —</option>
             </select>
-          </div>
-          <div class="field">
-            <label for="judge-mb-url">Endpoint URL</label>
-            <input id="judge-mb-url" inputmode="url" placeholder="http://localhost:4000/v1">
-          </div>
-          <div class="field">
-            <label for="judge-mb-key">API key <span class="opt">(optional)</span></label>
-            <input id="judge-mb-key" type="password" placeholder="sk-…">
-          </div>
-          <div class="field">
-            <label for="judge-mb">Model name</label>
-            <input id="judge-mb" placeholder="e.g. model-beta">
-          </div>
-          <div class="field wide rgrid">
-            <div>
-              <label for="judge-mb-reason">Reasoning <span class="opt">(optional)</span></label>
-              <select id="judge-mb-reason">
-                <option value="">— default —</option>
-                <option>minimal</option><option>low</option>
-                <option>medium</option><option>high</option>
-                <option>xhigh</option><option>max</option>
-              </select>
-            </div>
-            <div>
-              <label for="judge-mb-budget">Budget <span class="opt">(tokens)</span></label>
-              <input id="judge-mb-budget" type="number" min="1" max="32768" step="1"
-                     inputmode="numeric" placeholder="e.g. 2048">
-            </div>
           </div>
         </fieldset>
       </div>
       <div class="field wide" style="display:flex; gap:.6rem; flex-wrap:wrap; margin-top:.7rem; align-items:center;">
-        <button id="judge-btn" style="margin-top:0;">▶ Kick off judging</button>
+        <button id="judge-btn" style="margin-top:0;">▶ Judge runs</button>
         <button id="judge-stop-btn" type="button" class="stop-btn" hidden
                 title="Stop the run: completed work is kept">■ Stop run</button>
       </div>
@@ -556,12 +492,12 @@
         } catch (err) { /* nicety */ }
       })();
 
-      // "reuse a recent run" pickers (A + B): recent runs on the chosen
-      // suite, newest first (/api/eval-runs orders id DESC). Selecting a
-      // run disables that side's endpoint fields. One run + the other
-      // side's URL = mixed kick-off (the stored side is not replayed);
-      // runs on BOTH sides = run-scoped re-judge of the two stored
-      // replays — no replay cost.
+      // "completed run" pickers (Run A + Run B): the suite's stored replay
+      // runs, newest first (/api/eval-runs orders id DESC), filtered to
+      // finished runs (status complete/partial — ADR 007 §5) that actually
+      // stored results. Judging on this page is
+      // run-scoped: both sides are stored replays, nothing is re-run —
+      // fresh replays and live A/B kick-offs live on the Run page.
       let evalRunsCache = null;
       async function refreshRunOptions() {
         const suiteId = $('judge-suite').value;
@@ -577,6 +513,8 @@
               }
               for (const r of evalRunsCache) {
                 if (String(r.suite_id) !== String(suiteId)) continue;
+                if (!(r.status === 'complete' || r.status === 'partial')) continue;
+                if (!r.result_count) continue;
                 const opt = document.createElement('option');
                 opt.value = r.id;
                 opt.textContent = '#' + r.id + ' · ' + r.model_fingerprint +
@@ -591,31 +529,8 @@
           sel.value = [...sel.options].some(o => o.value === current)
             ? current : '';
         }
-        syncRunFields();
-      }
-      function syncRunFields() {
-        for (const prefix of ['judge-ma', 'judge-mb']) {
-          const useRun = !!$(prefix + '-run').value;
-          for (const suf of ['-url', '-key', '', '-reason', '-budget']) {
-            const el = document.getElementById(prefix + suf);
-            el.disabled = useRun;
-            if (useRun && el.value) el.value = '';
-          }
-        }
-        updateKickLabel();
       }
       $('judge-suite').addEventListener('change', refreshRunOptions);
-      $('judge-ma-run').addEventListener('change', syncRunFields);
-      $('judge-mb-run').addEventListener('change', syncRunFields);
-      for (const urlId of ['judge-ma-url', 'judge-mb-url']) {
-        $(urlId).addEventListener('input', () => {
-          const sel = $(urlId.replace('-url', '-run'));
-          if (sel.value) {
-            sel.value = '';
-            syncRunFields();
-          }
-        });
-      }
 
       const poll = { timer: null, jobId: null, stopBusy: false,
                      retries: 0 };
@@ -704,7 +619,10 @@
                 $('judge-msg').appendChild(link);
               } else {
                 setMsg('✔ Judging complete — ' + (st.judgments_stored || 0) +
-                       ' judgment(s) stored (both orders per item)', true);
+                       ' judgment(s) stored (both orders per item)' +
+                       ((st.eval_run_ids || []).length === 2
+                         ? ' · runs #' + st.eval_run_ids.join(' vs #')
+                         : ''), true);
               }
               $('jbp-bar').style.width = '100%'; $('jbp-pct').textContent = '100%';
             } else if (st.status === 'aborted') {
@@ -732,35 +650,11 @@
           else poll.timer = setTimeout(() => pollLoop(jobId), 2000);
         }
       }
-      function updateKickLabel() {
-        const runA = !!$('judge-ma-run').value;
-        const runB = !!$('judge-mb-run').value;
-        const anyUrl = $('judge-ma-url').value.trim() || $('judge-mb-url').value.trim();
-        $('judge-btn').textContent = (runA && runB)
-          ? '▶ Judge stored runs'
-          : (anyUrl || runA || runB)
-            ? '▶ Run evals + judging'
-            : '▶ Kick off judging';
-      }
-      document.getElementById('judge-ma-url').addEventListener('input', updateKickLabel);
-      document.getElementById('judge-mb-url').addEventListener('input', updateKickLabel);
-      // per-model reasoning (2026-10-15): only sent when set — the wire
-      // body stays identical for operators who leave the fields blank.
-      function reasonProps(prefix) {
-        const out = {};
-        const eff = $(prefix + '-reason').value;
-        const bud = parseInt($(prefix + '-budget').value, 10);
-        if (eff) out.reasoning_effort = eff;
-        if (bud) out.reasoning_budget = bud;
-        return out;
-      }
       async function kickJudge(extra = {}) {
         const suiteId = parseInt($('judge-suite').value, 10);
         if (!suiteId) { setMsg('Pick a suite to judge'); return; }
-        const maUrl = $('judge-ma-url').value.trim();
-        const mbUrl = $('judge-mb-url').value.trim();
-        const maName = $('judge-ma').value.trim();
-        const mbName = $('judge-mb').value.trim();
+        const runA = $('judge-ma-run').value;
+        const runB = $('judge-mb-run').value;
         const btn = $('judge-btn');
         btn.disabled = true;
         $('judge-warn').hidden = true;
@@ -770,66 +664,17 @@
           if ($('judge-url').value.trim()) body.judge_url = $('judge-url').value.trim();
           if ($('judge-key').value.trim()) body.judge_api_key = $('judge-key').value.trim();
           if ($('judge-model').value.trim()) body.judge_model = $('judge-model').value.trim();
-          const runA = $('judge-ma-run').value;
-          const runB = $('judge-mb-run').value;
-          if (runA && runB) {
-            // Both sides stored: run-scoped re-judge of the two picked
-            // replays — nothing is re-run, judgments are fresh.
-            if (runA === runB) {
-              setMsg('Pick two DIFFERENT runs — one run cannot be both sides');
-              return;
-            }
-            body.eval_run_ids = [parseInt(runA, 10), parseInt(runB, 10)];
-          } else if (runB) {
-            // Mixed kick-off: model A replays fresh, model B is the stored
-            // baseline run picked from the suite's recent runs.
-            if (!maUrl || !maName) {
-              setMsg('Model A needs an endpoint URL and a name to judge ' +
-                     'against the stored run chosen for B');
-              return;
-            }
-            body.target_a = {url: maUrl, model: maName, ...reasonProps('judge-ma')};
-            if ($('judge-ma-key').value.trim()) {
-              body.target_a.api_key = $('judge-ma-key').value.trim();
-            }
-            body.eval_run_b = parseInt(runB, 10);
-          } else if (runA) {
-            // Mirrored mixed kick-off: the stored model-A run vs a fresh
-            // model-B replay.
-            if (!mbUrl || !mbName) {
-              setMsg('Model B needs an endpoint URL and a name to judge ' +
-                     'against the stored run chosen for A');
-              return;
-            }
-            body.target_b = {url: mbUrl, model: mbName, ...reasonProps('judge-mb')};
-            if ($('judge-mb-key').value.trim()) {
-              body.target_b.api_key = $('judge-mb-key').value.trim();
-            }
-            body.eval_run_a = parseInt(runA, 10);
-          } else if (maUrl || mbUrl) {
-            // Combined kick-off: replay the suite on both models, then judge
-            // the two fresh runs. Auth is optional per model.
-            if (!maUrl || !mbUrl) {
-              setMsg('Combined kick-off needs BOTH endpoint URLs — or clear both to judge stored results');
-              return;
-            }
-            if (!maName || !mbName) {
-              setMsg('Give both models a name for the combined kick-off');
-              return;
-            }
-            body.target_a = {url: maUrl, model: maName, ...reasonProps('judge-ma')};
-            if ($('judge-ma-key').value.trim()) {
-              body.target_a.api_key = $('judge-ma-key').value.trim();
-            }
-            body.target_b = {url: mbUrl, model: mbName, ...reasonProps('judge-mb')};
-            if ($('judge-mb-key').value.trim()) {
-              body.target_b.api_key = $('judge-mb-key').value.trim();
-            }
-          } else if (maName && mbName) {
-            // Stored-results mode: scope judging to one A/B pair.
-            body.model_a = maName;
-            body.model_b = mbName;
+          if (!runA || !runB) {
+            setMsg('Pick a completed run for BOTH sides — fresh replays live on the Run page');
+            return;
           }
+          if (runA === runB) {
+            setMsg('Pick two DIFFERENT runs — one run cannot be both sides');
+            return;
+          }
+          // Run-scoped re-judge of the two picked replays — nothing is
+          // re-run, judgments are fresh.
+          body.eval_run_ids = [parseInt(runA, 10), parseInt(runB, 10)];
           const res = await fetch('/api/ops/judge/jobs', {method: 'POST',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify(body)});
@@ -852,11 +697,7 @@
           $('judge-progress').classList.add('active');
           poll.jobId = data.job_id;
           $('jbp-bar').style.width = '0%';
-          $('jbp-status').textContent = body.eval_run_ids
-            ? 'selecting pairs…'
-            : body.eval_run_a ? 'replay B — starting…'
-            : body.target_a ? 'replay A — starting…'
-            : 'selecting pairs…';
+          $('jbp-status').textContent = 'selecting pairs…';
           $('jbp-clock').textContent = '';
           stopBtnShow(true);
           setMsg('Job ' + data.job_id + ' accepted — run in progress', true);
