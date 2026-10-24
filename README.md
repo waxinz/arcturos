@@ -4,9 +4,13 @@
 
 Arcturos benchmarks LLM inference servers and evaluates their outputs — all data stays in a local SQLite file you own. Compare, replay, and judge every run.
 
-![Compare view — decode, prefill and TTFT charts across context lengths](docs/compare-screenshot.jpg)
+![Compare view — decode, prefill, TTFT and wall-time charts across context lengths](docs/compare-screenshot.jpg)
 
-*The Compare view: decode / prefill throughput and time-to-first-token, plotted per context length for any set of runs.*
+*The Compare view: decode / prefill throughput, time-to-first-token and wall time, plotted per context length for any set of runs.*
+
+![Judgment details — category summary for a blind pairwise eval](docs/judgment-screenshot.jpg)
+
+*The Judgment details view: per-category pairwise scores with win / tie / both-bad rates, judged counts, and the aggregate wins for each side.*
 
 ## What it does
 
