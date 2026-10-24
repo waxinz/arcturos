@@ -13,3 +13,13 @@ __pycache__/
 # operator's real usage (family schedules, home details) — NEVER commit
 # or push it. Lives only in qa/suites-private/ + the local DB snapshot.
 qa/suites-private/
+
+# Internal project docs — local-only, never on the public mirror (owner call
+# 2026-10-24). Kept in each checkout's working tree, just untracked.
+/AGENTS.md
+/STATUS.md
+/PRD.md
+/docs/ux-design.md
+/docs/decisions/
+/docs/research/
+/qa/test-plan.md
