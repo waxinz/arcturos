@@ -188,8 +188,13 @@ def test_judge_item_both_orders_stored_with_remap(monkeypatch):
         calls.append(payload)
         # The judge always prefers response 2 regardless of presentation.
         # v3-style two-line reply: with a REASON present the follow-up
-        # nudge must NOT fire (asserted below — exactly 2 calls).
-        return _judge_resp("VERDICT: 2\nREASON: response 2 was sharper")
+        # nudge must NOT fire (asserted below — exactly 2 order calls).
+        # The two orders then DISAGREE (a_first→b, b_first→a), so the
+        # flip-resolution tiebreak fires: call 3 comes back a tie, which
+        # degrades the split to a draw.
+        if len(calls) < 3:
+            return _judge_resp("VERDICT: 2\nREASON: response 2 was sharper")
+        return _judge_resp("VERDICT: tie\nREASON: cannot separate them")
 
     monkeypatch.setattr(judging, "_post_chat", fake_post)
     work_item = {
@@ -205,25 +210,127 @@ def test_judge_item_both_orders_stored_with_remap(monkeypatch):
     judgments, errors, rows = judging.judge_item(
         work_item, "http://judge/v1", "kimi-k3", rng=__import__("random").Random(7))
     assert errors == []
-    assert len(judgments) == 2  # both presentation orders
-    assert len(calls) == 2
+    assert len(judgments) == 3  # both presentation orders + flip tiebreak
+    assert len(calls) == 3
     # The two calls must present DIFFERENT orders (that is the whole point
     # of the swap): one call shows A first, the other B first.
     def _orders_shown(content):
         return content.find("answer A") < content.find("answer B")
-    assert [_orders_shown(c["messages"][0]["content"]) for c in calls] \
+    order_calls = calls[:2]  # the tiebreak (call 3) is covered below
+    assert [_orders_shown(c["messages"][0]["content"]) for c in order_calls] \
         == [True, False] or \
-        [_orders_shown(c["messages"][0]["content"]) for c in calls] \
+        [_orders_shown(c["messages"][0]["content"]) for c in order_calls] \
         == [False, True]
-    # The judge that always picks response 2 must net out as one a + one b
-    assert {j["winner"] for j in judgments} == {"a", "b"}
+    # Order rows: the judge that always picks response 2 nets one a + one b
+    # (the decided split); the tiebreak row resolves it to a draw.
+    order_judgs = judgments[:2]
+    assert {j["winner"] for j in order_judgs} == {"a", "b"}
+    assert judgments[2]["winner"] == "tie"
+    assert judgments[2]["role"] == "tiebreak"
+    assert all(j["role"] == "order" for j in order_judgs)
     assert all(j["judge_template_version"] == judging.JUDGE_TEMPLATE_VERSION
                for j in judgments)
     # v3: the REASON line is captured verbatim as the stored rationale
-    assert all(j["rationale"] == "response 2 was sharper" for j in judgments)
-    assert sorted(r["order"] for r in rows) == ["a→b", "b→a"]
+    assert [j["rationale"] for j in order_judgs] \
+        == ["response 2 was sharper"] * 2
+    assert judgments[2]["rationale"] == "cannot separate them"
+    assert sorted(r["order"] for r in rows) == ["a→b", "b→a", "tiebreak"]
     # progress verdicts match the judgments' winners as a set
-    assert {r["verdict"] for r in rows} == {"a", "b"}
+    assert {r["verdict"] for r in rows} == {"a", "b", "tie"}
+    # Forensics (2026-10-23): every row records which side was presented
+    # first, and the raw reply is kept verbatim. The call↔judgment pairing
+    # is positional (orders[i] produces calls[i] and judgments[i]), so the
+    # FULL attribution chain is checkable: presented-A-first call ↔
+    # presentation 'a_first' ↔ winner 'b' for an always-picks-response-2
+    # judge. This is the chain that shipped incoherent on sa101-agent-004
+    # #521 when presentation was ephemeral.
+    raw = "VERDICT: 2\nREASON: response 2 was sharper"
+    assert len(calls) == len(judgments) == 3
+    for call, j in zip(order_calls, order_judgs):
+        content = call["messages"][0]["content"]
+        a_first_shown = content.find("answer A") < content.find("answer B")
+        assert j["presentation"] == ("a_first" if a_first_shown else "b_first")
+        assert j["raw_reply"] == raw
+        # an always-picks-response-2 judge remaps: first-presented loses
+        assert j["winner"] == ("b" if a_first_shown else "a")
+    assert {j["presentation"] for j in order_judgs} == {"a_first", "b_first"}
+    tb = judgments[2]
+    assert tb["raw_reply"] == "VERDICT: tie\nREASON: cannot separate them"
+    assert tb["presentation"] in ("a_first", "b_first")
+
+
+def test_judge_item_tiebreak_resolves_decided_split(monkeypatch):
+    """Always-picks-first judge → the orders split a/b; the tiebreak call
+    (same always-first behavior, fresh random order) breaks the tie in the
+    row math: the tiebreak's presented-first side ends with 2 wins vs 1."""
+    calls = []
+
+    def fake_post(url, payload, api_key=None):
+        calls.append(payload)
+        return _judge_resp("VERDICT: 1\nREASON: first presented is better")
+
+    monkeypatch.setattr(judging, "_post_chat", fake_post)
+    work_item = {
+        "base_id": "q1", "turn_index": None,
+        "result_a": {"id": 11}, "result_b": {"id": 22},
+        "out_a": "answer A", "out_b": "answer B",
+        "history_a": [], "history_b": [],
+        "fp_a": "alpha", "fp_b": "beta",
+        "dimension": "reasoning",
+        "item": {"id": "q1", "prompt": "hi"},
+        "is_multiturn": False,
+    }
+    judgments, errors, rows = judging.judge_item(
+        work_item, "http://judge/v1", "kimi-k3",
+        rng=__import__("random").Random(3))
+    assert errors == []
+    assert len(judgments) == 3 and len(calls) == 3
+    by_role = {}
+    for j in judgments:
+        by_role.setdefault(j["role"], []).append(j)
+    assert sorted(by_role) == ["order", "tiebreak"]
+    assert len(by_role["order"]) == 2
+    # orders split (always-first judge remaps to opposite canonical sides)
+    assert {j["winner"] for j in by_role["order"]} == {"a", "b"}
+    # tiebreak: same judge behavior on a fresh random order
+    tb = by_role["tiebreak"][0]
+    assert tb["winner"] == ("a" if tb["presentation"] == "a_first" else "b")
+    # resolution net: the tiebreak side now has 2 wins, the other side 1
+    wins = {"a": 0, "b": 0}
+    for j in judgments:
+        wins[j["winner"]] += 1
+    assert sorted(wins.values()) == [1, 2]
+    # progress rows carry the tiebreak label with no error
+    tb_row = [r for r in rows if r["order"] == "tiebreak"]
+    assert len(tb_row) == 1 and tb_row[0]["error"] is None
+
+
+def test_judge_item_no_tiebreak_when_orders_agree(monkeypatch):
+    calls = []
+
+    def fake_post(url, payload, api_key=None):
+        calls.append(payload)
+        return _judge_resp("VERDICT: tie\nREASON: even quality")
+
+    monkeypatch.setattr(judging, "_post_chat", fake_post)
+    work_item = {
+        "base_id": "q1", "turn_index": None,
+        "result_a": {"id": 11}, "result_b": {"id": 22},
+        "out_a": "answer A", "out_b": "answer B",
+        "history_a": [], "history_b": [],
+        "fp_a": "alpha", "fp_b": "beta",
+        "dimension": "reasoning",
+        "item": {"id": "q1", "prompt": "hi"},
+        "is_multiturn": False,
+    }
+    judgments, errors, rows = judging.judge_item(
+        work_item, "http://judge/v1", "kimi-k3",
+        rng=__import__("random").Random(3))
+    assert errors == []
+    assert len(judgments) == len(calls) == 2  # agreeing orders: no tiebreak
+    assert all(j["role"] == "order" and j["winner"] == "tie"
+               for j in judgments)
+    assert {r["order"] for r in rows} == {"a→b", "b→a"}
 
 
 def test_judge_item_tie_and_invalid_verdict_retry(monkeypatch):
@@ -273,7 +380,8 @@ def test_dispatch_judge_stores_two_rows_per_item(conn, monkeypatch):
     monkeypatch.setattr(judging, "_post_chat", fake_post)
     result = judging.dispatch_judge(_dbpath(conn), 1,
                                     judge_url="http://judge/v1",
-                                    judge_model="kimi-k3")
+                                    judge_model="kimi-k3",
+                                    tiebreak_flips=False)
     assert result["status"] == "complete"
     assert result["stored"] == 2  # both orders for the one item
     assert result["invalid"] == 0
@@ -459,6 +567,47 @@ def test_dispatch_judge_persists_verdict_detail(conn, monkeypatch):
                for r in rows)
 
 
+def test_dispatch_judge_persists_presentation_and_raw_reply(conn, monkeypatch):
+    """Forensic fields ride the dispatch INSERT: presentation names the
+    canonical side shown as Response 1, raw_reply keeps the judge's verbatim
+    reply, role distinguishes order rows from the flip-resolution tiebreak.
+    For a judge that always prefers the first-presented side the stored
+    winner maps a_first→'a', b_first→'b' — and the orders split, so the
+    default tiebreak fires and resolves the pair 2–1 in the row math (the
+    attribution chain that was unprovable on sa101-agent-004 #521)."""
+    _seed_pair(conn)
+
+    raw = "VERDICT: 1\nREASON: first presented is better"
+
+    def fake_post(url, payload, api_key=None):
+        return _judge_resp(raw)
+
+    monkeypatch.setattr(judging, "_post_chat", fake_post)
+    result = judging.dispatch_judge(_dbpath(conn), 1,
+                                    judge_url="http://judge/v1",
+                                    judge_model="kimi-k3")
+    assert result["status"] == "complete"
+    assert result["stored"] == 3  # both orders + flip-resolution tiebreak
+    rows = conn.execute(
+        "SELECT winner, presentation, raw_reply, role FROM judgments "
+        "ORDER BY id").fetchall()
+    assert len(rows) == 3
+    by_role = {}
+    for r in rows:
+        by_role.setdefault(r["role"], []).append(r)
+    assert sorted(by_role) == ["order", "tiebreak"]
+    assert len(by_role["order"]) == 2
+    # always-picks-first judge → the presented-first side wins in both orders
+    assert {r["winner"] for r in by_role["order"]} == {"a", "b"}
+    for r in by_role["order"]:
+        assert r["winner"] == ("a" if r["presentation"] == "a_first" else "b")
+    assert {r["presentation"] for r in by_role["order"]} \
+        == {"a_first", "b_first"}
+    tb = by_role["tiebreak"][0]
+    assert tb["winner"] == ("a" if tb["presentation"] == "a_first" else "b")
+    assert all(r["raw_reply"] == raw for r in rows)
+
+
 def test_migration_adds_verdict_detail_to_legacy_db(tmp_path):
     """A pre-both-bad DB (judgments without verdict_detail) migrates on
     connect: the column appears, legacy rows keep winner='tie' with NULL
@@ -506,20 +655,34 @@ def test_migration_adds_verdict_detail_to_legacy_db(tmp_path):
     dbmod.init_db(conn)  # runs _migrate (house pattern: explicit init)
     cols = {r["name"] for r in conn.execute("PRAGMA table_info(judgments)")}
     assert "verdict_detail" in cols
+    # forensic + role columns (2026-10-23) migrate the same way
+    assert "presentation" in cols
+    assert "raw_reply" in cols
+    assert "role" in cols
     row = conn.execute(
-        "SELECT winner, verdict_detail FROM judgments").fetchone()
+        "SELECT winner, verdict_detail, presentation, raw_reply, role "
+        "FROM judgments").fetchone()
     assert row["winner"] == "tie" and row["verdict_detail"] is None
+    assert row["presentation"] is None and row["raw_reply"] is None
+    assert row["role"] is None
     # new-style insert works on the migrated table
     conn.execute(
         "INSERT INTO judgments (eval_result_a, eval_result_b, judge_model, "
         "judge_template_version, winner, confidence, rationale, created_at, "
-        "verdict_detail) VALUES (1, 2, 'j', 'blind-pair-v4-ref', 'tie', "
-        "NULL, NULL, 'now', 'both_bad')")
+        "verdict_detail, presentation, raw_reply, role) VALUES (1, 2, 'j', "
+        "'blind-pair-v4-ref', 'tie', NULL, NULL, 'now', 'both_bad', "
+        "'a_first', 'VERDICT: both_bad', 'tiebreak')")
     conn.commit()
     n = conn.execute(
         "SELECT COUNT(*) FROM judgments WHERE verdict_detail = "
         "'both_bad'").fetchone()[0]
     assert n == 1
+    forensics = conn.execute(
+        "SELECT presentation, raw_reply, role FROM judgments WHERE "
+        "verdict_detail = 'both_bad'").fetchone()
+    assert forensics["presentation"] == "a_first"
+    assert forensics["raw_reply"] == "VERDICT: both_bad"
+    assert forensics["role"] == "tiebreak"
     conn.close()
 
 

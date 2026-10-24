@@ -5,6 +5,38 @@ stays the conventions/ground-truth file; this file is the living status).
 Newest first. Read AGENTS.md first for conventions; read this file to
 resume work.
 
+## 2026-10-23 (evening) — Judgment forensics + flip resolution (tiebreak pass)
+
+- **Trigger:** operator deep-dive on judgments #521/#522 (suite 6,
+  sa101-agent-004, GLM-5.3-Flash v4-ref batch). Both rationales praised
+  "response 1" for concrete diagnostic commands while the stored winners
+  flipped (b then a); the rationale's content claims were provably false
+  about the actual outputs (long IQ2_XS answer is complete and command-rich;
+  short IQ3_XXS has no commands). Batch audit: 587/587 units complete,
+  20.1% position-inconsistency among decided pairs (35 flips), 10 flips with
+  near-identical rationales — the confabulation signature.
+- **Forensic columns (judgments):** `presentation` (`a_first`/`b_first` —
+  which canonical side the judge saw as Response 1), `raw_reply` (verbatim
+  judge reply), `role` (`order`/`tiebreak`). SCHEMA + `_MIGRATIONS` (ALTER,
+  nullable; legacy rows NULL). Stored via the dispatch INSERT; returned by
+  `GET /api/judgments/pair`; in the judgments CSV export; rendered on the
+  judgment-detail page ("Judge saw first: <model>" + collapsible raw reply).
+- **Flip resolution:** when the two order rows disagree on a decided pair,
+  one extra judge call (fresh random order, same retry budget) stores a
+  `role='tiebreak'` row — majority resolves the pair in the existing
+  row-level score math (2–1 net; tie tiebreak → draw). Default ON,
+  `tiebreak_flips` body flag on `POST /api/ops/judge/jobs` (and
+  `judge_item`/`dispatch_judge` kwarg) to disable. Split units in the
+  audited batch would have cost ~6% extra judge calls.
+- **Tests:** attribution-chain test (call order ↔ presentation ↔ remapped
+  winner), tiebreak-resolves-split, no-tiebreak-on-agreement, dispatch
+  persistence (role), legacy migration (3 new columns), schema column set,
+  SxS pair endpoint (3 rows: 2 orders + tiebreak), combined/mixed e2e
+  (3 stored). Full suite 401 passed.
+- **UI:** judgment-detail verdict card gains "Judge saw first" + tiebreak
+  tag + raw-reply details; status line updated. Static gates clean
+  (13 pages), inline JS node-checked.
+
 ## 2026-10-23 (audit) — Full-day audit: eval-job counter fix, both-bad API completeness, PII sweep
 
 - **Scope:** every commit of the day (`857aba5` judging trim, `56dd30e`

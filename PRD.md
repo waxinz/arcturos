@@ -131,6 +131,20 @@ model must not be a contestant.)*
   rows are stored (append-only, no derived rows). Position bias nets out in
   aggregate; per-item order-disagreement is visible in reports as the
   flip count.
+- **Flip resolution + forensics (2026-10-23 amendment):** every stored
+  judgment row now also carries `presentation` (which canonical side was
+  shown as Response 1: `a_first`/`b_first`) and the judge's verbatim
+  `raw_reply`, plus a `role` (`order` / `tiebreak`) — so a verdict can be
+  checked against its own rationale post-hoc (a real audit, judgments
+  521/522, showed a rationale whose "Response 1" praise contradicted the
+  stored winner — unprovable while presentation order was ephemeral).
+  When the two orders DISAGREE on a decided pair (the flip signal), one
+  extra judge call — fresh random order, same retry budget — is stored as
+  a `role='tiebreak'` row; the majority verdict resolves the pair in the
+  row-level score math (2–1 for the tiebreak side; a tie tiebreak
+  degrades the split to a draw). Default on; disable per job with
+  `tiebreak_flips=false`. Ties, both-bad draws, and units with an errored
+  order never tiebreak.
 - **Dimension rubrics:** the judge prompt template is versioned and
   dimension-aware — the item's dimension selects a rubric paragraph
   (correctness-first for reasoning/knowledge/coding, instruction-fidelity

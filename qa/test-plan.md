@@ -53,6 +53,17 @@ Rules:
 - [x] `tests/test_judging.py::test_migration_adds_verdict_detail_to_legacy_db` — legacy DB migrates on init_db (idempotent ALTER); legacy tie rows keep NULL detail; new-style insert works
 - [x] `tests/test_reports.py::test_both_bad_counts_as_own_bucket_and_half_draw` — both_bad bucket in overall/pair counts, both_bad_rate headline, 0.5-draw score math; plain ties unaffected
 
+### J4 — Judgment forensics + flip resolution (2026-10-23 evening)
+- [x] `tests/test_judging.py::test_judge_item_both_orders_stored_with_remap` — extended: full attribution chain (presented-A-first call ↔ presentation='a_first' ↔ remapped winner) + raw_reply verbatim + tiebreak row on the split (tie tiebreak degrades to draw)
+- [x] `tests/test_judging.py::test_judge_item_tiebreak_resolves_decided_split` — orders split a/b → tiebreak row (role='tiebreak', fresh random order) resolves 2–1 in the row math
+- [x] `tests/test_judging.py::test_judge_item_no_tiebreak_when_orders_agree` — agreeing orders (tie/tie, both_bad/both_bad) store exactly 2 rows, no tiebreak call
+- [x] `tests/test_judging.py::test_dispatch_judge_persists_presentation_and_raw_reply` — role/presentation/raw_reply ride the dispatch INSERT; default tiebreak through dispatch (3 stored)
+- [x] `tests/test_judging.py::test_migration_adds_verdict_detail_to_legacy_db` — legacy DB gains presentation/raw_reply/role (nullable); legacy rows NULL; new-style insert works
+- [x] `tests/test_api.py::test_schema_creation` — judgments column set includes the three forensic fields
+- [x] `tests/test_eval_runs_api.py::test_judgments_pair_sxs_order_independent` — pair endpoint returns 3 rows (2 orders + tiebreak), canonical orientation unchanged, role surfaced
+- [x] `tests/test_eval_jobs.py::test_combined_job_end_to_end` / `..._mixed_job_end_to_end` / mirrored — staged kick-offs store 3 (tiebreak default-on end-to-end)
+- [x] `tests/test_eval_jobs.py::test_judge_item_followup_captures_reason` — follow-up nudge fires once per judged call (2 orders + tiebreak)
+
 ### J4 — Audit round (2026-10-23)
 - [x] `tests/test_eval_jobs.py::test_eval_job_counter_counts_rows_not_items` — progress denominator = stored-row count (multi-turn items store one row per assistant turn): 1 single + 1 multi (2 assistant turns) → 3/3, final line "3 results from 2 items"; fixes live "553/480" on smart-agent-101 (480 items → 587 rows)
 - [x] `tests/test_api.py::test_judgment_api_accepts_verdict_detail` — POST /api/judgments accepts a qualified both-bad draw (winner='tie' + verdict_detail='both_bad'); 422 when detail rides a non-tie winner
