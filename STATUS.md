@@ -5,6 +5,21 @@ stays the conventions/ground-truth file; this file is the living status).
 Newest first. Read AGENTS.md first for conventions; read this file to
 resume work.
 
+## 2026-10-24 — Judgment-detail summary: full model names in table headers
+
+- **Trigger:** operator screenshot — the Category summary table abridged
+  `Qwen3.8-Flash-Next:IQ2_XS` to `Qwen3.8-Flash-Nex…` (shortFp's 18-char
+  cap) despite ample desktop width.
+- **Change:** the desktop summary table headers on judgment-detail now
+  render the FULL fingerprint (esc'd); `.table-wrap`'s existing
+  `overflow-x: auto` covers the rare too-wide case by scrolling instead of
+  abridging. The compact short form stays where room is genuinely scarce:
+  the ≤720px mobile tiles and the verdict header's "Judge saw first" chip.
+  shortFp gained a scope comment so a later editor doesn't "fix" the table
+  back into truncation.
+- **Verification:** static gates clean (13 pages), inline JS node-checked,
+  full suite 401 passed; live page re-checked after deploy.
+
 ## 2026-10-23 (evening) — Judgment forensics + flip resolution (tiebreak pass)
 
 - **Trigger:** operator deep-dive on judgments #521/#522 (suite 6,

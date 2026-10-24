@@ -266,6 +266,11 @@ function $(id) { return document.getElementById(id); }
       return [head, panel];
     }
 
+    // Compact form for the mobile summary tiles + the verdict header's
+    // "Judge saw first" chip — surfaces with genuinely little room. The
+    // desktop table headers deliberately use the FULL fingerprint: the
+    // .table-wrap scrolls horizontally instead of abridging, and there is
+    // usually room for the whole name.
     function shortFp(fp) {
       fp = String(fp || '');
       return fp.length > 18 ? fp.slice(0, 17) + '…' : fp;
@@ -279,7 +284,8 @@ function $(id) { return document.getElementById(id); }
     function renderSummary(sum) {
       const card = $('jsum');
       if (!sum || !sum.total) { card.hidden = true; return; }
-      const ma = shortFp(sum.model_a), mb = shortFp(sum.model_b);
+      const fa = String(sum.model_a || ''), fb = String(sum.model_b || '');
+      const ma = shortFp(fa), mb = shortFp(fb);
       const rows = [sum.overall].concat(sum.rows || []);
       let trs = '';
       let tiles = '';
@@ -308,8 +314,8 @@ function $(id) { return document.getElementById(id); }
           '<div class="t-sub">n ' + r.n + '</div></div>';
       }
       card.querySelector('.table-wrap').innerHTML =
-        '<table><thead><tr><th>Category</th><th>' + esc(ma) + '</th><th>' +
-        esc(mb) + '</th><th class="num">Judged</th></tr></thead><tbody>' +
+        '<table><thead><tr><th>Category</th><th>' + esc(fa) + '</th><th>' +
+        esc(fb) + '</th><th class="num">Judged</th></tr></thead><tbody>' +
         trs + '</tbody></table>';
       card.querySelector('.jsum-tiles').innerHTML = tiles;
       card.hidden = false;
