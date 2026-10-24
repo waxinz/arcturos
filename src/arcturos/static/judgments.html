@@ -36,6 +36,9 @@
     td.win-b { background: var(--surface)7ed; }
     td.win-tie { background: var(--bg); }
     .status { color: var(--text-muted); font-size: .85rem; margin-top: .75rem; }
+    .pager { display: flex; align-items: center; justify-content: center; gap: 1rem; margin: .75rem 0 0; }
+    .pager button[disabled] { opacity: .45; cursor: default; }
+    .pager .pager-info { font-size: .85rem; color: var(--text-muted); }
     .empty { color: var(--text-muted); padding: 2rem; text-align: center; }
     .note { color: var(--text-muted); font-size: .85rem; margin: .5rem 0; }
     /* ---- judge job card (v0.2: in-process judge with live progress) ---- */
@@ -232,12 +235,22 @@
       <tbody id="judgments-body"></tbody>
     </table>
   </div>
+  <nav id="judg-pager" class="pager" hidden>
+    <button id="judg-prev" type="button">◀ Prev</button>
+    <span id="judg-pager-info" class="pager-info"></span>
+    <button id="judg-next" type="button">Next ▶</button>
+  </nav>
   <p id="status" class="status"></p>
 
   <script>
     let judgments = [];
     let resultsById = {};
     let resultFilter = null;
+    // Ledger pagination (client-side; the API has no page params). 50 rows
+    // keeps the DOM (and the page height) sane with thousands of stored
+    // judgments — the full ledger rendered ~325k px tall on the live DB.
+    const LEDGER_PAGE_SIZE = 50;
+    let ledgerPage = 1;
 
     function preview(s, n) {
       if (!s) return '(empty)';
@@ -276,6 +289,7 @@
       const status = document.getElementById('status');
       const note = document.getElementById('note');
       const tbody = document.getElementById('judgments-body');
+      const pager = document.getElementById('judg-pager');
       const judgeFilter = document.getElementById('judge-filter').value;
       tbody.innerHTML = '';
 
@@ -291,10 +305,18 @@
 
       if (!list.length) {
         status.textContent = 'No judgments match the current filters.';
+        pager.hidden = true;
         return;
       }
 
-      for (const j of list) {
+      // Paginate the filtered list; clamp keeps the page valid when a
+      // filter shrinks the list mid-browse.
+      const pages = Math.max(1, Math.ceil(list.length / LEDGER_PAGE_SIZE));
+      ledgerPage = Math.min(Math.max(1, ledgerPage), pages);
+      const start = (ledgerPage - 1) * LEDGER_PAGE_SIZE;
+      const slice = list.slice(start, start + LEDGER_PAGE_SIZE);
+
+      for (const j of slice) {
         const ra = resultsById[j.eval_result_a];
         const rb = resultsById[j.eval_result_b];
         const itemId = ra ? ra.item_id : ('#' + j.eval_result_a);
@@ -354,7 +376,15 @@
 
         tbody.appendChild(tr);
       }
-      status.textContent = list.length + ' judgment(s).';
+      status.textContent = list.length.toLocaleString() + ' judgment(s)'
+        + (pages > 1 ? ' — showing ' + (start + 1).toLocaleString() + '–'
+          + (start + slice.length).toLocaleString() : '') + '.';
+
+      const info = document.getElementById('judg-pager-info');
+      pager.hidden = pages <= 1;
+      info.textContent = 'Page ' + ledgerPage + ' of ' + pages;
+      document.getElementById('judg-prev').disabled = ledgerPage <= 1;
+      document.getElementById('judg-next').disabled = ledgerPage >= pages;
     }
 
     function strongSpan(text) {
@@ -435,13 +465,27 @@
       }
     }
 
-    document.getElementById('judge-filter').addEventListener('change', render);
+    document.getElementById('judge-filter').addEventListener('change', () => {
+      ledgerPage = 1;   // filter changed → start the ledger from page 1
+      render();
+    });
     document.getElementById('clear-filter').addEventListener('click', () => {
       document.getElementById('judge-filter').value = '';
       resultFilter = null;
+      ledgerPage = 1;
       history.replaceState(null, '', '/judgments');
       render();
     });
+    // Ledger pager: flip the page and bring the new page's top into view
+    // (scrollIntoView + sticky-bar offset, per the deploy skill's recipe).
+    function flipLedger(delta) {
+      ledgerPage += delta;
+      render();
+      const t = document.querySelector('.table-scroll');
+      if (t) { t.scrollIntoView({ block: 'start' }); window.scrollBy(0, -90); }
+    }
+    document.getElementById('judg-prev').addEventListener('click', () => flipLedger(-1));
+    document.getElementById('judg-next').addEventListener('click', () => flipLedger(1));
 
     load().then(() => {
       // ?result=<id> pre-filters to judgments touching that result.

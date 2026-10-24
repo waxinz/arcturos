@@ -82,6 +82,12 @@ def test_judgments_view_contract(client):
     assert "judge-mb-url" not in text
     assert "/evals/run" in text                # pointer to the Run page
     assert "stage-chip" in text                # progress chrome retained
+    # Ledger pagination (2026-10-24): the full judgments ledger is
+    # client-paginated (50 rows/page) instead of rendering thousands of
+    # rows (~325k px tall on the live DB).
+    assert 'id="judg-pager"' in text
+    assert 'id="judg-prev"' in text and 'id="judg-next"' in text
+    assert "LEDGER_PAGE_SIZE = 50" in text     # slice size, not the full list
 
 
 def test_reports_view_contract(client):
