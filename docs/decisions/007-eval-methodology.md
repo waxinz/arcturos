@@ -198,3 +198,31 @@ endpoint stays for scripted use.
   scripted/CI use; the dashboard surface is the primary path for operators.
 - Historical suites (smoke-reasoning v1) report under `uncategorized`
   dimension until re-judged or re-seeded; nothing is backfilled.
+
+## Amendment (2026-10-23) — judgment forensics + flip resolution
+
+A live audit (suite judgments #521/#522) exposed two gaps in the position-
+swap design: presentation order was ephemeral (a rationale's "Response 1"
+could not be mapped to a stored side after the fact — one row's rationale
+provably praised the opposite side of its winner), and a decided split
+(one order prefers A, the other B) left a coin flip as the per-item
+verdict.
+
+Decision, fix-forward (append-only; legacy rows unchanged, NULL fields):
+
+1. **Persist forensics on every judgment row:** `presentation`
+   (`a_first`/`b_first`), `raw_reply` (the judge's verbatim reply), and
+   `role` (`order` for the two swap rows, `tiebreak` for resolution rows).
+   Verdict↔rationale coherence becomes mechanically checkable.
+2. **Resolve decided splits with one tiebreak call:** when the two orders
+   disagree ('a' + 'b'), judge_item fires ONE extra judge call in a fresh
+   random order (same retry budget) and stores it as `role='tiebreak'`.
+   The existing row-level score math then resolves the pair (2–1 for the
+   tiebreak side; a tie tiebreak degrades the split to a draw). Ties,
+   both-bad draws, and units with an errored order never tiebreak.
+   Default on; `tiebreak_flips=false` disables per job. Cost: ~1 extra
+   call per flipped unit (~6% of units in the audited batch).
+3. **No report-semantics change:** aggregation still counts judgment
+   rows; the tiebreak row participates like any other row, so the
+   scoreboard shift is confined to newly judged runs.
+

@@ -103,6 +103,11 @@ CREATE TABLE IF NOT EXISTS judgments (
     rationale              TEXT,
     created_at             TEXT    NOT NULL,
     verdict_detail         TEXT,
+    -- Forensic fields (2026-10-23): how the pair was presented to the judge
+    -- and the judge's verbatim reply. Nullable — legacy rows predate them.
+    presentation           TEXT,
+    raw_reply              TEXT,
+    role                   TEXT,
     CHECK (eval_result_a <> eval_result_b)
 );
 
@@ -326,6 +331,18 @@ _MIGRATIONS = (
     # verdict_detail='both_bad' qualifies the draw so reports can surface
     # a both_bad_rate. Nullable — legacy rows have no detail, by design.
     ("judgments", "verdict_detail", "TEXT"),
+    # Judgment forensics (2026-10-23): which canonical side was presented as
+    # Response 1 ('a_first'/'b_first') and the judge's verbatim reply. A real
+    # audit (judgments 521/522) showed verdict↔rationale incoherence that is
+    # unprovable when presentation order is ephemeral — persist both so
+    # future rows are mechanically checkable. Nullable — legacy rows
+    # predate them, by design.
+    ("judgments", "presentation", "TEXT"),
+    ("judgments", "raw_reply", "TEXT"),
+    # 'order' for the two position-swap rows, 'tiebreak' for the flip-
+    # resolution call (2026-10-23). NULL = pre-forensics legacy row
+    # (conceptually an order row).
+    ("judgments", "role", "TEXT"),
 )
 
 

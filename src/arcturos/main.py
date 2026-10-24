@@ -578,7 +578,7 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
             SELECT j.id, j.judge_model,
                    j.judge_template_version AS template,
                    j.winner, j.verdict_detail, j.confidence, j.rationale,
-                   j.created_at,
+                   j.presentation, j.raw_reply, j.role, j.created_at,
                    ra.item_id AS item_id,
                    ra.model_fingerprint AS fingerprint_a,
                    rb.model_fingerprint AS fingerprint_b,
@@ -1087,7 +1087,8 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
         Body: {suite_id, judge_model?, judge_url?, model_a?, model_b?,
         retries?, allow_contestant_judge?, judge_api_key?, eval_run_ids?,
         target_a?, target_b?, eval_run_b?, eval_max_tokens?,
-        eval_temperature?, eval_concurrency?, eval_retries?}.
+        eval_temperature?, eval_concurrency?, eval_retries?,
+        tiebreak_flips?}.
         target_a/target_b may each also carry optional per-model
         reasoning_effort ('minimal'|'low'|'medium'|'high'|'xhigh'|'max') and
         reasoning_budget (max thinking tokens) — applied to that side's
@@ -1127,6 +1128,7 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
         eval_temperature = body.get("eval_temperature", 0.0)
         eval_concurrency = body.get("eval_concurrency", 4)
         eval_retries = body.get("eval_retries", 0)
+        tiebreak_flips = body.get("tiebreak_flips", True)
         if not isinstance(suite_id, int) or suite_id < 1:
             raise HTTPException(status_code=422, detail="suite_id must be a positive int")
         if eval_run_ids is not None:
@@ -1260,7 +1262,8 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
                 eval_max_tokens=eval_max_tokens,
                 eval_temperature=eval_temperature,
                 eval_concurrency=eval_concurrency,
-                eval_retries=eval_retries)
+                eval_retries=eval_retries,
+                tiebreak_flips=tiebreak_flips)
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc))
         return {"job_id": job_id}
@@ -1556,7 +1559,8 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
             ["judgment_id", "eval_result_a", "eval_result_b", "fp_a", "fp_b",
              "judge_model", "judge_template_version", "winner",
              "verdict_detail", "confidence",
-             "rationale", "created_at"],
+             "rationale", "created_at", "role", "presentation",
+             "raw_reply"],
             "arcturos-judgments.csv",
         )
 

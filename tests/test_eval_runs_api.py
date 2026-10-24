@@ -199,15 +199,20 @@ def test_judgments_pair_sxs_order_independent(client, monkeypatch):
     rev = tc.get("/api/judgments/pair",
                  params={"suite_id": 1, "model_a": "model-b",
                          "model_b": "model-a"}).json()
-    assert len(fwd) == len(rev) == 2          # position swap: 2 rows/item
+    assert len(fwd) == len(rev) == 3          # 2 order rows + flip tiebreak
     # Rows store in CANONICAL a→b orientation regardless of query order:
     # fingerprint_a is always model-a; the verdict is remapped to the
-    # canonical side. With a FIRST-ALWAYS-WINS judge the two orders must
-    # therefore produce OPPOSITE canonical winners — that flip IS the
-    # position-bias signal the double judging exists to measure.
+    # canonical side. With a SECOND-ALWAYS-WINS judge the two orders must
+    # produce OPPOSITE canonical winners — that flip IS the position-bias
+    # signal the double judging exists to measure — and the tiebreak row
+    # (same judge, fresh random order) resolves the split.
     assert {r["fingerprint_a"] for r in fwd + rev} == {"model-a"}
     assert {r["fingerprint_b"] for r in fwd + rev} == {"model-b"}
-    assert sorted(r["winner"] for r in fwd) == ["a", "b"]
+    order_rows = [r for r in fwd if r["role"] != "tiebreak"]
+    tb_rows = [r for r in fwd if r["role"] == "tiebreak"]
+    assert len(order_rows) == 2 and len(tb_rows) == 1
+    assert sorted(r["winner"] for r in order_rows) == ["a", "b"]
+    assert tb_rows[0]["winner"] in ("a", "b")
     for r in fwd + rev:
         assert r["output_a"] == "alpha"       # canonical a's stored output
         assert r["item_id"] == "q1"

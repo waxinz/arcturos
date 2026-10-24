@@ -240,7 +240,7 @@ def test_combined_job_end_to_end(client, monkeypatch):
     assert st["combined"] is True
     assert st["stage"] == "judging"
     assert len(st["eval_run_ids"]) == 2
-    assert st["judgments_stored"] == 2          # 1 item × both orders
+    assert st["judgments_stored"] == 3          # 1 item × both orders + tiebreak
     # API keys never echo on the job record
     assert "secret-a" not in json.dumps(st)
     assert st["targets"]["a"] == {"url": "http://a:1/v1", "model": "m-a"}
@@ -255,7 +255,9 @@ def test_combined_job_end_to_end(client, monkeypatch):
     assert all("kick-off" in r["name"] for r in runs)
     judged = conn.execute(
         "SELECT COUNT(*) FROM judgments").fetchone()[0]
-    assert judged == 2
+    assert judged == 3
+    roles = {r[0] for r in conn.execute("SELECT DISTINCT role FROM judgments")}
+    assert roles == {"order", "tiebreak"}
     conn.close()
 
 
@@ -413,14 +415,17 @@ def test_judge_item_followup_captures_reason(monkeypatch):
         _work_item(), "http://judge:9/v1", "kimi-k3", retries=1,
         rng=random.Random(1))
     assert not errors
-    assert len(judgments) == 2
+    # both orders split (always-picks-response-1 judge remaps to opposite
+    # canonical sides) → the flip-resolution tiebreak fires too
+    assert len(judgments) == 3
     assert all(j["judge_template_version"] == "blind-pair-v3"
                for j in judgments)
     assert all(j["rationale"] == "response 1 matched the reference"
                for j in judgments)
-    # the follow-up fired once per order (2 verdict-only replies)
+    assert [j["role"] for j in judgments] == ["order", "order", "tiebreak"]
+    # the follow-up fired once per judged call (2 order replies + 1 tiebreak)
     followups = [c for c in seen if "A blind judge compared" in c]
-    assert len(followups) == 2
+    assert len(followups) == 3
 
 
 def test_judge_item_followup_failure_stays_valid(monkeypatch):
@@ -495,7 +500,7 @@ def test_mixed_job_end_to_end(client, monkeypatch):
     assert st["targets"]["a"] == {"url": "http://a:1/v1", "model": "m-a"}
     assert st["targets"]["b"] == {"model": "m-b"}
     assert "secret-a" not in json.dumps(st)
-    assert st["judgments_stored"] == 2          # 1 item × both orders
+    assert st["judgments_stored"] == 3          # 1 item × both orders + tiebreak
     conn = dbmod.connect(db_path)
     dbmod.init_db(conn)
     fps = {r["model_fingerprint"] for r in conn.execute(
@@ -606,7 +611,7 @@ def test_mirrored_mixed_job_end_to_end(client, monkeypatch):
     assert replayed == ["m-b"]
     # run ids: stored A first, fresh B second; judging ran over both
     assert st["eval_run_ids"][0] == 8 and len(st["eval_run_ids"]) == 2
-    assert st["judgments_stored"] == 2          # 1 item × both orders
+    assert st["judgments_stored"] == 3          # 1 item × both orders + tiebreak
     # stored side echoes model (fingerprint) but no URL, no api key
     assert st["targets"]["a"] == {"model": "stored-a"}
     assert st["targets"]["b"] == {"url": "http://b:2/v1", "model": "m-b"}
@@ -619,7 +624,7 @@ def test_mirrored_mixed_job_end_to_end(client, monkeypatch):
         " JOIN eval_results ra ON ra.id = j.eval_result_a"
         " JOIN eval_results rb ON rb.id = j.eval_result_b"
         " WHERE ra.eval_run_id = 8 OR rb.eval_run_id = 8").fetchone()[0]
-    assert n == 2
+    assert n == 3
     conn.close()
 
 

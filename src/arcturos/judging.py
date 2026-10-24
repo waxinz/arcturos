@@ -633,7 +633,8 @@ def _reason_followup(judge_url: str, judge_model: str, raw: str,
 def judge_item(work_item: dict[str, Any], judge_url: str, judge_model: str,
                retries: int = 1, api_key: str | None = None,
                rng: random.Random | None = None,
-               abort: "AbortFlag | None" = None
+               abort: "AbortFlag | None" = None,
+               tiebreak_flips: bool = True,
                ) -> tuple[list[dict], list[str], list[dict]]:
     """Judge one work item in BOTH presentation orders (position swap).
 
@@ -643,6 +644,14 @@ def judge_item(work_item: dict[str, Any], judge_url: str, judge_model: str,
     presentation order to result_a/result_b relative) and each progress
     row feeds the live job table: {item_id, order, verdict, error,
     judge_model}.
+
+    Flip resolution (2026-10-23): when the two orders DISAGREE on a
+    decided pair (one 'a' win + one 'b' win), one extra judge call — a
+    fresh random order, same retry budget — is stored as a third row with
+    role='tiebreak'. The majority verdict then resolves the pair in the
+    row-level score math; a tie tiebreak degrades the split to a draw.
+    Off via tiebreak_flips=False. Ties, both-bad draws, and units with an
+    errored order never tiebreak (no decided split to resolve).
     """
     rng = rng or random.Random()
     a_out = work_item["out_a"]
@@ -671,16 +680,10 @@ def judge_item(work_item: dict[str, Any], judge_url: str, judge_model: str,
     judgments: list[dict] = []
     errors: list[str] = []
     rows: list[dict] = []
-    for order, (first, second, first_was_a) in enumerate(orders):
-        # Operator Stop lands between the two order calls too — the bench
-        # precedent checks "between points and inside streaming loops";
-        # checking only between items left a mid-item Stop ineffective
-        # until the whole item (both orders + retries) finished. Break
-        # (don't raise): order 0's judgment is already paid for and is
-        # preserved — dispatch_judge still reports the job aborted.
-        if abort is not None and order == 1 and abort.requested:
-            break
-        order_label = "a→b" if first_was_a else "b→a"
+
+    def _judge_side(first: str, second: str, first_was_a: bool,
+                    error_label: str, order_label: str, role: str) -> None:
+        """One judged call — orders and the tiebreak share this path."""
         verdict = None
         for attempt in range(retries + 1):
             verdict = judge_once(judge_url, judge_model, prompt_text,
@@ -691,12 +694,12 @@ def judge_item(work_item: dict[str, Any], judge_url: str, judge_model: str,
                 break
         if not verdict or not verdict["valid"]:
             errors.append(
-                f"{label} order{order + 1}: invalid verdict after "
+                f"{label} {error_label}: invalid verdict after "
                 f"{retries + 1} attempt(s): {(verdict or {}).get('raw', '')[:160]}")
             rows.append({"item_id": label, "order": order_label,
                          "verdict": None, "error": "invalid verdict",
                          "judge_model": judge_model})
-            continue
+            return
         if verdict["rationale"] is None:
             # v3 prompt demands a REASON line; one cheap nudge when the
             # judge still answered verdict-only. Best-effort, never fatal.
@@ -724,11 +727,41 @@ def judge_item(work_item: dict[str, Any], judge_url: str, judge_model: str,
             "confidence": None,
             "rationale": verdict["rationale"],
             "verdict_detail": detail,
+            "role": role,
+            # Forensics: which canonical side was Response 1, and the judge's
+            # verbatim reply — verdict↔rationale coherence becomes checkable
+            # post-hoc (sa101-agent-004 #521 shipped incoherent).
+            "presentation": "a_first" if first_was_a else "b_first",
+            "raw_reply": verdict.get("raw"),
         })
         rows.append({"item_id": label, "order": order_label,
                      "verdict": (winner if detail is None else detail),
                      "error": None,
                      "judge_model": judge_model})
+
+    for order, (first, second, first_was_a) in enumerate(orders):
+        # Operator Stop lands between the two order calls too — the bench
+        # precedent checks "between points and inside streaming loops";
+        # checking only between items left a mid-item Stop ineffective
+        # until the whole item (both orders + retries) finished. Break
+        # (don't raise): order 0's judgment is already paid for and is
+        # preserved — dispatch_judge still reports the job aborted.
+        if abort is not None and order == 1 and abort.requested:
+            break
+        _judge_side(first, second, first_was_a,
+                    f"order{order + 1}",
+                    "a→b" if first_was_a else "b→a",
+                    "order")
+
+    if (tiebreak_flips
+            and len(judgments) == 2
+            and {j["winner"] for j in judgments} == {"a", "b"}
+            and not (abort is not None and abort.requested)):
+        first_is_a_tb = rng.random() < 0.5
+        _judge_side(a_out if first_is_a_tb else b_out,
+                    b_out if first_is_a_tb else a_out,
+                    first_is_a_tb, "tiebreak", "tiebreak", "tiebreak")
+
     return judgments, errors, rows
 
 
@@ -815,14 +848,17 @@ def dispatch_judge(
     eval_run_ids: list[int] | None = None,
     on_progress=None,
     abort: "AbortFlag | None" = None,
+    tiebreak_flips: bool = True,
 ) -> dict:
     """Judge stored eval results for one suite; store judgments (append-only).
 
     Synchronous core of the judge job. Pair selection: latest result per
     (base item, normalized fingerprint); only 2-model items judge; a
     model_a/model_b filter scopes to the operator's A-vs-B pair. Every
-    selected item is judged in BOTH orders (position swap, ADR 007 §3).
-    Returns {suite_id, judged, stored, invalid, items, errors}.
+    selected item is judged in BOTH orders (position swap, ADR 007 §3);
+    decided splits get one tiebreak call (flip resolution, 2026-10-23)
+    unless tiebreak_flips is False. Returns
+    {suite_id, judged, stored, invalid, items, errors}.
     """
     from arcturos import bench as bench_mod
 
@@ -864,19 +900,23 @@ def dispatch_judge(
                 label = w["base_id"] + (f"#t{w['turn_index']}" if w["turn_index"] else "")
                 judgments, item_errors, rows = judge_item(
                     w, judge_url, judge_model, retries=retries,
-                    api_key=judge_api_key, rng=rng, abort=abort)
+                    api_key=judge_api_key, rng=rng, abort=abort,
+                    tiebreak_flips=tiebreak_flips)
                 errors.extend(item_errors)
                 now = bench_mod._utcnow()
                 for j in judgments:
                     conn.execute(
                         "INSERT INTO judgments (eval_result_a, eval_result_b,"
                         " judge_model, judge_template_version, winner,"
-                        " confidence, rationale, verdict_detail, created_at)"
-                        " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                        " confidence, rationale, verdict_detail, created_at,"
+                        " presentation, raw_reply, role)"
+                        " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                         (j["eval_result_a"], j["eval_result_b"],
                          j["judge_model"], j["judge_template_version"],
                          j["winner"], j["confidence"], j["rationale"],
-                         j.get("verdict_detail"), now))
+                         j.get("verdict_detail"), now,
+                         j.get("presentation"), j.get("raw_reply"),
+                         j.get("role")))
                     stored += 1
                 conn.commit()  # per-item commit: partial preservation
                 items_progress.append({
@@ -912,6 +952,7 @@ def _worker_combined(job, flag, db_path, suite_id, definition, targets, *,
                      judge_url, judge_model, judge_api_key, retries,
                      allow_contestant_judge, eval_max_tokens,
                      eval_temperature, eval_concurrency, eval_retries,
+                     tiebreak_flips=True,
                      eval_run_b=None, run_b_model=None,
                      eval_run_a=None, run_a_model=None) -> None:
     """Staged combined kick-off: replay A → replay B → judge the two runs.
@@ -1051,7 +1092,8 @@ def _worker_combined(job, flag, db_path, suite_id, definition, targets, *,
             allow_contestant_judge=allow_contestant_judge,
             judge_api_key=judge_api_key,
             eval_run_ids=[runs["a"], runs["b"]],
-            on_progress=on_progress, abort=flag)
+            on_progress=on_progress, abort=flag,
+            tiebreak_flips=tiebreak_flips)
         with _JOBS_LOCK:
             job["stored"] = result["stored"]
             job["judgments_stored"] = result["stored"]
@@ -1104,6 +1146,7 @@ def run_judge_job(
     eval_temperature: float = 0.0,
     eval_concurrency: int = 4,
     eval_retries: int = 0,
+    tiebreak_flips: bool = True,
 ) -> str:
     """Validate + snapshot a judge job, run it in a daemon thread.
 
@@ -1347,6 +1390,7 @@ def run_judge_job(
                                  eval_temperature=eval_temperature,
                                  eval_concurrency=eval_concurrency,
                                  eval_retries=eval_retries,
+                                 tiebreak_flips=tiebreak_flips,
                                  eval_run_b=eval_run_b,
                                  run_b_model=run_b_model,
                                  eval_run_a=eval_run_a,
@@ -1374,7 +1418,8 @@ def run_judge_job(
                 allow_contestant_judge=allow_contestant_judge,
                 judge_api_key=judge_api_key, eval_run_ids=eval_run_ids,
                 on_progress=on_progress,
-                abort=flag)
+                abort=flag,
+                tiebreak_flips=tiebreak_flips)
             with _JOBS_LOCK:
                 job["stored"] = result["stored"]
                 job["judgments_stored"] = result["stored"]

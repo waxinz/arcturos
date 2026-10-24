@@ -325,6 +325,7 @@ function $(id) { return document.getElementById(id); }
         '<span>Winner: <b class="w"></b></span>' +
         '<span>Confidence: <b></b></span>' +
         '<span>Judge: <b></b></span>' +
+        '<span class="v-present"></span>' +
         '<span>' + window.fmtLocalTime(row.created_at) + '</span>';
       head.querySelector('.w').textContent =
         row.winner === 'a' ? row.fingerprint_a
@@ -332,6 +333,20 @@ function $(id) { return document.getElementById(id); }
         : ((row.verdict_detail || '') === 'both_bad' ? 'both bad' : 'tie');
       head.querySelectorAll('b')[1].textContent = String(conf);
       head.querySelectorAll('b')[2].textContent = row.judge_model;
+      // Forensics: which stored side the judge saw as "Response 1". The
+      // rationale's Response 1/2 labels refer to THAT order, not the cards
+      // above — naming the model closes the gap that made audits guess.
+      head.querySelector('.v-present').innerHTML = 'Judge saw first: <b></b>';
+      head.querySelector('.v-present b').textContent =
+        row.presentation === 'a_first' ? shortFp(row.fingerprint_a)
+        : row.presentation === 'b_first' ? shortFp(row.fingerprint_b)
+        : '(not recorded)';
+      if (row.role === 'tiebreak') {
+        const tb = document.createElement('span');
+        tb.className = 'tie-tag';
+        tb.textContent = 'tiebreak';
+        head.append(tb);
+      }
       const det = document.createElement('details');
       const sum = document.createElement('summary');
       sum.textContent = 'Judge rationale';
@@ -340,6 +355,17 @@ function $(id) { return document.getElementById(id); }
       body.textContent = row.rationale || '(no rationale stored)';
       det.append(sum, body);
       div.append(head, det);
+      if (row.raw_reply) {
+        const raw = document.createElement('details');
+        const rawSum = document.createElement('summary');
+        rawSum.textContent = 'Judge raw reply';
+        const rawBody = document.createElement('div');
+        rawBody.style.marginTop = '.3rem';
+        rawBody.style.whiteSpace = 'pre-wrap';
+        rawBody.textContent = row.raw_reply;
+        raw.append(rawSum, rawBody);
+        div.append(raw);
+      }
       return div;
     }
 
@@ -458,7 +484,8 @@ function $(id) { return document.getElementById(id); }
           box.append(sxs, verdictCard(row));
         }
         $('status').textContent = rows.length + ' judgment row(s) — both presentation ' +
-          'orders aggregate here (position swap, ADR 007).';
+          'orders aggregate here (position swap; a third "tiebreak" row ' +
+          'resolves decided splits, ADR 007).';
       } catch (err) {
         $('status').textContent = 'Failed to load judgments: ' + err;
       }
