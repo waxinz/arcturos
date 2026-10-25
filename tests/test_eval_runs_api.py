@@ -224,6 +224,45 @@ def test_judgments_pair_sxs_order_independent(client, monkeypatch):
                           "model_b": "model-c"}).json() == []
 
 
+def test_judgment_by_id_drilldown(client, monkeypatch):
+    """GET /api/judgments/{id} (2026-10-25): one judgment addressed by
+    its OWN primary key — the drill-down surface that replaces the
+    foreign-key query soup (?suite_id=&model_a=&model_b=). The response
+    joins BOTH stored results so the caller needs no foreign keys, and
+    unknown ids 404."""
+    tc, _ = client
+    monkeypatch.setattr(
+        "arcturos.judging._post_chat",
+        lambda url, payload, api_key=None, timeout=120: {
+            "choices": [{"message": {"content":
+                        "VERDICT: 1\nConfidence: 0.7\nRationale: first wins"}}],
+            "usage": {"prompt_tokens": 1, "completion_tokens": 1}})
+    res = tc.post("/api/ops/judge/jobs", json={
+        "suite_id": 1, "eval_run_ids": [1, 2], "judge_model": "judge-x"})
+    assert res.status_code == 200, res.text
+    job = _wait_job(tc, res.json()["job_id"])
+    assert job["status"] == "done", job
+    pair = tc.get("/api/judgments/pair",
+                  params={"suite_id": 1, "model_a": "model-a",
+                          "model_b": "model-b"}).json()
+    assert pair
+    jid = pair[0]["id"]
+    got = tc.get(f"/api/judgments/{jid}")
+    assert got.status_code == 200
+    j = got.json()
+    assert j["id"] == jid
+    assert j["suite_id"] == 1
+    assert j["item_id"] == "q1"
+    assert {j["fingerprint_a"], j["fingerprint_b"]} == {"model-a", "model-b"}
+    assert j["output_a"] == "alpha" and j["output_b"] == "beta"
+    assert {j["run_a_id"], j["run_b_id"]} == {1, 2}
+    assert j["result_a_id"] and j["result_b_id"]
+    assert j["judge_model"] == "judge-x"
+    assert j["presentation"] in ("a_first", "b_first")
+    assert (j["raw_reply"] or "").startswith("VERDICT")
+    assert tc.get("/api/judgments/999999").status_code == 404
+
+
 def test_drilldown_pages_carry_shell_identity(client):
     tc, _ = client
     run_page = tc.get("/evals/runs/1")

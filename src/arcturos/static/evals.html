@@ -385,9 +385,9 @@
         if (res.ok) {
           const rows = await res.json();
           if (rows.length) {
-            link.href = '/judgments/pair?suite_id=' + x.suiteId +
-                        '&model_a=' + encodeURIComponent(x.model) +
-                        '&model_b=' + encodeURIComponent(y.model);
+            // Primary-key URL (2026-10-25): the link carries ONE judgment
+            // id — the pair page resolves suite + models from it.
+            link.href = '/judgments/pair?judgment=' + rows[0].id;
             link.textContent = 'View judgment details (' + rows.length + ' rows) →';
             link.hidden = false;
           }

@@ -55,6 +55,9 @@ PAGES: list[tuple[str, str, str, str]] = [
     # Drill-downs (2026-10-15): shell identity, no NAV_MODEL entry.
     ("eval-run-detail.html", "evalrundetail", "Evals", "Run detail"),
     ("judgment-detail.html", "jpair",         "Evals", "Judgment detail"),
+    # Single-judgment drill-down (2026-10-25): /judgments/<id> — one
+    # stored judgment addressed by its own primary key.
+    ("judgment.html",        "judgment",      "Evals", "Judgment"),
     ("models.html",          "models",    "Settings",   "Models"),
     ("baselines.html",       "baselines", "Settings",   "Baselines"),
 ]
@@ -79,6 +82,18 @@ NAV_MODEL = [
 ]
 
 
+# Section landing pills (hand-curated shape of the shipped nav partial):
+# each section's FIRST pill and its head link are the page the operator
+# lands on — Evals lands on Judgments, not the alphabetically-first
+# Create. Without this map a regen silently reordered the pills and
+# dropped the separators (the partial had drifted from the generator).
+LANDING: dict[str, str] = {
+    "Benchmarks": "kickoff",
+    "Evals": "judgments",
+    "Settings": "models",
+}
+
+
 def sidebar_html() -> str:
     # 2026-10-11 FIFTH-ROUND REWRITE (owner: left rail is wrong, period).
     # Two-level TOP navigation: row 1 = brand + section tabs + theme
@@ -91,7 +106,9 @@ def sidebar_html() -> str:
              '      <a class="brand" href="/">Arcturos</a>\n'
              '      <nav class="topnav-tabs">\n']
     for section, links in NAV_MODEL:
-        first = links[0][1]
+        land = LANDING.get(section)
+        first = next((href for pid, href, _ in links if pid == land),
+                     links[0][1])
         parts.append(f'        <div class="nav-section" data-nav-section="{section}">\n')
         parts.append(f'          <a class="nav-section-head" href="{first}">{section}</a>\n')
         parts.append('        </div>\n')
@@ -101,8 +118,13 @@ def sidebar_html() -> str:
                  '      </div>\n'
                  '    </div>\n'
                  '    <nav class="topnav-sub">\n')
-    for section, links in NAV_MODEL:
-        for page_id, href, label in links:
+    for si, (section, links) in enumerate(NAV_MODEL):
+        if si:
+            # one thin separator between sections (test-pinned count: 2)
+            parts.append('      <span class="sub-sep" aria-hidden="true"></span>\n')
+        land = LANDING.get(section)
+        ordered = sorted(links, key=lambda l: 0 if l[0] == land else 1)
+        for page_id, href, label in ordered:
             parts.append(f'      <a href="{href}" data-page="{page_id}" '
                          f'data-nav-section="{section}">{label}</a>\n')
     parts.append('    </nav>\n'

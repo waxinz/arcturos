@@ -147,6 +147,56 @@ def test_judgments_page_run_pickers_and_run_list(client):
     assert 'id="jbp-rows"' not in text
 
 
+def test_judgment_primary_key_round(client):
+    """2026-10-25: judgments are addressed by their OWN primary key.
+    Ledger rows carry an #id column linking /judgments/<id>; the recent
+    run cards enter the SxS pair page through ?judgment=<id> (one PK in
+    the URL, not a suite/model foreign-key soup); the single-judgment
+    drill-down serves at /judgments/<id>; the pair page accepts the PK
+    entry and links every verdict card back to /judgments/<id>."""
+    led = client.get("/judgments").text
+    assert "<th>#</th>" in led                    # ledger id column
+    assert "'/judgments/' + j.id" in led          # per-row PK link
+    assert "'/judgments/pair?judgment=' + g.latest" in led   # run cards
+    assert "'&model_a=' + encodeURIComponent(g.fpLo" not in led  # soup gone
+
+    # single-judgment drill-down: shell identity + presentation-order
+    # cards (the rationale's "Response 1" is the first card)
+    res = client.get("/judgments/2903")
+    assert res.status_code == 200
+    jtext = res.text
+    assert 'data-page="judgment"' in jtext
+    assert 'data-section="Evals"' in jtext
+    assert "/api/judgments/" in jtext             # PK data source
+    assert "shown to judge as Response 1" in jtext
+    assert "all judgments for this pair" in jtext
+    assert "'/judgments/pair?judgment=' + row.id" in jtext
+
+    # pair page: PK entry + per-row drill-in links
+    pair = client.get("/judgments/pair").text
+    assert "q.get('judgment')" in pair            # PK URL shape accepted
+    assert "'/api/judgments/' + jref" in pair     # resolution fetch
+    assert 'class="jref" href="/judgments/' + "' + row.id" in pair
+
+    # Results page deep-link carries a judgment PK too
+    ev = client.get("/evals").text
+    assert "'/judgments/pair?judgment=' + rows[0].id" in ev
+
+
+def test_judgments_ping_button_and_done_link(client):
+    """2026-10-25: the judge kick-off gets the same preflight ping the
+    Run page has ('One ping only'), and a completed job links its fresh
+    results through a judgment primary key instead of /evals."""
+    text = client.get("/judgments").text
+    assert 'id="judge-pf-btn"' in text
+    assert "One ping only" in text                # same label as Run page
+    assert "/api/ops/preflight" in text
+    assert "eval_target" in text                  # blank-URL default source
+    assert "open judgment results" in text        # done-link
+    assert "linkFreshResults" in text
+    assert "link.href = '/evals'" not in text     # old Results hop retired
+
+
 def test_judgment_detail_prompt_expander(client):
     """J8 (2026-10-15): tapping an item name on the SxS pair page expands
     the case's prompt underneath (definition-snapshot sourced)."""

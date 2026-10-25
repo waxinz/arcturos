@@ -191,6 +191,8 @@
       </div>
       <div class="field wide" style="display:flex; gap:.6rem; flex-wrap:wrap; margin-top:.7rem; align-items:center;">
         <button id="judge-btn" style="margin-top:0;">▶ Judge runs</button>
+        <button id="judge-pf-btn" type="button" class="stop-btn"
+                title="Check the judge target before kicking off: reachability + a chat probe"></button>
         <button id="judge-stop-btn" type="button" class="stop-btn" hidden
                 title="Stop the run: completed work is kept">■ Stop run</button>
       </div>
@@ -228,7 +230,7 @@
     <table>
       <thead>
         <tr>
-          <th>Item</th><th>Judge model</th><th>Template</th><th>Winner</th>
+          <th>#</th><th>Item</th><th>Judge model</th><th>Template</th><th>Winner</th>
           <th>Response A</th><th>Response B</th><th>Confidence</th>
         </tr>
       </thead>
@@ -327,6 +329,16 @@
         const tr = document.createElement('tr');
         const winCls = 'winner ' + j.winner;
 
+        // Judgment id cell: each stored judgment is addressable by its
+        // own primary key — the row links to /judgments/<id>.
+        const tdId = document.createElement('td');
+        tdId.className = 'mono';
+        const idLink = document.createElement('a');
+        idLink.href = '/judgments/' + j.id;
+        idLink.textContent = '#' + j.id;
+        tdId.appendChild(idLink);
+        tr.appendChild(tdId);
+
         const tdItem = document.createElement('td');
         tdItem.className = 'mono';
         tdItem.textContent = itemId;
@@ -399,8 +411,10 @@
 
     // ---- recent judgment runs (one card per judged A/B run pair) -------
     // Groups stored judgments by (canonical run pair, judge model) and
-    // lists them most recent first; each card deep-links to the existing
-    // SxS pair page for that suite + model pair.
+    // lists them most recent first; each card deep-links to the SxS pair
+    // page through the group's freshest JUDGMENT id — /judgments/pair?
+    // judgment=<id> — so the URL carries a primary key, not a soup of
+    // suite/model foreign keys (owner ask 2026-10-25).
     function renderJudgRuns() {
       const listEl = document.getElementById('judgrun-list');
       const emptyEl = document.getElementById('judgrun-empty');
@@ -434,9 +448,7 @@
       for (const g of ordered) {
         const a = document.createElement('a');
         a.className = 'jr-item';
-        a.href = '/judgments/pair?suite_id=' + g.suiteId +
-                 '&model_a=' + encodeURIComponent(g.fpLo || '') +
-                 '&model_b=' + encodeURIComponent(g.fpHi || '');
+        a.href = '/judgments/pair?judgment=' + g.latest;
         const left = document.createElement('div');
         const runs = document.createElement('div');
         runs.className = 'jr-runs';
@@ -519,6 +531,55 @@
         }
         return detail || ('HTTP ' + status);
       }
+      // Preflight button (same contract as the Run page): ping the judge
+      // target before kicking off — reachability + a chat probe. A blank
+      // URL field means the config default judge URL, so the ping falls
+      // back to /api/config/ui-defaults' eval_target (cached once).
+      const PF_LABEL = '✔ Give me a ping, Vasily. One ping only, please.';
+      const pfBtn = $('judge-pf-btn');
+      pfBtn.textContent = PF_LABEL;
+      let defaultJudgeUrl = null;
+      pfBtn.onclick = async () => {
+        pfBtn.disabled = true; pfBtn.textContent = '⏳ Checking…';
+        try {
+          let target = $('judge-url').value.trim();
+          if (!target) {
+            if (defaultJudgeUrl === null) {
+              try {
+                const res = await fetch('/api/config/ui-defaults');
+                if (res.ok) defaultJudgeUrl =
+                  (await res.json()).eval_target || '';
+              } catch (err) { defaultJudgeUrl = ''; }
+            }
+            target = defaultJudgeUrl;
+          }
+          if (!target) {
+            setMsg('Ping needs a judge URL — fill the field (or set ' +
+                   'judge_url in the config overlay)');
+            return;
+          }
+          setMsg('Preflight…');
+          const body = {target, kind: 'eval'};
+          if ($('judge-key').value.trim()) body.api_key = $('judge-key').value.trim();
+          if ($('judge-model').value.trim()) body.model = $('judge-model').value.trim();
+          const res = await fetch('/api/ops/preflight', {method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(body)});
+          const data = await res.json();
+          if (!res.ok) {
+            setMsg('Preflight failed: ' + fmtDetail(data.detail, res.status));
+            return;
+          }
+          const fails = (data.checks || []).filter(c => !c.ok);
+          if (!fails.length) {
+            setMsg('✔ ' + (data.checks || []).map(c => c.name).join(' ✓, ') +
+                   ' ✓ — judge target ready', true);
+          } else {
+            setMsg('✘ ' + fails.map(c => c.name + ': ' + c.detail).join(' | '));
+          }
+        } catch (err) { setMsg('Preflight failed: ' + err); }
+        finally { pfBtn.disabled = false; pfBtn.textContent = PF_LABEL; }
+      };
       // suites for the picker
       (async function () {
         try {
@@ -577,7 +638,34 @@
       $('judge-suite').addEventListener('change', refreshRunOptions);
 
       const poll = { timer: null, jobId: null, stopBusy: false,
-                     retries: 0 };
+                     retries: 0, suiteId: null };
+      // Done-link (2026-10-25): the completed job's results, one hop away.
+      // Finds the freshest stored judgment touching the job's two runs on
+      // the kicked suite and links the pair view through its primary key —
+      // /judgments/pair?judgment=<id> — so "open judgment results" lands
+      // on the SxS view without any foreign-key URL soup. No link when
+      // nothing was stored (honest).
+      function linkFreshResults(st) {
+        const runIds = (st.eval_run_ids || []).map(Number);
+        if (runIds.length !== 2 || !poll.suiteId) return;
+        let latest = 0;
+        for (const j of judgments) {
+          const ra = resultsById[j.eval_result_a];
+          const rb = resultsById[j.eval_result_b];
+          if (!ra || !rb) continue;
+          if (String(ra.suite_id) !== String(poll.suiteId)) continue;
+          const rA = Number(ra.eval_run_id), rB = Number(rb.eval_run_id);
+          if (!((rA === runIds[0] && rB === runIds[1]) ||
+                (rA === runIds[1] && rB === runIds[0]))) continue;
+          if ((j.id || 0) > latest) latest = j.id || 0;
+        }
+        if (!latest) return;
+        const link = document.createElement('a');
+        link.href = '/judgments/pair?judgment=' + latest;
+        link.textContent = 'open judgment results →';
+        $('judge-msg').appendChild(document.createTextNode(' — '));
+        $('judge-msg').appendChild(link);
+      }
       function stopBtnShow(on) {
         const b = $('judge-stop-btn');
         b.hidden = !on;
@@ -656,11 +744,7 @@
               if (st.combined && (st.eval_run_ids || []).length === 2) {
                 setMsg('✔ Run complete — ' + (st.judgments_stored || 0) +
                        ' judgment(s) stored · eval runs #' +
-                       st.eval_run_ids.join(' vs #') + ' — ', true);
-                const link = document.createElement('a');
-                link.href = '/evals';
-                link.textContent = 'open Results →';
-                $('judge-msg').appendChild(link);
+                       st.eval_run_ids.join(' vs #'), true);
               } else {
                 setMsg('✔ Judging complete — ' + (st.judgments_stored || 0) +
                        ' judgment(s) stored (both orders per item)' +
@@ -679,9 +763,11 @@
             }
             $('jbp-status').textContent = st.status_line || st.status;
             $('jbp-clock').textContent = 'elapsed ' + fmtSecs(st.elapsed_s);
-            // refresh the list behind the card
+            // refresh the list behind the card, then link the fresh
+            // results through the freshest judgment's primary key
             load().then(() => { populateJudgeFilter(judgments); render();
-                                renderJudgRuns(); })
+                                renderJudgRuns();
+                                linkFreshResults(st); })
                   .catch(() => {});
             evalRunsCache = null;      // the fresh A run is now pickable
             refreshRunOptions();
@@ -740,6 +826,7 @@
           }
           $('judge-progress').classList.add('active');
           poll.jobId = data.job_id;
+          poll.suiteId = suiteId;      // keys the done-link's pair search
           $('jbp-bar').style.width = '0%';
           $('jbp-status').textContent = 'selecting pairs…';
           $('jbp-clock').textContent = '';

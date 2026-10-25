@@ -212,6 +212,14 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
     def judgments_page() -> Response:
         return page_response("judgments.html")
 
+    @app.get("/judgments/{judgment_id}", include_in_schema=False)
+    def judgment_by_id_page(judgment_id: int) -> Response:
+        # Drill-down (2026-10-25): ONE judgment addressed by its own
+        # primary key — /judgments/2903 — replacing the foreign-key
+        # query soup (?suite_id=&model_a=&model_b=) as the way a single
+        # judgment is opened. data-page="judgment".
+        return page_response("judgment.html")
+
     @app.get("/reports", include_in_schema=False)
     def reports_page() -> Response:
         return page_response("reports.html")
@@ -636,6 +644,38 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
     @app.get("/api/judgments")
     def list_judgments(db=Depends(get_db)):
         return fetch_all(db, "SELECT * FROM judgments ORDER BY id")
+
+    @app.get("/api/judgments/{judgment_id}")
+    def get_judgment(judgment_id: int, db=Depends(get_db)):
+        """One judgment by its own primary key — the drill-down surface.
+
+        The judgment's id is the only address: the response joins BOTH
+        stored results (outputs, fingerprints, item, suite, run ids) so
+        the detail page renders the full SxS without the caller knowing
+        any foreign key. 404 for unknown ids.
+        """
+        row = fetch_one(db, """
+            SELECT j.id, j.judge_model,
+                   j.judge_template_version AS template,
+                   j.winner, j.verdict_detail, j.confidence, j.rationale,
+                   j.presentation, j.raw_reply, j.role, j.created_at,
+                   j.eval_result_a AS result_a_id,
+                   j.eval_result_b AS result_b_id,
+                   ra.suite_id AS suite_id,
+                   ra.item_id AS item_id,
+                   ra.model_fingerprint AS fingerprint_a,
+                   rb.model_fingerprint AS fingerprint_b,
+                   ra.output AS output_a, rb.output AS output_b,
+                   ra.eval_run_id AS run_a_id, rb.eval_run_id AS run_b_id
+            FROM judgments j
+            JOIN eval_results ra ON ra.id = j.eval_result_a
+            JOIN eval_results rb ON rb.id = j.eval_result_b
+            WHERE j.id = ?
+        """, (judgment_id,))
+        if row is None:
+            raise HTTPException(status_code=404,
+                                detail=f"judgment {judgment_id} not found")
+        return row
 
     # ------------------------------------------------------------- reports ----
     @app.get("/api/reports/suite/{suite_id}")

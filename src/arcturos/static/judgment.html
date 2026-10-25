@@ -1,0 +1,391 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="icon" type="image/png" sizes="16x16" href="/static/icons/scorpio-favicon-16.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/static/icons/scorpio-favicon-32.png">
+  <title>Arcturos — Judgment</title>
+  <link rel="stylesheet" href="/static/theme.css">
+  <link rel="stylesheet" href="/static/nav.css">
+  <style>
+    .page-sub { color: var(--text-muted); margin: .25rem 0 1rem; font-size: .9rem; }
+    .meta { display: flex; flex-wrap: wrap; gap: .5rem 1.6rem; margin: 0 0 1rem;
+            font-size: .9rem; }
+    .meta b { color: var(--text-soft); font-weight: 600; }
+    .meta a { color: var(--link); }
+    .sxs { display: grid; grid-template-columns: 1fr 1fr; gap: .8rem;
+           margin: 0 0 .6rem; }
+    @media (max-width: 720px) { .sxs { grid-template-columns: 1fr; } }
+    .resp { background: var(--surface); border: 1px solid var(--border);
+            border-radius: 6px; padding: .7rem .8rem; }
+    .resp.winner { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+    .resp h4 { margin: 0 0 .4rem; font-size: .82rem; color: var(--text-soft);
+               display: flex; justify-content: space-between; gap: .5rem;
+               align-items: baseline; }
+    .resp .win-tag { color: var(--accent); font-weight: 800; font-size: .74rem;
+                     text-transform: uppercase; letter-spacing: .06em; }
+    .resp pre { margin: 0; font-family: ui-monospace, monospace; font-size: .8rem;
+                white-space: pre-wrap; word-break: break-word; max-height: 22rem;
+                overflow-y: auto; }
+    .verdict { background: var(--surface); border: 1px solid var(--border);
+               border-radius: 6px; padding: .6rem .8rem; margin: 0 0 1.2rem;
+               font-size: .85rem; }
+    .verdict .v-head { display: flex; flex-wrap: wrap; gap: .4rem 1.2rem;
+                       color: var(--text-soft); font-weight: 600; }
+    .verdict details { margin-top: .35rem; }
+    .verdict summary { cursor: pointer; color: var(--link); font-size: .82rem; }
+    .item-head { font-weight: 700; margin: 1.2rem 0 .45rem; font-size: .95rem;
+                 display: flex; align-items: center; gap: .45rem; width: 100%;
+                 background: none; border: 0; padding: .15rem .1rem;
+                 cursor: pointer; color: var(--text); text-align: left;
+                 font: inherit; font-weight: 700; font-size: .95rem; }
+    .item-head .chev { color: var(--link); font-size: .82rem; width: 1em;
+                       flex: none; }
+    .item-head .item-name { word-break: break-word; }
+    .item-head .hint { color: var(--text-muted); font-weight: 400;
+                       font-size: .72rem; margin-left: .3rem; white-space: nowrap; }
+    .item-head:focus-visible { outline: 2px solid var(--link);
+                               outline-offset: 2px; border-radius: 4px; }
+    .prompt-box { background: var(--surface); border: 1px solid var(--border);
+                  border-radius: 6px; padding: .7rem .8rem;
+                  margin: .1rem 0 .7rem; }
+    .prompt-box[hidden] { display: none; }
+    .prompt-box .p-label { font-size: .72rem; font-weight: 700;
+                           text-transform: uppercase; letter-spacing: .06em;
+                           color: var(--text-muted); margin: 0 0 .35rem; }
+    .prompt-box .p-turn { font-size: .74rem; font-weight: 600;
+                          color: var(--text-soft); margin: .55rem 0 .2rem; }
+    .prompt-box pre { margin: 0; font-family: ui-monospace, monospace;
+                      font-size: .8rem; white-space: pre-wrap;
+                      word-break: break-word; }
+    .prompt-box .p-sys pre { color: var(--text-muted); font-size: .76rem; }
+    .prompt-box .p-note { color: var(--text-muted); font-size: .74rem;
+                          margin: .4rem 0 0; }
+    .prompt-box .p-img { margin-top: .5rem; }
+    .prompt-box .p-img img { display: block; max-width: 100%;
+                             max-height: 22rem; width: auto; height: auto;
+                             border: 1px solid var(--border);
+                             border-radius: 6px; background: var(--bg); }
+    .status { color: var(--text-muted); font-size: .85rem; margin-top: .75rem; }
+    .empty { color: var(--text-muted); padding: 2rem 0; }
+    .tie-tag { color: var(--text-muted); font-weight: 800; font-size: .74rem;
+               text-transform: uppercase; letter-spacing: .06em; }
+    .jumpline { margin-top: 1rem; font-size: .88rem; }
+    .jumpline a { color: var(--link); font-weight: 600; }
+  </style>
+  <script src="/static/app-time.js"></script>
+  <script src="/static/theme.js"></script>
+  <script src="/static/nav.js"></script>
+  <script src="/static/sticky-inputs.js"></script>
+</head>
+<body class="shell" data-page="judgment" data-section="Evals">
+  <!--NAV-->
+
+  <main class="page">
+    <h1>Judgment</h1>
+    <p class="page-sub" id="sub">One stored judgment, addressed by its own id.
+      The two responses render in the ORDER THE JUDGE SAW them — the
+      rationale's “Response 1 / Assistant 1” is the first card.</p>
+    <div class="meta" id="meta"></div>
+    <div id="items"><p class="empty">Loading…</p></div>
+    <p class="jumpline" id="jumpline" hidden></p>
+    <p id="status" class="status"></p>
+  </main>
+
+  <script>
+function $(id) { return document.getElementById(id); }
+
+    function esc(s) {
+      return String(s).replace(/[&<>"']/g,
+        c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;',
+               "'": '&#39;'}[c]));
+    }
+
+    // Compact form for narrow surfaces. Desktop headings keep the FULL
+    // fingerprint (owner standing ask: never abridge when there is room);
+    // this helper is only for the meta chips / judge-saw-first labels.
+    function shortFp(fp) {
+      fp = String(fp || '');
+      return fp.length > 18 ? fp.slice(0, 17) + '…' : fp;
+    }
+
+    function winnerTag(row, which) {
+      const bothBad = row.winner === 'tie' && (row.verdict_detail || '') === 'both_bad';
+      if (row.winner === which) return '<span class="win-tag">judge preferred</span>';
+      if (bothBad) return '<span class="tie-tag">both bad (draw)</span>';
+      if (row.winner === 'tie') return '<span class="tie-tag">tie</span>';
+      return '';
+    }
+
+    // One response card. `slot` is the canonical side ('a'|'b'); `seen`
+    // is the presentation label the judge saw ('Response 1'/'Response 2')
+    // or null on legacy rows without a recorded presentation order.
+    function respCard(row, slot, seen) {
+      const fp = slot === 'a' ? row.fingerprint_a : row.fingerprint_b;
+      const out = slot === 'a' ? row.output_a : row.output_b;
+      const div = document.createElement('div');
+      div.className = 'resp' + (row.winner === slot ? ' winner' : '');
+      div.innerHTML = '<h4><span></span><span class="tag"></span></h4><pre></pre>';
+      div.querySelector('h4 span').textContent = fp;
+      div.querySelector('.tag').innerHTML = winnerTag(row, slot);
+      if (seen) {
+        const chip = document.createElement('div');
+        chip.className = 'tie-tag';
+        chip.textContent = seen;
+        div.querySelector('h4').appendChild(chip);
+      }
+      div.querySelector('pre').textContent =
+        (out === null || out === undefined || out === '')
+          ? '(empty output stored)' : out;
+      return div;
+    }
+
+    function verdictCard(row) {
+      const div = document.createElement('div');
+      div.className = 'verdict';
+      const head = document.createElement('div');
+      head.className = 'v-head';
+      const conf = row.confidence != null ? row.confidence : '—';
+      head.innerHTML = '<span>Winner: <b class="w"></b></span>' +
+        '<span>Confidence: <b></b></span>' +
+        '<span>Judge: <b></b></span>' +
+        '<span>Template: <b></b></span>' +
+        '<span>' + window.fmtLocalTime(row.created_at) + '</span>';
+      head.querySelector('.w').textContent =
+        row.winner === 'a' ? row.fingerprint_a
+        : row.winner === 'b' ? row.fingerprint_b
+        : ((row.verdict_detail || '') === 'both_bad' ? 'both bad' : 'tie');
+      head.querySelectorAll('b')[1].textContent = String(conf);
+      head.querySelectorAll('b')[2].textContent = row.judge_model;
+      head.querySelectorAll('b')[3].textContent = row.template;
+      if (row.role === 'tiebreak') {
+        const tb = document.createElement('span');
+        tb.className = 'tie-tag';
+        tb.textContent = 'tiebreak';
+        head.append(tb);
+      }
+      const det = document.createElement('details');
+      det.open = true;
+      const sum = document.createElement('summary');
+      sum.textContent = 'Judge rationale';
+      const body = document.createElement('div');
+      body.style.marginTop = '.3rem';
+      body.textContent = row.rationale || '(no rationale stored)';
+      det.append(sum, body);
+      div.append(head, det);
+      if (row.raw_reply) {
+        const raw = document.createElement('details');
+        const rawSum = document.createElement('summary');
+        rawSum.textContent = 'Judge raw reply';
+        const rawBody = document.createElement('div');
+        rawBody.style.marginTop = '.3rem';
+        rawBody.style.whiteSpace = 'pre-wrap';
+        rawBody.textContent = row.raw_reply;
+        raw.append(rawSum, rawBody);
+        div.append(raw);
+      }
+      return div;
+    }
+
+    // ---- expandable prompt (tap the item name) --------------------------
+    // Same contract as the pair page: fills the collapsible panel with the
+    // case's prompt from the suite's latest definition snapshot.
+    function fillPrompt(panel, item, suiteId) {
+      panel.innerHTML = '';
+      const lab = document.createElement('div');
+      lab.className = 'p-label';
+      lab.textContent = 'Prompt';
+      panel.appendChild(lab);
+      if (!item) {
+        const pre = document.createElement('pre');
+        pre.textContent = '(not in the current definition snapshot)';
+        panel.appendChild(pre);
+        return;
+      }
+      if (item.system) {
+        const sys = document.createElement('div');
+        sys.className = 'p-sys';
+        const t = document.createElement('div');
+        t.className = 'p-turn';
+        t.textContent = 'System';
+        const pre = document.createElement('pre');
+        pre.textContent = item.system;
+        sys.append(t, pre);
+        panel.appendChild(sys);
+      }
+      if (Array.isArray(item.turns)) {
+        let n = 0;
+        for (const turn of item.turns) {
+          const t = document.createElement('div');
+          t.className = 'p-turn';
+          const pre = document.createElement('pre');
+          if (turn.role === 'user') {
+            n += 1;
+            t.textContent = 'Turn ' + n + ' · user';
+            pre.textContent = turn.content ?? '(no content)';
+          } else {
+            t.textContent = 'model reply (stored above)';
+            pre.textContent = '…';
+          }
+          panel.append(t, pre);
+        }
+      } else if (item.prompt) {
+        const pre = document.createElement('pre');
+        pre.textContent = item.prompt;
+        panel.appendChild(pre);
+      } else {
+        const pre = document.createElement('pre');
+        pre.textContent = '(no prompt stored)';
+        panel.appendChild(pre);
+      }
+      if (item.image) {
+        const isHttp = item.image.startsWith('http://') ||
+                       item.image.startsWith('https://');
+        const wrap = document.createElement('div');
+        wrap.className = 'p-img';
+        const img = document.createElement('img');
+        img.alt = 'Item image: ' + item.image;
+        img.loading = 'lazy';
+        img.src = isHttp
+          ? item.image
+          : '/api/eval-suites/' + suiteId + '/image?item=' +
+            encodeURIComponent(item.id);
+        img.addEventListener('error', () => {
+          wrap.innerHTML = '';
+          const note = document.createElement('div');
+          note.className = 'p-note';
+          note.textContent = '⚠ image failed to load: ' + item.image;
+          wrap.appendChild(note);
+        });
+        wrap.appendChild(img);
+        panel.appendChild(wrap);
+      }
+    }
+
+    function makeItemHead(base, defItems, suiteId) {
+      const head = document.createElement('button');
+      head.type = 'button';
+      head.className = 'item-head';
+      head.setAttribute('aria-expanded', 'false');
+      head.title = 'Tap to show / hide the prompt for this case';
+      const chev = document.createElement('span');
+      chev.className = 'chev';
+      chev.textContent = '▸';
+      const name = document.createElement('span');
+      name.className = 'item-name';
+      name.textContent = base;
+      const hint = document.createElement('span');
+      hint.className = 'hint';
+      hint.textContent = 'tap for prompt';
+      head.append(chev, name, hint);
+      const panel = document.createElement('div');
+      panel.className = 'prompt-box';
+      panel.hidden = true;
+      fillPrompt(panel, defItems[base] || null, suiteId);
+      head.addEventListener('click', () => {
+        const open = panel.hidden;
+        panel.hidden = !open;
+        chev.textContent = open ? '▾' : '▸';
+        head.setAttribute('aria-expanded', String(open));
+      });
+      return [head, panel];
+    }
+
+    async function load() {
+      const m = /^\/judgments\/(\d+)$/.exec(location.pathname);
+      if (!m) {
+        $('items').innerHTML = '<p class="empty">Bad judgment URL.</p>';
+        return;
+      }
+      const jid = Number(m[1]);
+      const res = await fetch('/api/judgments/' + jid);
+      if (res.status === 404) {
+        $('items').innerHTML = '<p class="empty">No judgment #' + jid +
+          ' stored.</p>';
+        return;
+      }
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      const row = await res.json();
+
+      // Meta strip: judgment id, suite, both runs (linked), judge, when.
+      $('meta').innerHTML =
+        '<span><b>Judgment</b> #' + row.id + '</span>' +
+        '<span><b>Suite</b> <a href="/evals?suite=' + row.suite_id + '">#' +
+          row.suite_id + '</a></span>' +
+        '<span><b>Runs</b> ' + runLink(row.run_a_id) + ' vs ' +
+          runLink(row.run_b_id) + '</span>' +
+        '<span><b>Judge saw first</b> ' + esc(sawFirst(row)) + '</span>';
+      $('sub').textContent = 'Judgment #' + row.id + ' — item ' + row.item_id +
+        '. The two responses render in the order the judge saw them; the ' +
+        'rationale’s “Response 1” is the first card.';
+
+      // Definition snapshot (optional): feeds the expandable prompt panel.
+      const defItems = {};
+      try {
+        const dRes = await fetch('/api/eval-suites/' + row.suite_id +
+                                 '/definition');
+        if (dRes.ok) {
+          const def = await dRes.json();
+          for (const it of (def.items || [])) {
+            if (it && it.id) defItems[it.id] = it;
+          }
+        }
+      } catch (err) { /* prompt panel degrades gracefully */ }
+
+      const base = row.item_id.split('#')[0];
+      const box = $('items');
+      box.innerHTML = '';
+      const [head, panel] = makeItemHead(base, defItems, row.suite_id);
+      box.append(head, panel);
+
+      // Cards in the order the judge saw them. presentation is recorded
+      // since 2026-10-23; legacy rows (null) fall back to canonical a/b
+      // with honest "stored side" labels.
+      const sxs = document.createElement('div');
+      sxs.className = 'sxs';
+      if (row.presentation === 'a_first') {
+        sxs.append(respCard(row, 'a', 'shown to judge as Response 1'),
+                   respCard(row, 'b', 'shown to judge as Response 2'));
+      } else if (row.presentation === 'b_first') {
+        sxs.append(respCard(row, 'b', 'shown to judge as Response 1'),
+                   respCard(row, 'a', 'shown to judge as Response 2'));
+      } else {
+        sxs.append(respCard(row, 'a', null), respCard(row, 'b', null));
+        $('status').textContent =
+          'Presentation order not recorded for this judgment (legacy row) — ' +
+          'cards show stored sides A/B.';
+      }
+      box.append(sxs, verdictCard(row));
+
+      // Onward: the pair view for this judgment's suite+model pair,
+      // entered through this judgment's own primary key.
+      const line = $('jumpline');
+      line.innerHTML = '';
+      const a = document.createElement('a');
+      a.href = '/judgments/pair?judgment=' + row.id;
+      a.textContent = 'all judgments for this pair (' + esc(shortFp(row.fingerprint_a)) +
+        ' vs ' + esc(shortFp(row.fingerprint_b)) + ') →';
+      line.append('Pair context: ', a);
+      line.hidden = false;
+    }
+
+    function sawFirst(row) {
+      if (row.presentation === 'a_first') return row.fingerprint_a;
+      if (row.presentation === 'b_first') return row.fingerprint_b;
+      return '(not recorded)';
+    }
+
+    function runLink(runId) {
+      return runId
+        ? '<a href="/evals/runs/' + runId + '">#' + runId + '</a>'
+        : '—';
+    }
+
+    load().catch(err => {
+      $('status').textContent = 'Failed to load judgment: ' + err;
+    });
+  </script>
+
+</body>
+</html>
