@@ -88,7 +88,11 @@ def post_openai_chat(target: str, messages: list[dict],
         data=json.dumps(chat_body).encode(),
         headers=headers, method="POST",
     )
-    with urlreq.urlopen(req, timeout=120) as resp:
+    # 300s (2026-10-25, raised from 120): reasoning items can think for
+    # 85s+ legitimately (e101-tool-calling-004 burned ~1.4k thinking
+    # tokens and timed out at 120s under server load, stranding run 16
+    # as partial on its very last item).
+    with urlreq.urlopen(req, timeout=300) as resp:
         return json.loads(resp.read())
 
 

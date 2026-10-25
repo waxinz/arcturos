@@ -66,6 +66,7 @@ def _capture_request(monkeypatch):
     def fake_urlopen(req, timeout=None):
         captured["url"] = req.full_url
         captured["body"] = json.loads(req.data.decode())
+        captured["timeout"] = timeout
         return _FakeResp()
 
     monkeypatch.setattr(mt.urlreq, "urlopen", fake_urlopen)
@@ -87,6 +88,10 @@ def test_chat_body_includes_reasoning_when_set(monkeypatch):
     assert "max_tokens" not in body
     assert body["stream"] is False
     assert captured["url"].endswith("/v1/chat/completions")
+    # 300s request budget (2026-10-25, raised from 120): reasoning items
+    # can legitimately think for 85s+ — run 16's last item timed out at
+    # 120s under server load.
+    assert captured["timeout"] == 300
     captured2 = _capture_request(monkeypatch)
     mt.post_openai_chat("http://t:1/v1", [{"role": "user", "content": "hi"}],
                         max_tokens=512)
