@@ -240,6 +240,75 @@ def test_pair_summary_per_dimension_math(db):
     assert overall["wilson_a"] is not None
 
 
+def test_pair_summary_run_pair_scoping(db):
+    """Run-pair scoping (2026-10-25): a re-run + re-judge must not be
+    diluted by older batches of the same suite x model pair — run 16's
+    healthy batch read 65:35 qwen under run 15's poisoned one."""
+    suite_id, result_ids = seed_fixture(db)
+    seed_definition(db, suite_id, [
+        {"id": "sr-001", "dimension": "reasoning"},
+        {"id": "sr-002", "dimension": "reasoning"},
+        {"id": "sr-003", "dimension": "writing"},
+    ])
+    (ra1, rb1), (ra2, rb2), (ra3, rb3) = (result_ids["sr-001"],
+                                          result_ids["sr-002"],
+                                          result_ids["sr-003"])
+    # batch 1: run ids NULL (legacy seed) — 2 alpha wins, 1 beta win
+    seed_judgment(db, ra1, rb1, "a")
+    seed_judgment(db, ra2, rb2, "b")
+    # batch 2: the same items replayed on run pair (16, 6) — alpha sweeps
+    for run, fp in ((16, "model-alpha"), (6, "model-beta")):
+        db.execute(
+            "INSERT INTO eval_runs (id, suite_id, model_fingerprint, name, "
+            "created_at, status) VALUES (?, ?, ?, ?, ?, ?)",
+            (run, suite_id, fp, f"run {run}", "now", "complete"),
+        )
+    fresh: dict[str, list[int]] = {}
+    for item_id in ("sr-001", "sr-002", "sr-003"):
+        fresh[item_id] = []
+        for fp, run in (("model-alpha", 16), ("model-beta", 6)):
+            cur = db.execute(
+                "INSERT INTO eval_results (suite_id, model_fingerprint, "
+                "item_id, output, prompt_tokens, completion_tokens, "
+                "latency_ms, created_at, eval_run_id) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (suite_id, fp, item_id, f"{fp} fresh", 20, 30, 100.0,
+                 "now", run),
+            )
+            fresh[item_id].append(cur.lastrowid)
+    db.commit()
+    seed_judgment(db, fresh["sr-001"][0], fresh["sr-001"][1], "a")
+    seed_judgment(db, fresh["sr-002"][0], fresh["sr-002"][1], "a")
+    seed_judgment(db, fresh["sr-003"][0], fresh["sr-003"][1], "a")
+
+    lifetime = reports.pair_summary(db, suite_id, "model-alpha", "model-beta")
+    assert lifetime["total"] == 5
+    assert lifetime["run_a"] is None and lifetime["run_b"] is None
+
+    scoped = reports.pair_summary(db, suite_id, "model-alpha", "model-beta",
+                                  eval_run_a=16, eval_run_b=6)
+    assert scoped["total"] == 3
+    assert scoped["run_a"] == 16 and scoped["run_b"] == 6
+    assert scoped["overall"]["counts"]["a"] == 3
+    assert scoped["overall"]["score_a"] == 100.0
+
+    # run args swapped: same rows, orientation normalization untouched
+    swapped = reports.pair_summary(db, suite_id, "model-alpha", "model-beta",
+                                   eval_run_a=6, eval_run_b=16)
+    assert swapped["total"] == 3
+    assert swapped["overall"]["counts"] == scoped["overall"]["counts"]
+
+    # half a scope (one run arg) never filters — both required to fire
+    half = reports.pair_summary(db, suite_id, "model-alpha", "model-beta",
+                                eval_run_a=16)
+    assert half["total"] == 5
+
+    # a run pair with no judgments -> honest empty
+    empty = reports.pair_summary(db, suite_id, "model-alpha", "model-beta",
+                                 eval_run_a=16, eval_run_b=7)
+    assert empty["total"] == 0 and empty["rows"] == []
+
+
 def test_pair_summary_orientation_invariant(db):
     """Swapping model_a/model_b mirrors the a/b columns; n/ties/rows stay."""
     suite_id, result_ids = seed_fixture(db)

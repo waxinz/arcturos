@@ -117,7 +117,7 @@
     <p class="page-sub" id="sub">Side-by-side responses with the judge's verdict per item. Tap an item name to expand its prompt underneath.</p>
     <section id="jsum" class="jsum" hidden>
       <h3>Category summary</h3>
-      <p class="jsum-cap">Blind pairwise score = wins + ½ ties, scaled 0–100 · both-bad counts as a tie · n per category</p>
+      <p class="jsum-cap" id="jsum-scope">Blind pairwise score = wins + ½ ties, scaled 0–100 · both-bad counts as a tie · n per category</p>
       <div class="table-wrap"></div>
       <div class="jsum-tiles"></div>
     </section>
@@ -286,6 +286,20 @@ function $(id) { return document.getElementById(id); }
       if (!sum || !sum.total) { card.hidden = true; return; }
       const fa = String(sum.model_a || ''), fb = String(sum.model_b || '');
       const ma = shortFp(fa), mb = shortFp(fb);
+      // Run-pair scope (2026-10-25): when the summary is scoped to the
+      // anchor judgment's replay runs, say so — the aggregate used to be
+      // lifetime-wide and a re-run's fresh batch was buried under older
+      // ones (run 16's healthy verdicts read 65:35 qwen under run 15's
+      // poisoned batch).
+      const cap = $('jsum-scope');
+      if (cap) {
+        cap.textContent = (sum.run_a != null && sum.run_b != null
+          ? 'Judgments from replay runs #' + sum.run_a + ' vs #' + sum.run_b +
+            ' only · '
+          : '') +
+          'Blind pairwise score = wins + ½ ties, scaled 0–100 · ' +
+          'both-bad counts as a tie · n per category';
+      }
       const rows = [sum.overall].concat(sum.rows || []);
       let trs = '';
       let tiles = '';
@@ -412,6 +426,7 @@ function $(id) { return document.getElementById(id); }
       let ma = q.get('model_a') || '';
       let mb = q.get('model_b') || '';
       const jref = q.get('judgment');
+      let runA = null, runB = null;
       if (jref && /^\d+$/.test(jref)) {
         // Primary-key entry (2026-10-25): the URL carries ONE judgment's
         // own id — no suite/model foreign keys. The pair is resolved
@@ -426,6 +441,12 @@ function $(id) { return document.getElementById(id); }
         suiteId = String(j.suite_id);
         ma = j.fingerprint_a;
         mb = j.fingerprint_b;
+        // Scope the pair lens to THIS judgment's replay runs (2026-10-25):
+        // the summary + SxS list were lifetime-wide, so a re-run's fresh
+        // batch was buried under older batches of the same pair. Legacy
+        // ?suite_id&model_a&model_b entries stay lifetime-wide.
+        runA = (j.run_a_id == null || j.run_b_id == null) ? null : j.run_a_id;
+        runB = (j.run_a_id == null || j.run_b_id == null) ? null : j.run_b_id;
       }
       if (!suiteId || !ma || !mb) {
         $('items').innerHTML = '<p class="empty">Need ?judgment=&lt;id&gt; ' +
@@ -436,7 +457,10 @@ function $(id) { return document.getElementById(id); }
         [ma, mb] = await displayOrder(suiteId, ma, mb);
         const pairQs = 'suite_id=' + suiteId +
                        '&model_a=' + encodeURIComponent(ma) +
-                       '&model_b=' + encodeURIComponent(mb);
+                       '&model_b=' + encodeURIComponent(mb) +
+                       (runA != null && runB != null
+                         ? '&eval_run_a=' + runA + '&eval_run_b=' + runB
+                         : '');
         // summary + rows in parallel; the summary card is optional — a
         // failed/404 summary just leaves the page with the existing UI.
         const [res, sumRes] = await Promise.all([

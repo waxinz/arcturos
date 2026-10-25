@@ -352,3 +352,25 @@ def test_pair_summary_endpoint_404_and_empty_pair(client):
     assert s["total"] == 0
     assert s["overall"]["percent"] == {"a": None, "b": None, "tie": None,
                                            "both_bad": None}
+
+
+def test_pair_summary_endpoint_run_pair_scope_params(client):
+    # 2026-10-25: eval_run_a/eval_run_b scope the lens to one replay-run
+    # pair (the PK-anchored pair page passes the anchor judgment's run
+    # ids). The SQL math is unit-covered in test_reports.py — here the
+    # endpoints accept + forward the params and echo the scope, and an
+    # unmatched run pair degrades to an honest empty (not an error).
+    suite_id = _seed_pair_summary_suite(client)
+    res = client.get("/api/judgments/pair/summary", params={
+        "suite_id": suite_id, "model_a": "model-alpha", "model_b": "model-beta",
+        "eval_run_a": 16, "eval_run_b": 6})
+    assert res.status_code == 200, res.text
+    s = res.json()
+    assert s["run_a"] == 16 and s["run_b"] == 6
+    assert s["total"] == 0 and s["rows"] == []      # seeded runs are NULL
+    # ...and the SxS rows endpoint takes the same scope
+    rows = client.get("/api/judgments/pair", params={
+        "suite_id": suite_id, "model_a": "model-alpha", "model_b": "model-beta",
+        "eval_run_a": 16, "eval_run_b": 6})
+    assert rows.status_code == 200, rows.text
+    assert rows.json() == []

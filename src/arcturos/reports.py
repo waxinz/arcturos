@@ -360,7 +360,9 @@ def suite_report(db: sqlite3.Connection, suite_id: int,
 
 def pair_summary(db: sqlite3.Connection, suite_id: int, model_a: str,
                  model_b: str, judge_model: str | None = None,
-                 judge_template: str | None = None) -> dict[str, Any]:
+                 judge_template: str | None = None,
+                 eval_run_a: int | None = None,
+                 eval_run_b: int | None = None) -> dict[str, Any]:
     """Per-dimension win-rate summary for ONE suite x model pair.
 
     Pair-page lens over the same judgment scope as /api/judgments/pair:
@@ -376,12 +378,20 @@ def pair_summary(db: sqlite3.Connection, suite_id: int, model_a: str,
 
     ``judge_model`` / ``judge_template`` scope the aggregate to ONE judge
     generation when truthy (either field alone filters on that field).
+    ``eval_run_a`` + ``eval_run_b`` (2026-10-25) scope the aggregate to
+    judgments whose two stored results came from exactly that replay-run
+    pair (either orientation): without it the lens is suite x model
+    LIFETIME-wide, so a re-run + re-judge of a fixed replay still shows
+    the old poisoned batch's verdicts mixed in (run 16's healthy batch
+    was buried under run 15's degraded one — accuracy read 65:35 qwen
+    when the fresh batch was 20/20 ties). Absent -> lifetime, unchanged.
     Unknown pair -> honest empty: rows [], overall n=0 (no fabricated
     numbers). The Wilson 95% interval applies to model a's win share.
 
-    Returns {"suite_id", "model_a", "model_b", "judges", "templates",
-             "total", "rows", "overall"}; rows sorted n desc then
-             dimension name asc.
+    Returns {"suite_id", "model_a", "model_b", "run_a", "run_b",
+             "judges", "templates", "total", "rows", "overall"}; rows
+             sorted n desc then dimension name asc. run_a/run_b echo the
+             scope (nulls when lifetime-wide).
     """
     sql = """SELECT j.winner, j.judge_model, j.verdict_detail,
                     j.judge_template_version AS template,
@@ -400,6 +410,10 @@ def pair_summary(db: sqlite3.Connection, suite_id: int, model_a: str,
     if judge_template:
         sql += " AND j.judge_template_version = ?"
         params.append(judge_template)
+    if eval_run_a is not None and eval_run_b is not None:
+        sql += (" AND ((ra.eval_run_id = ? AND rb.eval_run_id = ?)"
+                " OR (ra.eval_run_id = ? AND rb.eval_run_id = ?))")
+        params += [eval_run_a, eval_run_b, eval_run_b, eval_run_a]
     rows = _fetch(db, sql, tuple(params))
     metadata = metadata_map_for(db, suite_id)
 
@@ -454,6 +468,8 @@ def pair_summary(db: sqlite3.Connection, suite_id: int, model_a: str,
         "suite_id": suite_id,
         "model_a": model_a,
         "model_b": model_b,
+        "run_a": eval_run_a,
+        "run_b": eval_run_b,
         "judges": sorted(judges),
         "templates": sorted(templates),
         "total": overall_row["n"],

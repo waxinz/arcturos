@@ -576,6 +576,8 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
     # ------------------------------------------------- judgment SxS view --
     @app.get("/api/judgments/pair")
     def judgments_pair(suite_id: int, model_a: str, model_b: str,
+                       eval_run_a: int | None = None,
+                       eval_run_b: int | None = None,
                        db=Depends(get_db)):
         """Side-by-side judgment rows for one suite + model pair (any order).
 
@@ -583,9 +585,14 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
         detail page renders the SxS diff. `fingerprint_a` names whose
         response is 'a' in that row — winner 'a' always means
         fingerprint_a's response won, whatever order the caller passed.
+        ``eval_run_a`` + ``eval_run_b`` (2026-10-25, both required to
+        fire): scope the rows to that replay-run pair (either
+        orientation) — the PK-anchored pair page passes the anchor
+        judgment's run ids so a re-run's fresh batch isn't buried under
+        older batches of the same suite x model pair.
         """
         require_parent(db, "eval_suites", suite_id)
-        return fetch_all(db, """
+        sql = """
             SELECT j.id, j.judge_model,
                    j.judge_template_version AS template,
                    j.winner, j.verdict_detail, j.confidence, j.rationale,
@@ -601,13 +608,21 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
             WHERE ra.suite_id = ?
               AND ((ra.model_fingerprint = ? AND rb.model_fingerprint = ?)
                 OR (ra.model_fingerprint = ? AND rb.model_fingerprint = ?))
-            ORDER BY ra.item_id, j.id
-        """, (suite_id, model_a, model_b, model_b, model_a))
+        """
+        params: list = [suite_id, model_a, model_b, model_b, model_a]
+        if eval_run_a is not None and eval_run_b is not None:
+            sql += (" AND ((ra.eval_run_id = ? AND rb.eval_run_id = ?)"
+                    " OR (ra.eval_run_id = ? AND rb.eval_run_id = ?))")
+            params += [eval_run_a, eval_run_b, eval_run_b, eval_run_a]
+        sql += " ORDER BY ra.item_id, j.id"
+        return fetch_all(db, sql, tuple(params))
 
     @app.get("/api/judgments/pair/summary")
     def judgments_pair_summary(suite_id: int, model_a: str, model_b: str,
                                judge_model: str | None = None,
                                judge_template: str | None = None,
+                               eval_run_a: int | None = None,
+                               eval_run_b: int | None = None,
                                db=Depends(get_db)):
         """Per-dimension category summary for one suite + model pair.
 
@@ -618,11 +633,17 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
         stored in — swapping model_a/model_b mirrors the a/b columns
         without changing n, ties, or the row set. ``judge_model`` /
         ``judge_template`` scope the aggregate to one judge generation.
+        ``eval_run_a`` + ``eval_run_b`` (both required to fire) scope it
+        to that replay-run pair — the PK-anchored pair page passes the
+        anchor judgment's run ids so a re-run's fresh verdicts aren't
+        diluted by older batches of the same pair.
         """
         require_parent(db, "eval_suites", suite_id)
         return reports.pair_summary(db, suite_id, model_a, model_b,
                                     judge_model=judge_model,
-                                    judge_template=judge_template)
+                                    judge_template=judge_template,
+                                    eval_run_a=eval_run_a,
+                                    eval_run_b=eval_run_b)
 
     @app.get("/api/eval-results")
     def list_all_eval_results(db=Depends(get_db)):
