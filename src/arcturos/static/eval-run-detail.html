@@ -89,7 +89,6 @@ function $(id) { return document.getElementById(id); }
             run.status + '</span></span>' +
           '<span><b>Created</b> ' + window.fmtLocalTime(run.created_at) + '</span>';
         $('actions').innerHTML =
-          '<a href="/reports">Report for this suite →</a>' +
           '<a href="/evals">← All runs</a>';
         const tbody = $('rows');
         tbody.innerHTML = '';

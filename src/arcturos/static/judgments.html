@@ -126,7 +126,6 @@
                 cursor: pointer; }
     .stop-btn:not([hidden]) { display: inline-block; }
     .stop-btn[hidden] { display: none; }
-    .table-scroll { overflow-x: auto; }   /* narrow screens: scroll, not wrap */
     @media (max-width: 640px) {
       .bp-head2 { align-items: flex-start; flex-direction: column; gap: .1rem; }
       .minors { grid-template-columns: 1fr; }
@@ -218,47 +217,9 @@
   <p id="judgrun-empty" class="note" hidden>No judgment runs yet — kick one
     off above, then each run pair shows up here (most recent first).</p>
 
-  <div class="controls">
-    <label>Judge model
-      <select id="judge-filter"><option value="">All judges</option></select>
-    </label>
-    <button id="clear-filter">Clear filters</button>
-  </div>
-  <p id="note" class="note"></p>
-
-  <div class="table-scroll">
-    <table>
-      <thead>
-        <tr>
-          <th>#</th><th>Item</th><th>Judge model</th><th>Template</th><th>Winner</th>
-          <th>Response A</th><th>Response B</th><th>Confidence</th>
-        </tr>
-      </thead>
-      <tbody id="judgments-body"></tbody>
-    </table>
-  </div>
-  <nav id="judg-pager" class="pager" hidden>
-    <button id="judg-prev" type="button">◀ Prev</button>
-    <span id="judg-pager-info" class="pager-info"></span>
-    <button id="judg-next" type="button">Next ▶</button>
-  </nav>
-  <p id="status" class="status"></p>
-
   <script>
     let judgments = [];
     let resultsById = {};
-    let resultFilter = null;
-    // Ledger pagination (client-side; the API has no page params). 50 rows
-    // keeps the DOM (and the page height) sane with thousands of stored
-    // judgments — the full ledger rendered ~325k px tall on the live DB.
-    const LEDGER_PAGE_SIZE = 50;
-    let ledgerPage = 1;
-
-    function preview(s, n) {
-      if (!s) return '(empty)';
-      s = s.replace(/\s+/g, ' ').trim();
-      return s.length > n ? s.slice(0, n) + '…' : s;
-    }
 
     async function load() {
       const [jres, rres] = await Promise.all([
@@ -273,148 +234,17 @@
       for (const r of results) resultsById[r.id] = r;
     }
 
-    function populateJudgeFilter(list) {
-      const judges = [...new Set(list.map(j => j.judge_model))].sort();
-      const sel = document.getElementById('judge-filter');
-      const current = sel.value;
-      sel.innerHTML = '<option value="">All judges</option>';
-      for (const j of judges) {
-        const opt = document.createElement('option');
-        opt.value = j;
-        opt.textContent = j;
-        sel.appendChild(opt);
-      }
-      sel.value = current;
-    }
-
-    function render() {
-      const status = document.getElementById('status');
-      const note = document.getElementById('note');
-      const tbody = document.getElementById('judgments-body');
-      const pager = document.getElementById('judg-pager');
-      const judgeFilter = document.getElementById('judge-filter').value;
-      tbody.innerHTML = '';
-
-      let list = judgments;
-      if (resultFilter !== null) {
-        list = list.filter(j => j.eval_result_a === resultFilter || j.eval_result_b === resultFilter);
-      }
-      if (judgeFilter) list = list.filter(j => j.judge_model === judgeFilter);
-
-      note.textContent = resultFilter !== null
-        ? 'Filtered to judgments touching result #' + resultFilter + '.'
-        : '';
-
-      if (!list.length) {
-        status.textContent = 'No judgments match the current filters.';
-        pager.hidden = true;
-        return;
-      }
-
-      // Paginate the filtered list; clamp keeps the page valid when a
-      // filter shrinks the list mid-browse.
-      const pages = Math.max(1, Math.ceil(list.length / LEDGER_PAGE_SIZE));
-      ledgerPage = Math.min(Math.max(1, ledgerPage), pages);
-      const start = (ledgerPage - 1) * LEDGER_PAGE_SIZE;
-      const slice = list.slice(start, start + LEDGER_PAGE_SIZE);
-
-      for (const j of slice) {
-        const ra = resultsById[j.eval_result_a];
-        const rb = resultsById[j.eval_result_b];
-        const itemId = ra ? ra.item_id : ('#' + j.eval_result_a);
-        const modelA = ra ? ra.model_fingerprint : '#' + j.eval_result_a;
-        const modelB = rb ? rb.model_fingerprint : '#' + j.eval_result_b;
-        const outA = ra ? ra.output : '';
-        const outB = rb ? rb.output : '';
-        const tr = document.createElement('tr');
-        const winCls = 'winner ' + j.winner;
-
-        // Judgment id cell: each stored judgment is addressable by its
-        // own primary key — the row links to /judgments/<id>.
-        const tdId = document.createElement('td');
-        tdId.className = 'mono';
-        const idLink = document.createElement('a');
-        idLink.href = '/judgments/' + j.id;
-        idLink.textContent = '#' + j.id;
-        tdId.appendChild(idLink);
-        tr.appendChild(tdId);
-
-        const tdItem = document.createElement('td');
-        tdItem.className = 'mono';
-        tdItem.textContent = itemId;
-        tr.appendChild(tdItem);
-
-        const tdJudge = document.createElement('td');
-        tdJudge.className = 'mono';
-        tdJudge.textContent = j.judge_model;
-        tr.appendChild(tdJudge);
-
-        const tdTpl = document.createElement('td');
-        tdTpl.className = 'mono';
-        tdTpl.textContent = j.judge_template_version;
-        tr.appendChild(tdTpl);
-
-        const tdWin = document.createElement('td');
-        const badge = document.createElement('span');
-        const isBothBad = (j.verdict_detail || '') === 'both_bad';
-        badge.className = winCls + (isBothBad ? ' bothbad' : '');
-        badge.textContent = isBothBad ? 'both-bad' : j.winner;
-        badge.title = isBothBad ? 'both responses wrong (draw: 0.5 each)' : '';
-        tdWin.appendChild(badge);
-        tr.appendChild(tdWin);
-
-        // Winner's column gets a tint; loser column stays plain.
-        const clsA = j.winner === 'a' ? 'win-a' : (j.winner === 'tie' ? 'win-tie' : '');
-        const clsB = j.winner === 'b' ? 'win-b' : (j.winner === 'tie' ? 'win-tie' : '');
-
-        const tdA = document.createElement('td');
-        tdA.className = 'out ' + clsA;
-        tdA.title = modelA + ' (result #' + j.eval_result_a + ')';
-        tdA.appendChild(strongSpan(modelA));
-        tdA.appendChild(document.createTextNode(preview(outA, 180)));
-        tr.appendChild(tdA);
-
-        const tdB = document.createElement('td');
-        tdB.className = 'out ' + clsB;
-        tdB.title = modelB + ' (result #' + j.eval_result_b + ')';
-        tdB.appendChild(strongSpan(modelB));
-        tdB.appendChild(document.createTextNode(preview(outB, 180)));
-        tr.appendChild(tdB);
-
-        const tdConf = document.createElement('td');
-        tdConf.className = 'mono';
-        tdConf.textContent = j.confidence === null || j.confidence === undefined ? '—' : j.confidence;
-        tr.appendChild(tdConf);
-
-        tbody.appendChild(tr);
-      }
-      status.textContent = list.length.toLocaleString() + ' judgment(s)'
-        + (pages > 1 ? ' — showing ' + (start + 1).toLocaleString() + '–'
-          + (start + slice.length).toLocaleString() : '') + '.';
-
-      const info = document.getElementById('judg-pager-info');
-      pager.hidden = pages <= 1;
-      info.textContent = 'Page ' + ledgerPage + ' of ' + pages;
-      document.getElementById('judg-prev').disabled = ledgerPage <= 1;
-      document.getElementById('judg-next').disabled = ledgerPage >= pages;
-    }
-
-    function strongSpan(text) {
-      const s = document.createElement('span');
-      s.className = 'mono';
-      s.style.display = 'block';
-      s.style.marginBottom = '.2rem';
-      s.style.fontWeight = '600';
-      s.textContent = text;
-      return s;
-    }
-
     // ---- recent judgment runs (one card per judged A/B run pair) -------
     // Groups stored judgments by (canonical run pair, judge model) and
     // lists them most recent first; each card deep-links to the SxS pair
     // page through the group's freshest JUDGMENT id — /judgments/pair?
     // judgment=<id> — so the URL carries a primary key, not a soup of
-    // suite/model foreign keys (owner ask 2026-10-25).
+    // suite/model foreign keys (owner ask 2026-10-25). The per-row
+    // ledger table under these cards was removed 2026-10-25 (owner call:
+    // the paginated table + its judge-model dropdown went; individual
+    // judgments stay reachable through /judgments/<id> links on the pair
+    // page and the run cards) — /api/judgments stays and still feeds
+    // these cards.
     function renderJudgRuns() {
       const listEl = document.getElementById('judgrun-list');
       const emptyEl = document.getElementById('judgrun-empty');
@@ -477,38 +307,12 @@
       }
     }
 
-    document.getElementById('judge-filter').addEventListener('change', () => {
-      ledgerPage = 1;   // filter changed → start the ledger from page 1
-      render();
-    });
-    document.getElementById('clear-filter').addEventListener('click', () => {
-      document.getElementById('judge-filter').value = '';
-      resultFilter = null;
-      ledgerPage = 1;
-      history.replaceState(null, '', '/judgments');
-      render();
-    });
-    // Ledger pager: flip the page and bring the new page's top into view
-    // (scrollIntoView + sticky-bar offset, per the deploy skill's recipe).
-    function flipLedger(delta) {
-      ledgerPage += delta;
-      render();
-      const t = document.querySelector('.table-scroll');
-      if (t) { t.scrollIntoView({ block: 'start' }); window.scrollBy(0, -90); }
-    }
-    document.getElementById('judg-prev').addEventListener('click', () => flipLedger(-1));
-    document.getElementById('judg-next').addEventListener('click', () => flipLedger(1));
-
     load().then(() => {
-      // ?result=<id> pre-filters to judgments touching that result.
-      const params = new URLSearchParams(location.search);
-      const r = params.get('result');
-      if (r && /^\d+$/.test(r)) resultFilter = parseInt(r, 10);
-      populateJudgeFilter(judgments);
-      render();
       renderJudgRuns();
     }).catch(err => {
-      document.getElementById('status').textContent = 'Failed to load judgments: ' + err;
+      const emptyEl = document.getElementById('judgrun-empty');
+      emptyEl.hidden = false;
+      emptyEl.textContent = 'Failed to load judgments: ' + err;
     });
     document.getElementById('export-judgments').addEventListener('click', () => {
       window.location = '/api/export/judgments';
@@ -765,8 +569,7 @@
             $('jbp-clock').textContent = 'elapsed ' + fmtSecs(st.elapsed_s);
             // refresh the list behind the card, then link the fresh
             // results through the freshest judgment's primary key
-            load().then(() => { populateJudgeFilter(judgments); render();
-                                renderJudgRuns();
+            load().then(() => { renderJudgRuns();
                                 linkFreshResults(st); })
                   .catch(() => {});
             evalRunsCache = null;      // the fresh A run is now pickable

@@ -43,22 +43,27 @@ def test_every_page_includes_sticky_inputs(client):
         assert "sticky-inputs.js" in html, f"{name} is missing sticky-inputs.js"
 
 
-def test_nav_judgments_first_under_evals():
+def test_nav_run_first_under_evals():
     nav = (Path(STATIC_DIR) / "partials" / "nav.html").read_text()
     sub = re.search(r'<nav class="topnav-sub">(.*?)</nav>', nav, re.S)
     assert sub, "nav partial must keep the sub-level nav"
     evals_links = re.findall(
         r'<a href="([^"]+)"[^>]*data-nav-section="Evals"', sub.group(1))
     assert evals_links, "Evals section must have sub-elements"
-    assert evals_links[0] == "/judgments", (
-        f"Judgments must be the FIRST Evals sub-element, got {evals_links}")
-    # The EVALS section tab itself lands on Judgments (owner call
-    # 2026-10-15: clicking 'Evals' defaults to the judging kick-off).
+    # Owner call 2026-10-25 (supersedes the 2026-10-15 Judgments-first
+    # order): Run is the first pill, Judgments right after it; the
+    # Reports pill is gone (page dropped as unused).
+    assert evals_links == ["/evals/run", "/judgments", "/evals",
+                           "/evals/suites/new"], (
+        f"Evals pills must be Run, Judgments, Results, Create, got "
+        f"{evals_links}")
+    # The EVALS section tab itself lands on Run (owner call 2026-10-25:
+    # clicking 'Evals' defaults to the eval run kick-off page).
     head = re.search(
         r'<a class="nav-section-head" href="([^"]+)"'
         r'[^>]*>Evals</a>', nav)
-    assert head and head.group(1) == "/judgments", (
-        "the Evals section tab must link to /judgments")
+    assert head and head.group(1) == "/evals/run", (
+        "the Evals section tab must link to /evals/run")
 
 
 def test_no_page_level_nav_or_header_css():
@@ -104,7 +109,7 @@ def test_nav_pills_constant_across_pages(client):
     assert sub_m, "nav partial must keep the sub-level nav"
     sub = sub_m.group(1)
     all_pages = ["kickoff", "compare", "judgments", "evalsuite", "evalrun",
-                 "evals", "reports", "models", "baselines"]
+                 "evals", "models", "baselines"]
     for page in all_pages:
         assert f'data-page="{page}"' in sub, f"nav is missing pill {page}"
     assert sub.count('class="sub-sep"') == 2       # one between each pair
@@ -149,14 +154,18 @@ def test_judgments_page_run_pickers_and_run_list(client):
 
 def test_judgment_primary_key_round(client):
     """2026-10-25: judgments are addressed by their OWN primary key.
-    Ledger rows carry an #id column linking /judgments/<id>; the recent
-    run cards enter the SxS pair page through ?judgment=<id> (one PK in
-    the URL, not a suite/model foreign-key soup); the single-judgment
-    drill-down serves at /judgments/<id>; the pair page accepts the PK
-    entry and links every verdict card back to /judgments/<id>."""
+    The recent run cards enter the SxS pair page through ?judgment=<id>
+    (one PK in the URL, not a suite/model foreign-key soup); the
+    single-judgment drill-down serves at /judgments/<id>; the pair page
+    accepts the PK entry and links every verdict card back to
+    /judgments/<id>. (Same-day owner call: the paginated ledger table
+    under the run cards is gone — cards are the only list.)"""
     led = client.get("/judgments").text
-    assert "<th>#</th>" in led                    # ledger id column
-    assert "'/judgments/' + j.id" in led          # per-row PK link
+    # Ledger removed (2026-10-25, owner call): the paginated table + its
+    # judge-model dropdown are gone; individual judgments are reached
+    # through the /judgments/<id> drill-down from the pair page's cards.
+    assert "<th>#</th>" not in led
+    assert "'/judgments/' + j.id" not in led
     assert "'/judgments/pair?judgment=' + g.latest" in led   # run cards
     assert "'&model_a=' + encodeURIComponent(g.fpLo" not in led  # soup gone
 

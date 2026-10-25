@@ -51,8 +51,11 @@ PAGES: list[tuple[str, str, str, str]] = [
     ("eval-run.html",        "evalrun",   "Evals",      "Run"),
     ("evals.html",           "evals",     "Evals",      "Results"),
     ("judgments.html",       "judgments", "Evals",      "Judgments"),
-    ("reports.html",         "reports",   "Evals",      "Reports"),
-    # Drill-downs (2026-10-15): shell identity, no NAV_MODEL entry.
+    # Owner call 2026-10-25: the Reports PAGE is dropped as unused — the
+    # /api/reports/* endpoints stay (remove-UI-keep-API doctrine). Evals
+    # pill order re-anchored: Run is the section's landing page and first
+    # pill, Judgments right after it; the NAV_MODEL order below is the
+    # pill order (LANDING only pins the section head link).
     ("eval-run-detail.html", "evalrundetail", "Evals", "Run detail"),
     ("judgment-detail.html", "jpair",         "Evals", "Judgment detail"),
     # Single-judgment drill-down (2026-10-25): /judgments/<id> — one
@@ -69,11 +72,13 @@ NAV_MODEL = [
         ("compare", "/compare", "Compare"),
     ]),
     ("Evals", [
-        ("evalsuite", "/evals/suites/new", "Create"),
+        # Owner call 2026-10-25: Run is the landing page and first pill;
+        # Judgments right after; Reports page dropped as unused (its
+        # /api/reports/* endpoints stay).
         ("evalrun",   "/evals/run",        "Run"),
-        ("evals",     "/evals",            "Results"),
         ("judgments", "/judgments",        "Judgments"),
-        ("reports",   "/reports",          "Reports"),
+        ("evals",     "/evals",            "Results"),
+        ("evalsuite", "/evals/suites/new", "Create"),
     ]),
     ("Settings", [
         ("models",    "/models",    "Models"),
@@ -89,7 +94,7 @@ NAV_MODEL = [
 # dropped the separators (the partial had drifted from the generator).
 LANDING: dict[str, str] = {
     "Benchmarks": "kickoff",
-    "Evals": "judgments",
+    "Evals": "evalrun",     # owner call 2026-10-25: Evals lands on Run
     "Settings": "models",
 }
 

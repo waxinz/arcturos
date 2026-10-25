@@ -697,7 +697,7 @@ def test_theme_assets_served(client):
 def test_theme_toggle_on_every_page(client):
     """Every dashboard page wires theme.js + app-time.js."""
     for path in ["/runs", "/runs/1", "/compare", "/diff", "/create",
-                 "/evals", "/judgments", "/reports", "/models", "/baselines"]:
+                 "/evals", "/judgments", "/models", "/baselines"]:
         html = client.get(path).text
         assert "/static/theme.js" in html, path
         assert "/static/app-time.js" in html, path

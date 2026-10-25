@@ -55,7 +55,7 @@ def _seed_suite_with_judgments(client) -> tuple[int, list[int]]:
 
 
 def test_eval_views_registered(client):
-    for path in ("/evals", "/judgments", "/reports"):
+    for path in ("/evals", "/judgments"):
         res = client.get(path)
         assert res.status_code == 200, f"{path}: {res.status_code}"
         assert "text/html" in res.headers["content-type"], path
@@ -65,7 +65,10 @@ def test_evals_view_contract(client):
     text = client.get("/evals").text
     assert "Evals" in text
     assert "/api/eval-suites" in text          # suite list + per-suite results
-    assert "/judgments?result=" in text        # result-row drill-down links
+    # (2026-10-25) the per-result "judgments" link column went with the
+    # Judgments page's ledger table — judgments are reached through
+    # /judgments/<id> and the pair view now.
+    assert "/judgments?result=" not in text
 
 
 def test_judgments_view_contract(client):
@@ -82,17 +85,24 @@ def test_judgments_view_contract(client):
     assert "judge-mb-url" not in text
     assert "/evals/run" in text                # pointer to the Run page
     assert "stage-chip" in text                # progress chrome retained
-    # Ledger pagination (2026-10-24): the full judgments ledger is
-    # client-paginated (50 rows/page) instead of rendering thousands of
-    # rows (~325k px tall on the live DB).
-    assert 'id="judg-pager"' in text
-    assert 'id="judg-prev"' in text and 'id="judg-next"' in text
-    assert "LEDGER_PAGE_SIZE = 50" in text     # slice size, not the full list
+    # Ledger removed (2026-10-25, owner call): the paginated judgments
+    # table + its judge-model dropdown are gone — run cards are the only
+    # list on the page and /api/judgments feeds just them.
+    assert 'id="judg-pager"' not in text
+    assert 'id="judge-filter"' not in text
+    assert "LEDGER_PAGE_SIZE" not in text
+    assert 'id="judgments-body"' not in text
 
 
-def test_reports_view_contract(client):
-    text = client.get("/reports").text
-    assert "/api/reports/suite/" in text       # suite selector -> report fetch
+def test_reports_view_redirects(client):
+    # Reports page dropped as unused (owner call 2026-10-25); /reports
+    # 308s to the Evals landing page so old bookmarks still work. The
+    # /api/reports/* endpoints stay (remove-UI-keep-API doctrine).
+    # follow_redirects=False: the TestClient follows redirects by default
+    # and would surface the destination page's 200 instead of the 308.
+    res = client.get("/reports", follow_redirects=False)
+    assert res.status_code == 308, res.status_code
+    assert res.headers["location"] == "/evals/run"
 
 
 def test_pair_page_has_category_summary(client):
@@ -109,7 +119,7 @@ def test_nav_links_in_shared_views(client):
     # Every page still carries the three section identities and the
     # data-page/data-section identity for nav.js.
     for path in ("/", "/compare", "/diff", "/kickoff", "/evals",
-                 "/evals/suites/new", "/judgments", "/reports",
+                 "/evals/suites/new", "/judgments",
                  "/models", "/baselines", "/runs/1"):
         text = client.get(path).text
         assert 'data-nav-section="Benchmarks"' in text, path
@@ -138,20 +148,25 @@ def test_run_detail_uses_shared_shell(client):
     assert '<main class="page">' in text
 
 
-def test_reports_is_under_evals_nav(client):
-    # Owner call (2026-09-30): Reports lives in the Evals section.
-    # 2026-10-11 top-nav round: section membership rides on each pill's
-    # data-nav-section attribute (row 2 shows the active section's pills).
+def test_evals_nav_order_and_no_reports(client):
+    # Owner call (2026-10-25): Run is the Evals landing page and first
+    # pill, Judgments right after it; the Reports pill is gone (page
+    # dropped as unused — /reports itself 308s to /evals/run).
     text = client.get("/evals").text
-    assert 'data-page="reports"' in text
-    assert '<a href="/reports" data-page="reports" ' \
-           'data-nav-section="Evals">Reports</a>' in text
-    # The Reports pill shares row 2 with the other Evals pills (all
-    # emitted consecutively inside .topnav-sub).
+    assert 'data-page="reports"' not in text
+    assert '<a href="/reports" ' not in text
     sub = text.split('class="topnav-sub"')[1].split('</nav>')[0]
-    for href in ('/evals/suites/new', '/evals/run', '/evals', '/judgments',
-                 '/reports'):
-        assert f'href="{href}"' in sub, href
+    hrefs = [seg.split('"', 1)[0]
+             for seg in sub.split('href="')[1:]]
+    evals = [h for h in hrefs
+             if h in ('/evals/run', '/judgments', '/evals',
+                      '/evals/suites/new')]
+    assert evals == ['/evals/run', '/judgments', '/evals',
+                     '/evals/suites/new'], evals
+    # The Evals section head links to the landing page (Run): the first
+    # occurrence of the attribute is the head div, and its href follows it.
+    head = text.split('data-nav-section="Evals"')[1].split('href="', 1)[1]
+    assert head.startswith('/evals/run'), head
 
 
 def test_eval_suite_page_has_two_cards(client):
@@ -192,7 +207,7 @@ def test_split_pages_served(client):
 
 def test_new_views_have_full_nav(client):
     # Evals group pages cross-link each other + reach Runs/Compare via the rail.
-    for path in ("/evals", "/judgments", "/reports"):
+    for path in ("/evals", "/judgments"):
         text = client.get(path).text
         for link in ('href="/evals"', 'href="/judgments"',
                      'href="/evals/suites/new"',

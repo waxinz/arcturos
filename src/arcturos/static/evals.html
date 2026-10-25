@@ -32,7 +32,6 @@
     .out { max-width: 360px; word-break: break-word; }
     .status { color: var(--text-muted); font-size: .85rem; margin-top: .75rem; }
     .empty { color: var(--text-muted); padding: 2rem; text-align: center; }
-    a.jump { font-size: .82rem; white-space: nowrap; }
     /* ---- runs table (2026-10-15) ------------------------------------ */
     .runs-head h3, .explorer-head { margin: 1.4rem 0 .3rem; }
     .runs-head .hint { color: var(--text-muted); font-size: .85rem;
@@ -201,7 +200,7 @@
         table.innerHTML = '<thead><tr>' +
           '<th>ID</th><th>Turn</th><th>Model fingerprint</th><th>Output</th>' +
           '<th class="num">prompt_tokens</th><th class="num">completion_tokens</th>' +
-          '<th class="num">latency_ms</th><th></th></tr></thead>';
+          '<th class="num">latency_ms</th></tr></thead>';
         const tbody = document.createElement('tbody');
         for (const r of rows) {
           const tr = document.createElement('tr');
@@ -257,13 +256,9 @@
               toggle();
             }
           });
-          const linkTd = document.createElement('td');
-          const link = document.createElement('a');
-          link.href = '/judgments?result=' + r.id;
-          link.textContent = 'judgments';
-          link.className = 'jump';
-          linkTd.appendChild(link);
-          tr.appendChild(linkTd);
+          // (2026-10-25) the per-result "judgments" link column went with
+          // the Judgments page's ledger table: individual judgments are
+          // reached through /judgments/<id> and the pair view now.
           tbody.appendChild(tr);
         }
         table.appendChild(tbody);

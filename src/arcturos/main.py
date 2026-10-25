@@ -221,8 +221,11 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
         return page_response("judgment.html")
 
     @app.get("/reports", include_in_schema=False)
-    def reports_page() -> Response:
-        return page_response("reports.html")
+    def reports_page() -> RedirectResponse:
+        # Reports page dropped as unused (owner call 2026-10-25); the
+        # /api/reports/* endpoints stay. Permanent redirect keeps old
+        # bookmarks working — same recipe as /runs → /compare.
+        return RedirectResponse("/evals/run", status_code=308)
 
     @app.get("/models", include_in_schema=False)
     def models_view() -> Response:
