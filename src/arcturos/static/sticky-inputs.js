@@ -55,7 +55,13 @@
     for (var i = 0; i < fields.length; i++) {
       var el = fields[i];
       var saved = storageGet(PREFIX + el.id);
-      if (saved === null || saved === '' || el.value !== '') continue;
+      // Sticky values SHADOW the form's shipped defaults (the header
+      // contract) — restore even when the input ships a non-empty
+      // value= (the Run page's Target URL shipped localhost, which
+      // blocked the restore and read as "this box doesn't remember").
+      // Emptying a field un-sticks it (save() drops the key), so the
+      // shipped default still wins whenever the operator clears it.
+      if (saved === null || saved === '') continue;
       el.value = saved;
       // let dependent UI react (labels, enable/disable logic, previews)
       try {

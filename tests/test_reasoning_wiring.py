@@ -81,9 +81,16 @@ def test_chat_body_includes_reasoning_when_set(monkeypatch):
     body = captured["body"]
     assert body["reasoning_effort"] == "high"
     assert body["reasoning_budget"] == 2048
-    # the rest of the contract is untouched
-    assert body["max_tokens"] == 512 and body["stream"] is False
+    # max_tokens unset → field omitted entirely (2026-10-25: None never
+    # reaches the wire — the Maya/DSF <= 1024 throttle lesson); an
+    # explicit value is passed through unchanged.
+    assert "max_tokens" not in body
+    assert body["stream"] is False
     assert captured["url"].endswith("/v1/chat/completions")
+    captured2 = _capture_request(monkeypatch)
+    mt.post_openai_chat("http://t:1/v1", [{"role": "user", "content": "hi"}],
+                        max_tokens=512)
+    assert captured2["body"]["max_tokens"] == 512
 
 
 def test_chat_body_omits_reasoning_when_unset(monkeypatch):
@@ -157,6 +164,32 @@ def test_eval_job_api_reasoning_passthrough(client, monkeypatch):
     assert seen["reasoning_budget"] == 1024
 
 
+def test_eval_job_max_tokens_optional(client, monkeypatch):
+    # 2026-10-25 (Maya/DSF <= 1024 throttle): max_tokens is optional —
+    # absent/None forwards None (the replay then OMITS the wire field,
+    # server budget); an explicit positive int passes through; junk 422s.
+    tc, _ = client
+    seen: dict = {}
+
+    def fake_run_eval_job(**kw):
+        seen.update(kw)
+        return "job-42"
+
+    monkeypatch.setattr(ops, "run_eval_job", fake_run_eval_job)
+    base = {"suite_id": 1, "target": "http://t:1/v1",
+            "model_fingerprint": "m", "suite": _SUITE}
+    r = tc.post("/api/ops/eval/jobs", json=base)
+    assert r.status_code == 200, r.text
+    assert seen["max_tokens"] is None
+    r = tc.post("/api/ops/eval/jobs", json={**base, "max_tokens": 4096})
+    assert r.status_code == 200, r.text
+    assert seen["max_tokens"] == 4096
+    for bad in (0, -5, "1024", True):
+        r = tc.post("/api/ops/eval/jobs", json={**base, "max_tokens": bad})
+        assert r.status_code == 422, (bad, r.text)
+        assert "max_tokens" in r.json()["detail"]
+
+
 # ------------------- judge combined kick-off (per side) -----------------
 
 def _wait_job(fetch, job_id, timeout=10):
@@ -222,3 +255,20 @@ def test_combined_job_reasoning_reaches_each_side(client, monkeypatch):
     assert by_model["m-b"] and all(
         kw.get("reasoning_effort") == "low" and kw.get("reasoning_budget") is None
         for kw in by_model["m-b"])
+    # 2026-10-25: the combined kick-off defaults to OMITTING max_tokens
+    # (server budget — the Maya/DSF <= 1024 throttle lesson); an explicit
+    # eval_max_tokens passes through to the replay calls.
+    assert all(kw.get("max_tokens") is None for kws in by_model.values()
+               for kw in kws)
+    replay_kw.clear()
+    r2 = tc.post("/api/ops/judge/jobs", json={
+        "suite_id": 1, "judge_url": "http://judge:9/v1", "judge_model": "j",
+        "target_a": {"url": "http://a:1/v1", "model": "m-a"},
+        "target_b": {"url": "http://b:2/v1", "model": "m-b"},
+        "eval_max_tokens": 4096})
+    assert r2.status_code == 200, r2.text
+    st2 = _wait_job(lambda jid: tc.get(f"/api/ops/judge/jobs/{jid}"),
+                    r2.json()["job_id"])
+    assert st2["status"] == "done", st2
+    assert replay_kw and all(kw.get("max_tokens") == 4096
+                             for _, kw in replay_kw)

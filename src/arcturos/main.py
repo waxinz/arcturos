@@ -1055,7 +1055,8 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
     @app.post("/api/ops/eval/jobs")
     def ops_eval_job(body: dict):
         """Async eval replay (v0.2): same body as POST /api/ops/eval plus
-        max_tokens/temperature/retries/concurrency.
+        max_tokens?/temperature/retries/concurrency (max_tokens optional —
+        absent/None omits the field from the wire body, 2026-10-25).
 
         Returns {job_id} immediately after synchronous validation; the
         replay (preflight, per-item chat calls, per-item commits) runs in
@@ -1069,7 +1070,7 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
         api_key = body.get("api_key")
         suite = body.get("suite")
         name = body.get("name")
-        max_tokens = body.get("max_tokens", 1024)
+        max_tokens = body.get("max_tokens")
         temperature = body.get("temperature", 0.0)
         retries = body.get("retries", 0)
         concurrency = body.get("concurrency", 1)
@@ -1086,7 +1087,15 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
         if name is not None and (not isinstance(name, str) or not name.strip()):
             raise HTTPException(status_code=422,
                                 detail="name must be a non-empty string when set")
-        for field, value in (("max_tokens", max_tokens), ("retries", retries),
+        # max_tokens (2026-10-25): optional — None/absent OMITS the field
+        # from the replay's wire body (server budget; the Maya/DSF <= 1024
+        # throttle lesson). When set it must be a positive int.
+        if max_tokens is not None and (not isinstance(max_tokens, int)
+                                       or isinstance(max_tokens, bool)
+                                       or max_tokens < 1):
+            raise HTTPException(status_code=422,
+                                detail="max_tokens must be a positive int when set")
+        for field, value in (("retries", retries),
                              ("concurrency", concurrency)):
             if not isinstance(value, int) or isinstance(value, bool):
                 raise HTTPException(status_code=422, detail=f"{field} must be an int")
@@ -1167,7 +1176,11 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
         target_b = body.get("target_b")
         eval_run_b = body.get("eval_run_b")
         eval_run_a = body.get("eval_run_a")
-        eval_max_tokens = body.get("eval_max_tokens", 1024)
+        # eval_max_tokens (2026-10-25): optional — absent/None omits the
+        # field from the combined kick-off's replay wire body (server
+        # budget; the Maya/DSF <= 1024 throttle lesson). When set it must
+        # be a positive int.
+        eval_max_tokens = body.get("eval_max_tokens")
         eval_temperature = body.get("eval_temperature", 0.0)
         eval_concurrency = body.get("eval_concurrency", 4)
         eval_retries = body.get("eval_retries", 0)
@@ -1261,8 +1274,12 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
                                          or eval_run_a is not None):
             raise HTTPException(status_code=422,
                                 detail="eval_run_ids is mutually exclusive with target_a/target_b/eval_run_b/eval_run_a")
-        for field, value in (("eval_max_tokens", eval_max_tokens),
-                             ("eval_concurrency", eval_concurrency),
+        if eval_max_tokens is not None and (not isinstance(eval_max_tokens, int)
+                                            or isinstance(eval_max_tokens, bool)
+                                            or eval_max_tokens < 1):
+            raise HTTPException(status_code=422,
+                                detail="eval_max_tokens must be a positive int when set")
+        for field, value in (("eval_concurrency", eval_concurrency),
                              ("eval_retries", eval_retries)):
             if not isinstance(value, int) or isinstance(value, bool) or value < 1 and field != "eval_retries":
                 raise HTTPException(status_code=422, detail=f"{field} must be a positive int")

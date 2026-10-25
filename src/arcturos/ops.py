@@ -740,7 +740,7 @@ def dispatch_eval(
     suite: dict[str, Any],
     api_key: str | None = None,
     name: str | None = None,
-    max_tokens: int = 1024,
+    max_tokens: int | None = None,
     temperature: float = 0.0,
     retries: int = 0,
     concurrency: int = 1,
@@ -758,12 +758,18 @@ def dispatch_eval(
     proxy-fronted endpoints (litellm/vLLM) need the real name; native
     llama.cpp servers ignore it.
 
-    v0.2 parameters (ADR 007 §5): ``max_tokens`` default 1024 (512 shipped
-    truncated answers on reasoning models), ``temperature`` default 0.0,
+    v0.2 parameters (ADR 007 §5): ``temperature`` default 0.0,
     ``retries`` per item (default 0), ``concurrency`` across items (default
     1, max 8). Items are committed PER ITEM — a mid-replay failure keeps
     completed items and marks the eval_run partial (partial preservation,
     the bench pattern). ``abort`` (ops.AbortFlag) stops between items.
+
+    ``max_tokens`` (2026-10-25): None — the default — omits the field from
+    every item's wire body so the SERVER applies its own budget. The old
+    1024 default shipped degraded results on the Maya/DSF reasoning server
+    (max_tokens <= 1024 strangles its thinking phase: un-thought wrong
+    answers + think-tail leaking into content — runs 14/15). A caller-set
+    value (1..32768) is passed through for servers that need a cap.
 
     ``name`` (optional run label, 2026-09-22): names the eval run shown
     on /evals and reports; None stores NULL and the UI falls back to the
@@ -783,8 +789,9 @@ def dispatch_eval(
         raise DispatchError(str(exc)) from exc
     if not items:
         raise DispatchError("suite has no items to replay")
-    if not isinstance(max_tokens, int) or isinstance(max_tokens, bool) \
-            or not (1 <= max_tokens <= 32768):
+    if max_tokens is not None and (not isinstance(max_tokens, int)
+                                   or isinstance(max_tokens, bool)
+                                   or not (1 <= max_tokens <= 32768)):
         raise DispatchError("max_tokens must be an int between 1 and 32768")
     if not isinstance(temperature, (int, float)) or isinstance(temperature, bool) \
             or not (0.0 <= temperature <= 2.0):
@@ -1048,7 +1055,7 @@ def run_eval_job(
     suite: dict[str, Any],
     api_key: str | None = None,
     name: str | None = None,
-    max_tokens: int = 1024,
+    max_tokens: int | None = None,
     temperature: float = 0.0,
     retries: int = 0,
     concurrency: int = 1,
@@ -1061,6 +1068,8 @@ def run_eval_job(
     synchronously (422 before any thread starts); everything inside the
     thread is reported via the job record.
 
+    ``max_tokens`` (2026-10-25): None — the default — forwards omission to
+    dispatch_eval (the field is left OFF the wire body; server budget).
     ``reasoning_effort``/``reasoning_budget`` (2026-10-15, optional):
     per-model reasoning depth forwarded to dispatch_eval — validated here
     too so a bad value 422s before the thread starts.

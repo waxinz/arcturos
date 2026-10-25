@@ -36,7 +36,7 @@ def validate_multiturn_item(item: dict[str, Any]) -> None:
 
 def post_openai_chat(target: str, messages: list[dict],
                      api_key: str | None = None, model: str = "test",
-                     max_tokens: int = 512, temperature: float = 0.0,
+                     max_tokens: int | None = None, temperature: float = 0.0,
                      reasoning_effort: str | None = None,
                      reasoning_budget: int | None = None) -> dict:
     """POST /v1/chat/completions; base URL may or may not include /v1.
@@ -48,10 +48,16 @@ def post_openai_chat(target: str, messages: list[dict],
     ``messages`` content may be a plain string or an OpenAI content-part
     list (text + image_url parts for vision items) — passed through as-is.
 
-    ``max_tokens``/``temperature`` are caller-owned (v0.2): the eval replay
-    defaults to 1024 (reasoning models burn budget thinking before
-    answering; 512 shipped truncated answers) and 0.0 for reproducibility.
-    Defaults here keep the historical 512/0.0 for existing callers.
+    ``temperature`` is caller-owned (v0.2; eval replay 0.0 for
+    reproducibility). ``max_tokens`` (2026-10-25): None — the default —
+    OMITS the field from the wire body entirely (never sent as null, same
+    discipline as the reasoning fields) so the server applies its own
+    budget. Reason: the Maya/DSF server mis-serves reasoning models when
+    max_tokens <= 1024 (it strangles the thinking phase to ~2 tokens,
+    leaks the think tail into content, and emits un-thought wrong
+    answers) — the eval replay's 1024 default shipped degraded DSF
+    results (runs 14/15). Servers that need a cap still get one when the
+    caller passes a value.
 
     ``reasoning_effort`` (2026-10-15, optional): 'minimal'|'low'|'medium'|
     'high'|'xhigh'|'max' — sent as the OpenAI-compatible ``reasoning_effort``
@@ -69,9 +75,10 @@ def post_openai_chat(target: str, messages: list[dict],
         headers["Authorization"] = f"Bearer {api_key}"
     chat_body: dict = {
         "model": model, "messages": messages,
-        "max_tokens": max_tokens, "temperature": temperature,
-        "stream": False,
+        "temperature": temperature, "stream": False,
     }
+    if max_tokens is not None:
+        chat_body["max_tokens"] = max_tokens
     if reasoning_effort is not None:
         chat_body["reasoning_effort"] = reasoning_effort
     if reasoning_budget is not None:
@@ -133,7 +140,7 @@ def extract_output(resp: dict) -> tuple[str, int, int]:
 
 def replay_multiturn(target: str, item: dict[str, Any],
                      api_key: str | None = None, model: str = "test",
-                     max_tokens: int = 512, temperature: float = 0.0,
+                     max_tokens: int | None = None, temperature: float = 0.0,
                      reasoning_effort: str | None = None,
                      reasoning_budget: int | None = None) -> list[dict[str, Any]]:
     """Replay one multi-turn item; return one record per assistant turn.
@@ -142,8 +149,10 @@ def replay_multiturn(target: str, item: dict[str, Any],
              completion_tokens, latency_ms}.
 
     ``max_tokens``/``temperature`` pass through to every turn call (v0.2:
-    the eval dispatcher defaults these to 1024/0.0 for the reasoning-model
-    budget lesson). ``reasoning_effort``/``reasoning_budget`` (2026-10-15)
+    the eval dispatcher owns these). 2026-10-25: ``max_tokens`` None —
+    the default — is passed through and OMITS the field from the wire
+    body (server default budget; the Maya/DSF <= 1024 lesson).
+    ``reasoning_effort``/``reasoning_budget`` (2026-10-15)
     pass through to every turn call too — reasoning depth is per MODEL,
     not per turn.
     """

@@ -359,7 +359,7 @@ def replay_single_turn(
     item: dict[str, Any],
     api_key: str | None = None,
     model: str = "test",
-    max_tokens: int = 1024,
+    max_tokens: int | None = None,
     temperature: float = 0.0,
     reasoning_effort: str | None = None,
     reasoning_budget: int | None = None,
@@ -370,6 +370,10 @@ def replay_single_turn(
     dropped it) and carries image items as image_url content parts.
     ``reasoning_effort``/``reasoning_budget`` (2026-10-15, optional) pass
     through to the chat call — per-model reasoning depth for eval runs.
+    ``max_tokens`` (2026-10-25): None — the default — omits the field
+    from the wire body so reasoning servers apply their own budget (the
+    Maya/DSF <= 1024 throttle shipped un-thought wrong answers on runs
+    14/15); a caller-set value is passed through unchanged.
     """
     item_id = item.get("id") or item.get("item_id")
     prompt = item.get("prompt") or item.get("content")

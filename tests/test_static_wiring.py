@@ -34,6 +34,13 @@ def test_sticky_inputs_script_served(client):
     assert "arcturos-sticky:" in body            # localStorage key prefix
     assert "DOMContentLoaded" in body            # restore on load
     assert "textarea" in body                    # textareas stick too
+    # Shadow rule (2026-10-25, owner ask): the restore must not require an
+    # empty current value — fields that SHIP a default (the Run page's
+    # Target URL shipped localhost) were never restored and read as
+    # "doesn't remember". The stored value shadows the shipped default.
+    assert "el.value !== ''" not in body.split("function restoreAll")[1] \
+        .split("function ")[0]
+    assert "saved === '') continue;" in body
 
 
 def test_every_page_includes_sticky_inputs(client):

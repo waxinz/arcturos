@@ -1142,7 +1142,7 @@ def run_judge_job(
     target_b: dict | None = None,
     eval_run_b: int | None = None,
     eval_run_a: int | None = None,
-    eval_max_tokens: int = 1024,
+    eval_max_tokens: int | None = None,
     eval_temperature: float = 0.0,
     eval_concurrency: int = 4,
     eval_retries: int = 0,

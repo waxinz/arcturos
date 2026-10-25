@@ -99,8 +99,9 @@
     <div class="card">
       <p class="hint">Every item in the suite is sent to the target as a chat request
         (multi-turn items replay turn by turn) and the answers are stored for
-        judging. Replay requests default to max_tokens 1024 / temperature 0 —
-        reasoning models need headroom to think before answering.</p>
+        judging. Requests default to temperature 0; max_tokens is OMITTED
+        unless you set it — reasoning servers then apply their own budget
+        (a small max_tokens can strangle a reasoning model's thinking).</p>
       <form id="eval-form" autocomplete="off" onsubmit="return false;">
         <div class="field wide">
           <label for="eval-name">Eval run name (optional)</label>
@@ -147,9 +148,10 @@
         </div>
         <div class="field wide minors4">
           <div>
-            <label for="eval-maxtok">max_tokens per item</label>
+            <label for="eval-maxtok">max_tokens per item <span style="font-weight:400">(optional — empty omits the field, server default budget)</span></label>
             <select id="eval-maxtok">
-              <option>512</option><option selected>1024</option>
+              <option selected value="">— omit (server default) —</option>
+              <option>512</option><option>1024</option>
               <option>2048</option><option>4096</option><option>8192</option>
             </select>
           </div>
@@ -440,11 +442,17 @@ function $(id) { return document.getElementById(id); }
           suite_id: suiteId,
           target: $('eval-url').value.trim(),
           model_fingerprint: $('eval-model').value.trim(),
-          max_tokens: parseInt($('eval-maxtok').value, 10) || 1024,
           temperature: parseFloat($('eval-temp').value) || 0,
           retries: parseInt($('eval-retries').value, 10) || 0,
           concurrency: parseInt($('eval-conc').value, 10) || 1,
         };
+        // max_tokens optional (2026-10-25): empty selection OMITS the
+        // field from the job payload — the backend then leaves it off
+        // the per-item wire body so reasoning servers apply their own
+        // budget (the Maya/DSF <= 1024 throttle shipped un-thought
+        // wrong answers).
+        const maxtok = parseInt($('eval-maxtok').value, 10);
+        if (maxtok) body.max_tokens = maxtok;
         if ($('eval-key').value.trim()) body.api_key = $('eval-key').value.trim();
         if ($('eval-name').value.trim()) body.name = $('eval-name').value.trim();
         if ($('eval-reason').value) body.reasoning_effort = $('eval-reason').value;
