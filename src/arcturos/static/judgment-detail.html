@@ -494,19 +494,53 @@ function $(id) { return document.getElementById(id); }
           return;
         }
         // Rows are stored canonically (fingerprint_a = slot A); map the
-        // aggregate counts onto the DISPLAY order chosen above.
+        // aggregate counts onto the DISPLAY order chosen above. Fold to
+        // ONE resolved verdict per judged pair first (2026-10-25, owner
+        // hand-count): raw rows double-count every item (two presentation
+        // orders) and mix tiebreak votes into the wins — the buckets then
+        // sum to more than "Items judged". Same row math as the summary:
+        // majority of the pair's rows, vote-tie -> draw.
+        // Latest generation supersedes older ones per result pair (a
+        // re-judge appends a new template/judge generation; the newest
+        // is the operator's current truth — otherwise a re-judge would
+        // double-count every item in the totals).
+        const gens = {};          // pair key -> {gen key -> rows}
+        for (const r of rows) {
+          const pk = r.result_a_id + ':' + r.result_b_id;
+          const gk = r.judge_model + ':' + (r.template || '');
+          (gens[pk] = gens[pk] || {})[gk] = (gens[pk][gk] || []).concat([r]);
+        }
+        const byPair = {};
+        for (const [pk, gm] of Object.entries(gens)) {
+          let bestGk = null, bestKey = null;
+          for (const [gk, rs] of Object.entries(gm)) {
+            const key = rs.map(r => r.created_at || '').sort().pop() + '|' + gk;
+            if (bestKey === null || key > bestKey) { bestKey = key; bestGk = gk; }
+          }
+          byPair[pk] = gm[bestGk];
+        }
         const counts = {a: 0, b: 0, tie: 0};
         let bothBad = 0;
-        for (const r of rows) {
-          counts[r.winner] = (counts[r.winner] || 0) + 1;
-          if (r.winner === 'tie' && (r.verdict_detail || '') === 'both_bad') bothBad++;
+        for (const rs of Object.values(byPair)) {
+          const c = {a: 0, b: 0, tie: 0};
+          for (const r of rs) {
+            const v = (r.winner === 'a' || r.winner === 'b') ? r.winner : 'tie';
+            c[v]++;
+          }
+          const top = Math.max(c.a, c.b, c.tie);
+          const tops = ['a', 'b', 'tie'].filter(v => c[v] === top);
+          const w = tops.length === 1 ? tops[0] : 'tie';
+          counts[w]++;
+          if (w === 'tie' && rs.every(r => (r.verdict_detail || '') === 'both_bad')) {
+            bothBad++;
+          }
         }
         const leftIsA = rows[0].fingerprint_a === ma;
         const winsLeft = leftIsA ? counts.a : counts.b;
         const winsRight = leftIsA ? counts.b : counts.a;
         $('meta').innerHTML =
           '<span><b>Suite</b> #' + suiteId + '</span>' +
-          '<span><b>Items judged</b> ' + rows.length + '</span>' +
+          '<span><b>Items judged</b> ' + Object.keys(byPair).length + '</span>' +
           '<span><b>' + esc(ma) + ' wins</b> ' + winsLeft + '</span>' +
           '<span><b>' + esc(mb) + ' wins</b> ' + winsRight + '</span>' +
           '<span><b>Ties</b> ' + (counts.tie || 0) +

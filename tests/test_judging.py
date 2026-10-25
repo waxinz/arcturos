@@ -549,6 +549,55 @@ def test_judge_item_plain_tie_keeps_no_detail(monkeypatch):
     assert rows[0]["verdict"] == "tie"
 
 
+def test_judge_item_reference_only_on_final_turn(monkeypatch):
+    """The item's machine-check reference describes the FINAL turn's
+    expected answer (2026-10-25 owner validation of the run-16 pair
+    batch: T1 rows judged with the ref template produced FALSE
+    both-bads — turn 1's correct reply was checked against the
+    final-turn ground truth: taxi 6am->7:xx, stores $10->425,
+    boxes oranges->grapes). Non-final turns judge BLIND; only the
+    final turn carries the reference into the prompt."""
+    seen = []
+
+    def fake_post(url, payload, api_key=None):
+        seen.append(payload["messages"][0]["content"])
+        return _judge_resp("VERDICT: tie\nREASON: even quality")
+
+    monkeypatch.setattr(judging, "_post_chat", fake_post)
+    item = {"id": "mt1", "type": "multi-turn", "dimension": "reasoning",
+            "turns": [
+                {"role": "user", "content": "which store is cheaper?"},
+                {"role": "assistant", "content": None},
+                {"role": "user", "content": "and store C's price?"},
+                {"role": "assistant", "content": None}],
+            "reference": {"check": "numeric", "value": 425, "tolerance": 0}}
+
+    def _work(turn_index, out_a, out_b, history):
+        return {"base_id": "mt1", "turn_index": turn_index,
+                "result_a": {"id": 11}, "result_b": {"id": 22},
+                "out_a": out_a, "out_b": out_b,
+                "history_a": history, "history_b": history,
+                "fp_a": "alpha", "fp_b": "beta", "dimension": "reasoning",
+                "item": item, "is_multiturn": True}
+
+    t1, errors1, _ = judging.judge_item(
+        _work(1, "430", "440", []), "http://judge/v1", "kimi-k3", retries=0)
+    t2, errors2, _ = judging.judge_item(
+        _work(2, "425", "425", ["430"]), "http://judge/v1", "kimi-k3",
+        retries=0)
+    assert not errors1 and not errors2
+    assert len(seen) == 4                    # two orders per turn
+    # turn 1: judged blind — no [REFERENCE] block in the prompt
+    assert not any("[REFERENCE]" in p for p in seen[:2])
+    # final turn: reference reaches the prompt (rendered line, no
+    # [REFERENCE] header marker on the numeric kind)
+    assert all("The correct numeric answer: 425" in p for p in seen[2:])
+    assert all(j["judge_template_version"] == judging.JUDGE_TEMPLATE_VERSION
+               for j in t1)
+    assert all(j["judge_template_version"]
+               == judging.JUDGE_TEMPLATE_VERSION_REF for j in t2)
+
+
 def test_dispatch_judge_persists_verdict_detail(conn, monkeypatch):
     _seed_pair(conn)
 

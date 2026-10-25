@@ -367,7 +367,14 @@ def pair_summary(db: sqlite3.Connection, suite_id: int, model_a: str,
 
     Pair-page lens over the same judgment scope as /api/judgments/pair:
     rows aggregate by the base item's dimension (multi-turn '#tN' rows
-    fold into the base item; absent metadata -> 'uncategorized').
+    fold into the base item; absent metadata -> 'uncategorized'). Each
+    judged pair (2 presentation-order rows + optional tiebreak) is
+    RESOLVED to one verdict before aggregation — majority of the pair's
+    rows, tiebreak votes count in full, a tied vote -> draw, both-bad
+    rides the draw when every row of the pair carried it — so n counts
+    ITEMS judged, not stored rows (2026-10-25, owner hand-count: the
+    raw-row math read accuracy n=20 for 10 items and mixed 5 tiebreak
+    votes into an n=241 overall).
 
     Orientation is normalized to the CALLER's order: the stored winner is
     relative to the canonical eval_result_a/b columns, so when the row's
@@ -394,9 +401,10 @@ def pair_summary(db: sqlite3.Connection, suite_id: int, model_a: str,
              scope (nulls when lifetime-wide).
     """
     sql = """SELECT j.winner, j.judge_model, j.verdict_detail,
-                    j.judge_template_version AS template,
+                    j.judge_template_version AS template, j.created_at,
                     ra.model_fingerprint AS fa, rb.model_fingerprint AS fb,
-                    ra.item_id AS item_id
+                    ra.item_id AS item_id,
+                    ra.id AS result_a_id, rb.id AS result_b_id
              FROM judgments j
              JOIN eval_results ra ON ra.id = j.eval_result_a
              JOIN eval_results rb ON rb.id = j.eval_result_b
@@ -417,21 +425,60 @@ def pair_summary(db: sqlite3.Connection, suite_id: int, model_a: str,
     rows = _fetch(db, sql, tuple(params))
     metadata = metadata_map_for(db, suite_id)
 
+    # Resolve each judged pair to ONE verdict before aggregating
+    # (2026-10-25, owner hand-count): the raw rows double-count every
+    # item (two presentation orders per pair) and mix tiebreak votes
+    # into the totals — accuracy read "n=20" for 10 items and the
+    # overall n=241 carried 5 tiebreak votes as if they were extra
+    # judgments. Fold = the judging pipeline's own row math: majority
+    # of the pair's stored rows (tiebreak votes count in full); a tied
+    # vote -> draw; both-bad rides the draw when EVERY row of the pair
+    # carried verdict_detail='both_bad'. Grouping = result pair + judge
+    # generation; the LATEST generation supersedes older ones (a re-judge
+    # appends a new template/judge generation — the newest is the
+    # operator's current truth, else a re-judge would double-count).
+    by_pair: dict[tuple, list] = {}
+    for r in rows:
+        by_pair.setdefault(
+            (r["result_a_id"], r["result_b_id"],
+             r["judge_model"], r["template"]), []).append(r)
+
+    # A re-judge under a new template/judge appends a NEW generation on
+    # the same result pair (append-only doctrine) — the newest
+    # generation SUPERSEDES the old one in the summary, otherwise a
+    # re-judge would double-count every item. (created_at, judge, tpl)
+    # picks deterministically when two generations share a timestamp.
+    latest_gen: dict[tuple[int, int], tuple] = {}
+    for key, prows in by_pair.items():
+        ra_id, rb_id, jm, tpl = key
+        gen_key = (max((p["created_at"] or "") for p in prows), jm, tpl)
+        cur = latest_gen.get((ra_id, rb_id))
+        if cur is None or gen_key > cur[0]:
+            latest_gen[(ra_id, rb_id)] = (gen_key, prows)
+
     flip = {"a": "b", "b": "a"}
     overall = {"a": 0, "b": 0, "tie": 0, "both_bad": 0}
     per_dim: dict[str, dict[str, int]] = {}
     judges: set[str] = set()
     templates: set[str] = set()
-    for r in rows:
-        winner: str = r["winner"]
+    for _, (_, pair_rows) in latest_gen.items():
+        r = pair_rows[0]          # canonical fields identical within a pair
+        # canonical-space majority (tiebreak votes count in full;
+        # tied vote -> draw), THEN the caller-order flip below
+        votes = [(p["winner"] if p["winner"] in ("a", "b") else "tie")
+                 for p in pair_rows]
+        vote_counts = {v: votes.count(v) for v in ("a", "b", "tie")}
+        top = max(vote_counts.values())
+        tops = [v for v, c in vote_counts.items() if c == top]
+        resolved = tops[0] if len(tops) == 1 else "tie"
+        is_both_bad = (resolved == "tie" and all(
+            (p["verdict_detail"] or "") == "both_bad" for p in pair_rows))
+        winner: str = resolved
         if r["fa"] != model_a:  # stored canonical order != caller order
             winner = flip.get(winner, winner)
         winner = winner if winner in ("a", "b", "tie") else "tie"
-        # both-bad draws (winner='tie' + verdict_detail='both_bad') count as
-        # their own bucket; in the score math they still ride the 0.5/0.5
-        # draw semantics (Arena/MT-Bench convention).
-        is_both_bad = (winner == "tie"
-                       and (r["verdict_detail"] or "") == "both_bad")
+        # both-bad draws ride the draw semantics (Arena/MT-Bench
+        # convention); the flag was resolved per PAIR above.
         bucket_key = "both_bad" if is_both_bad else winner
         dimension = (metadata.get(r["item_id"].split("#")[0], {})
                      ).get("dimension", "uncategorized")

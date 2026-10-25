@@ -42,12 +42,14 @@ def seed_fixture(db, suite_name="smoke", version="v1"):
 
 
 def seed_judgment(db, ra, rb, winner, judge_model="judge-x",
-                  judge_template="blind-pair-v1"):
+                  judge_template="blind-pair-v1", role="order",
+                  created_at="now"):
     db.execute(
         "INSERT INTO judgments (eval_result_a, eval_result_b, judge_model, "
-        "judge_template_version, winner, confidence, rationale, created_at) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-        (ra, rb, judge_model, judge_template, winner, 0.8, None, "now"),
+        "judge_template_version, winner, confidence, rationale, role, created_at) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        (ra, rb, judge_model, judge_template, winner, 0.8, None, role,
+         created_at),
     )
     db.commit()
 
@@ -204,19 +206,22 @@ def test_pair_summary_per_dimension_math(db):
     assert s["model_b"] == "model-beta"
     assert s["judges"] == ["judge-x"]
     assert s["templates"] == ["blind-pair-v1"]
-    assert s["total"] == 5
+    # sr-001's 3 rows fold to ONE judged pair -> 3 units, not 5 rows
+    assert s["total"] == 3
 
     # rows sorted n desc, then dimension name asc
     assert [r["dimension"] for r in s["rows"]] == ["reasoning", "writing"]
 
     reasoning = s["rows"][0]
-    assert reasoning["counts"] == {"a": 2, "b": 1, "tie": 1, "both_bad": 0}
-    assert reasoning["n"] == 4
-    assert reasoning["percent"] == {"a": 50.0, "b": 25.0, "tie": 25.0,
+    # sr-001's three rows (a, a, tie) fold to ONE resolved verdict 'a'
+    # (majority) — n counts judged pairs, not stored rows (2026-10-25).
+    assert reasoning["counts"] == {"a": 1, "b": 1, "tie": 0, "both_bad": 0}
+    assert reasoning["n"] == 2
+    assert reasoning["percent"] == {"a": 50.0, "b": 50.0, "tie": 0.0,
                                     "both_bad": 0.0}
     # Arena score: wins + half ties, 0-100
-    assert reasoning["score_a"] == 62.5
-    assert reasoning["score_b"] == 37.5
+    assert reasoning["score_a"] == 50.0
+    assert reasoning["score_b"] == 50.0
     wilson = reasoning["wilson_a"]          # (lo, hi) in percent units
     assert wilson is not None and len(wilson) == 2
     assert 0.0 <= wilson[0] <= wilson[1] <= 100.0
@@ -231,13 +236,50 @@ def test_pair_summary_per_dimension_math(db):
 
     overall = s["overall"]
     assert overall["dimension"] == "overall"
-    assert overall["counts"] == {"a": 3, "b": 1, "tie": 1, "both_bad": 0}
-    assert overall["n"] == 5
-    assert overall["percent"] == {"a": 60.0, "b": 20.0, "tie": 20.0,
+    assert overall["counts"] == {"a": 2, "b": 1, "tie": 0, "both_bad": 0}
+    assert overall["n"] == 3
+    assert overall["percent"] == {"a": 66.7, "b": 33.3, "tie": 0.0,
                                   "both_bad": 0.0}
-    assert overall["score_a"] == 70.0
-    assert overall["score_b"] == 30.0
+    assert overall["score_a"] == 66.7
+    assert overall["score_b"] == 33.3
     assert overall["wilson_a"] is not None
+
+
+def test_pair_summary_folds_orders_and_tiebreak(db):
+    """One verdict per judged pair: majority of the pair's rows, tiebreak
+    votes count in full, tied vote -> draw, both-bad rides the draw."""
+    suite_id, result_ids = seed_fixture(db)
+    (ra1, rb1), (ra2, rb2), (ra3, rb3) = (result_ids["sr-001"],
+                                          result_ids["sr-002"],
+                                          result_ids["sr-003"])
+    # pair 1: orders split a/b, tiebreak votes b -> b (2-1)
+    seed_judgment(db, ra1, rb1, "a")
+    seed_judgment(db, ra1, rb1, "b")
+    seed_judgment(db, ra1, rb1, "b", role="tiebreak")
+    # pair 2: orders split a/b, tiebreak ties -> draw
+    seed_judgment(db, ra2, rb2, "a")
+    seed_judgment(db, ra2, rb2, "b")
+    seed_judgment(db, ra2, rb2, "tie", role="tiebreak")
+    # pair 3: both orders both-bad -> both_bad bucket (rides the draw)
+    db.execute(
+        "INSERT INTO judgments (eval_result_a, eval_result_b, judge_model, "
+        "judge_template_version, winner, verdict_detail, created_at) "
+        "VALUES (?, ?, 'judge-x', 'blind-pair-v1', 'tie', 'both_bad', 'now')",
+        (ra3, rb3))
+    db.execute(
+        "INSERT INTO judgments (eval_result_a, eval_result_b, judge_model, "
+        "judge_template_version, winner, verdict_detail, created_at) "
+        "VALUES (?, ?, 'judge-x', 'blind-pair-v1', 'tie', 'both_bad', 'now')",
+        (ra3, rb3))
+    db.commit()
+
+    s = reports.pair_summary(db, suite_id, "model-alpha", "model-beta")
+    assert s["total"] == 3                       # three pairs, not 7 rows
+    assert s["overall"]["counts"] == {"a": 0, "b": 1, "tie": 1,
+                                      "both_bad": 1}
+    # score: b wins 1; the draw pair + both-bad pair ride 0.5 each
+    assert s["overall"]["score_a"] == round(100 * (0 + 1.0) / 3, 1)
+    assert s["overall"]["score_b"] == round(100 * (1 + 1.0) / 3, 1)
 
 
 def test_pair_summary_run_pair_scoping(db):
@@ -316,14 +358,15 @@ def test_pair_summary_orientation_invariant(db):
                                           result_ids["sr-002"],
                                           result_ids["sr-003"])
     seed_judgment(db, ra1, rb1, "a")
-    seed_judgment(db, ra1, rb1, "tie")
+    seed_judgment(db, ra1, rb1, "tie")          # same pair+generation: fold
     seed_judgment(db, ra2, rb2, "b")
     seed_judgment(db, ra3, rb3, "a")
 
     fwd = reports.pair_summary(db, suite_id, "model-alpha", "model-beta")
     rev = reports.pair_summary(db, suite_id, "model-beta", "model-alpha")
 
-    assert fwd["total"] == rev["total"] == 4
+    # 3 judged units — sr-001's two order rows fold to ONE draw
+    assert fwd["total"] == rev["total"] == 3
     assert [r["dimension"] for r in fwd["rows"]] == \
         [r["dimension"] for r in rev["rows"]]
     for f, r in zip(fwd["rows"] + [fwd["overall"]],
@@ -348,11 +391,17 @@ def test_pair_summary_orientation_invariant(db):
 def test_pair_summary_judge_filter_scoping(db):
     """judge_model / judge_template scope counts AND the judges/templates lists."""
     suite_id, result_ids = seed_fixture(db)
-    (ra1, rb1), (ra2, rb2) = result_ids["sr-001"], result_ids["sr-002"]
-    seed_judgment(db, ra1, rb1, "a")                                   # judge-x / v1
-    seed_judgment(db, ra1, rb1, "b", judge_model="judge-y")            # v1
+    (ra1, rb1), (ra2, rb2), (ra3, rb3) = (result_ids["sr-001"],
+                                          result_ids["sr-002"],
+                                          result_ids["sr-003"])
+    # ra1 judged by two judges at different times -> the newer (judge-y)
+    # generation supersedes; ra3 keeps judge-x in the lifetime lens.
+    seed_judgment(db, ra1, rb1, "a", created_at="t1")                   # judge-x / v1
+    seed_judgment(db, ra1, rb1, "b", judge_model="judge-y",
+                  created_at="t2")                                      # judge-y / v1
     seed_judgment(db, ra2, rb2, "a", judge_model="judge-y",
-                  judge_template="blind-pair-v2")
+                  judge_template="blind-pair-v2", created_at="t2")
+    seed_judgment(db, ra3, rb3, "tie", created_at="t1")                 # judge-x / v1
 
     base = (suite_id, "model-alpha", "model-beta")
     all_gen = reports.pair_summary(db, *base)
@@ -447,18 +496,20 @@ def test_pair_summary_empty_pair_honest(db):
 
 def test_both_bad_counts_as_own_bucket_and_half_draw(db):
     """both-bad rows (winner='tie' + verdict_detail='both_bad') keep the
-    0.5/0.5 draw in score math but surface as their own bucket + rate."""
+    0.5/0.5 draw in score math but surface as their own bucket + rate.
+    The v1 re-judge (newer created_at) SUPERSEDES the older v4-ref
+    generation on the same pair (append-only re-judge doctrine)."""
     suite_id, result_ids = seed_fixture(db)
     (ra, rb) = result_ids["sr-001"]
     db.execute(
         "INSERT INTO judgments (eval_result_a, eval_result_b, judge_model, "
         "judge_template_version, winner, confidence, rationale, created_at, "
         "verdict_detail) VALUES (?, ?, 'judge-x', 'blind-pair-v4-ref', "
-        "'tie', 0.9, NULL, 'now', 'both_bad')", (ra, rb))
+        "'tie', 0.9, NULL, 't1', 'both_bad')", (ra, rb))
     db.execute(
         "INSERT INTO judgments (eval_result_a, eval_result_b, judge_model, "
         "judge_template_version, winner, confidence, rationale, created_at) "
-        "VALUES (?, ?, 'judge-x', 'blind-pair-v1', 'a', 0.9, NULL, 'now')",
+        "VALUES (?, ?, 'judge-x', 'blind-pair-v1', 'a', 0.9, NULL, 't2')",
         (ra, rb))
     db.commit()
     rep = reports.suite_report(db, suite_id)
@@ -469,19 +520,49 @@ def test_both_bad_counts_as_own_bucket_and_half_draw(db):
     assert pair["both_bad_rate"] == 50.0
     # score math: a = 1 win + 0.5*draw = 1.5 of 2 -> 75.0
     assert pair["percent"]["a"] == 50.0
-    # pair_summary lens: same bucket split + draw semantics
+    # pair_summary lens: the newer v1 generation supersedes v4-ref
     s = reports.pair_summary(db, suite_id, "model-alpha", "model-beta")
-    assert s["overall"]["counts"] == {"a": 1, "b": 0, "tie": 0, "both_bad": 1}
-    assert s["overall"]["both_bad_rate"] == 50.0
-    assert s["overall"]["score_a"] == 75.0
-    assert s["overall"]["score_b"] == 25.0
-    # a plain tie stays in the tie bucket (no detail -> not both-bad)
+    assert s["overall"]["counts"] == {"a": 1, "b": 0, "tie": 0, "both_bad": 0}
+    assert s["overall"]["n"] == 1
+    assert s["overall"]["score_a"] == 100.0
+    assert s["overall"]["score_b"] == 0.0
+    assert s["templates"] == ["blind-pair-v1"]
+    # a plain tie stays in the tie bucket (no detail -> not both-bad).
+    # The plain tie is the same v1 generation as the 'a' row on this
+    # pair -> the two rows FOLD to one draw (majority a1/tie1 is tied
+    # vote -> draw), so the v1 unit lands in the tie bucket.
     db.execute(
         "INSERT INTO judgments (eval_result_a, eval_result_b, judge_model, "
         "judge_template_version, winner, confidence, rationale, created_at) "
-        "VALUES (?, ?, 'judge-x', 'blind-pair-v1', 'tie', 0.9, NULL, 'now')",
+        "VALUES (?, ?, 'judge-x', 'blind-pair-v1', 'tie', 0.9, NULL, 't3')",
         (ra, rb))
     db.commit()
     s2 = reports.pair_summary(db, suite_id, "model-alpha", "model-beta")
-    assert s2["overall"]["counts"] == {"a": 1, "b": 0, "tie": 1, "both_bad": 1}
-    assert s2["overall"]["score_a"] == round(100 * (1 + 0.5 * 1 + 0.5 * 1) / 3, 1)
+    assert s2["overall"]["counts"] == {"a": 0, "b": 0, "tie": 1, "both_bad": 0}
+    # score: the folded draw rides 0.5 -> 0.5 of 1 unit
+    assert s2["overall"]["score_a"] == 50.0
+    assert s2["overall"]["score_b"] == 50.0
+
+
+def test_pair_summary_rejudge_supersedes_generation(db):
+    """A re-judge appends a new generation on the same pair; the summary
+    counts the LATEST generation only — no double-counted items."""
+    suite_id, result_ids = seed_fixture(db)
+    (ra1, rb1), (ra2, rb2) = result_ids["sr-001"], result_ids["sr-002"]
+    # sr-001: old gen says a; re-judge (newer) says b
+    seed_judgment(db, ra1, rb1, "a", created_at="t1")
+    seed_judgment(db, ra1, rb1, "b", judge_template="blind-pair-v4-ref",
+                  created_at="t2")
+    # sr-002 judged only in the old gen -> still counted
+    seed_judgment(db, ra2, rb2, "a", created_at="t1")
+
+    s = reports.pair_summary(db, suite_id, "model-alpha", "model-beta")
+    assert s["total"] == 2                     # two units, not three
+    assert s["overall"]["counts"] == {"a": 1, "b": 1, "tie": 0, "both_bad": 0}
+    assert s["judges"] == ["judge-x"]
+    assert s["templates"] == ["blind-pair-v1", "blind-pair-v4-ref"]
+    # scoped to the OLD generation -> the pre-rejudge view returns
+    old = reports.pair_summary(db, suite_id, "model-alpha", "model-beta",
+                               judge_template="blind-pair-v1")
+    assert old["total"] == 2
+    assert old["overall"]["counts"] == {"a": 2, "b": 0, "tie": 0, "both_bad": 0}

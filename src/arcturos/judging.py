@@ -686,10 +686,23 @@ def judge_item(work_item: dict[str, Any], judge_url: str, judge_model: str,
         """One judged call — orders and the tiebreak share this path."""
         verdict = None
         for attempt in range(retries + 1):
+            # The item's machine-check reference describes the FINAL turn's
+            # expected answer (2026-10-25, owner validation of the run-16
+            # pair batch: T1 rows judged with the ref template produced
+            # false both-bads — the taxi item's T1 "6:00 AM" answer was the
+            # CORRECT reply to turn 1 but contradicted the final-turn 7:xx
+            # reference; same for stores-425 and boxes-grapes). Non-final
+            # turns of a multi-turn item judge BLIND (no reference); only
+            # the final turn carries the ground truth into the prompt.
+            turns = [t for t in (work_item["item"].get("turns") or [])
+                     if isinstance(t, dict) and t.get("role") == "user"]
+            turn_no = work_item["turn_index"] or 1
+            is_final_turn = len(turns) <= 1 or turn_no == len(turns)
             verdict = judge_once(judge_url, judge_model, prompt_text,
                                  first, second, work_item["dimension"],
                                  image_url=image_url, api_key=api_key,
-                                 reference=work_item["item"].get("reference"))
+                                 reference=(work_item["item"].get("reference")
+                                            if is_final_turn else None))
             if verdict["valid"]:
                 break
         if not verdict or not verdict["valid"]:
