@@ -113,9 +113,10 @@ def test_build_cold_prompt_unique_prefix_shared_body():
     assert a[36] == "\n"
     assert a[:36] != b[:36]
 
-    # Deterministic body after the prefix: identical across calls.
+    # Deterministic body after the prefix: identical across calls, with the
+    # long-output instruction trailing so the model decodes to the cap.
     body = plan.unit_text * plan.sections
-    assert a[37:] == b[37:] == body
+    assert a[37:] == b[37:] == body + "\n" + bench._COLD_PROMPT_INSTRUCTION
     assert a != b  # whole prompts differ only by the prefix
 
 
@@ -140,10 +141,11 @@ def test_run_benchmark_point_parses_timings():
         assert payload["stream"] is False
         assert payload["cache_prompt"] is False
         assert payload["n_predict"] == 32
-        # Cold prompt structure: uuid4 prefix + newline + 5 copies of the body.
+        # Cold prompt structure: uuid4 prefix + newline + 5 copies of the body,
+        # then the long-output instruction.
         assert uuid.UUID(payload["prompt"][:36])
         assert payload["prompt"][36] == "\n"
-        assert payload["prompt"].count("x") == 5
+        assert payload["prompt"].count("x") == 5 + bench._COLD_PROMPT_INSTRUCTION.count("x")
         return httpx.Response(200, json=_completion_response(draft_n=3, draft_n_accepted=2))
 
     transport = httpx.MockTransport(handler)
@@ -231,8 +233,9 @@ def test_run_benchmark_sequential_order_and_on_point():
     )
 
     # Sizing first (one tokenize call), then completions in target order:
-    # 256 -> sections = (256-16)/1 = 240 copies; 512 -> 496 copies.
-    assert events == ["tokenize", "completion:240", "completion:496"]
+    # 256 -> sections = (256-16)/1 = 240 copies (+1 'x' from the trailing
+    # long-output instruction); 512 -> 496 copies (+1).
+    assert events == ["tokenize", "completion:241", "completion:497"]
     assert [p.target_tokens for p in points] == [256, 512]
     assert seen == points  # on_point fired once per point, in order
     assert all(p.decode_tps == pytest.approx(30.0) for p in points)

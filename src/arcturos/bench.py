@@ -194,14 +194,31 @@ def plan_prompt_sizes(
     return plans
 
 
+# The generation instruction appended after the filler body (2026-10-26):
+# a bare filler body makes the model answer briefly and hit EOS far below
+# n_predict (runs #187/#188: 15-125 tokens against caps of 1024+). Asking
+# for a long continuation keeps the model decoding until the token cap in
+# a single stream, and it continues the deterministic prose, so MTP draft
+# acceptance stays meaningful. Verified on maya-ds4 v1.1.28: 1024/1024,
+# finish 'length' (the bare filler decoded 87/1024 on the same engine).
+_COLD_PROMPT_INSTRUCTION = (
+    "Write a very long, detailed continuation of the text above. Do not stop "
+    "early; keep writing until you reach the end of your token budget."
+)
+
+
 def build_cold_prompt(plan: PromptPlan) -> str:
     """Fresh UUID prefix + newline over the deterministic unit_text body.
 
     The unique prefix defeats prefix/KV caching (cold-cache measurement); the
     deterministic body keeps MTP draft acceptance meaningful (the drafts are
-    always generated against the same predictable text).
+    always generated against the same predictable text). The trailing
+    generation instruction (``_COLD_PROMPT_INSTRUCTION``) makes the model
+    decode until the n_predict cap instead of stopping at EOS — without it
+    the point measures a short, prompt-dependent decode window.
     """
-    return f"{uuid.uuid4()}\n{plan.unit_text * plan.sections}"
+    return (f"{uuid.uuid4()}\n{plan.unit_text * plan.sections}\n"
+            f"{_COLD_PROMPT_INSTRUCTION}")
 
 
 # ----------------------------------------------------------- measurement ----
