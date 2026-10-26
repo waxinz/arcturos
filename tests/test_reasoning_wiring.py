@@ -88,10 +88,10 @@ def test_chat_body_includes_reasoning_when_set(monkeypatch):
     assert "max_tokens" not in body
     assert body["stream"] is False
     assert captured["url"].endswith("/v1/chat/completions")
-    # 300s request budget (2026-10-25, raised from 120): reasoning items
-    # can legitimately think for 85s+ — run 16's last item timed out at
-    # 120s under server load.
-    assert captured["timeout"] == 300
+    # 600s request budget (2026-10-26, raised from 300): thinky models
+    # can legitimately think for minutes and shared-server stalls eat
+    # the old 300s (run #17's four 300s burns).
+    assert captured["timeout"] == 600
     captured2 = _capture_request(monkeypatch)
     mt.post_openai_chat("http://t:1/v1", [{"role": "user", "content": "hi"}],
                         max_tokens=512)
