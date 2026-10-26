@@ -35,6 +35,7 @@ CREATE TABLE IF NOT EXISTS benchmarks (
     ttft_ms         REAL,
     wall_s          REAL,
     output_tokens   INTEGER,
+    n_predict       INTEGER,
     mtp_draft_n     INTEGER,
     mtp_accepted    INTEGER,
     power_watts     REAL,
@@ -343,6 +344,12 @@ _MIGRATIONS = (
     # resolution call (2026-10-23). NULL = pre-forensics legacy row
     # (conceptually an order row).
     ("judgments", "role", "TEXT"),
+    # n_predict provenance (2026-10-26): the configured tokens-per-point
+    # the run dispatched with, stored beside output_tokens so an early-EOS
+    # shortfall (runs #187/#188 decoded 15-116 against caps of 1024+) is
+    # visible in the store instead of silent. Nullable — legacy rows
+    # predate it, by design.
+    ("benchmarks", "n_predict", "INTEGER"),
 )
 
 

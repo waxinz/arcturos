@@ -327,7 +327,7 @@ def test_store_benchmark_run_roundtrip(tmp_path):
     points = [
         bench.BenchPoint(
             target_tokens=4096, prefill_tps=170.0, decode_tps=20.0, wall_s=12.4,
-            output_tokens=250, mtp_draft_n=3, mtp_accepted=2,
+            output_tokens=250, n_predict=1024, mtp_draft_n=3, mtp_accepted=2,
             stop_reason="limit", prompt_tokens=4096, power_watts=250.0,
         ),
         bench.BenchPoint(
@@ -360,9 +360,13 @@ def test_store_benchmark_run_roundtrip(tmp_path):
     assert first["mtp_accepted"] == 2
     assert first["power_watts"] == pytest.approx(250.0)
     assert first["ttft_ms"] is None
+    # configured tokens-per-point provenance (2026-10-26): stored beside
+    # output_tokens so an early-EOS shortfall is visible in the store
+    assert first["n_predict"] == 1024
     assert first["created_at"]  # timestamp present
     assert second["context_tokens"] == 8192
     assert second["mtp_accepted"] is None  # absent metrics stored as NULL
+    assert second["n_predict"] is None  # legacy-shape point: honest null
     assert second["power_watts"] is None
 
 

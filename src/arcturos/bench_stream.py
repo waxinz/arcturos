@@ -40,6 +40,10 @@ def run_stream_point(base_url: str, prompt: str, n_predict: int,
     body = json.dumps({
         "prompt": prompt, "n_predict": n_predict,
         "stream": True, "cache_prompt": False,
+        # n_predict enforced as the exact decoded count (2026-10-26):
+        # without it an early-EOS model decodes far fewer tokens than the
+        # point's configured workload (runs #187/#188: 15-116 tokens).
+        "ignore_eos": True,
     }).encode()
     headers = {"Content-Type": "application/json"}
     if api_key:

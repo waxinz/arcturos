@@ -49,7 +49,7 @@ def test_happy_path_extracts_ttft_and_usage():
     with patch("arcturos.bench_openai.urlreq.urlopen", return_value=_FakeResp(fake)):
         p = run_openai_stream_point("http://fake:4000/v1", "test-model",
                                     [{"role": "user", "content": "hi"}],
-                                    max_tokens=32)
+                                    max_tokens=30)
     assert p.ttft_ms is not None
     assert p.prompt_tokens == 100
     assert p.completion_tokens == 30
@@ -89,7 +89,11 @@ def test_empty_stream():
                                     [{"role": "user", "content": "x"}])
     assert p.ttft_ms is None
     assert p.completion_tokens is None
-    assert p.error is None
+    # n_predict enforcement (2026-10-26): a server that returns nothing
+    # twice in a row cannot reach the cap — the stall guard records the
+    # shortfall instead of looping forever.
+    assert p.error is not None
+    assert "stalled" in p.error
 
 
 def test_reasoning_model_ttft_uses_first_reasoning_chunk():
@@ -106,7 +110,8 @@ def test_reasoning_model_ttft_uses_first_reasoning_chunk():
     fake = "\n\n".join(lines) + "\n\n"
     with patch("arcturos.bench_openai.urlreq.urlopen", return_value=_FakeResp(fake)):
         p = run_openai_stream_point("http://fake:4000/v1", "m",
-                                    [{"role": "user", "content": "x"}])
+                                    [{"role": "user", "content": "x"}],
+                                    max_tokens=5)
     assert p.ttft_ms is not None  # first reasoning chunk counts
     assert p.completion_tokens == 5
     # instant fake stream -> content span ~0 -> decode rate honestly None
@@ -129,8 +134,9 @@ def test_completion_time_fallback_without_per_sec():
     fake = "\n\n".join(lines) + "\n\n"
     with patch("arcturos.bench_openai.urlreq.urlopen", return_value=_FakeResp(fake)):
         p = run_openai_stream_point("http://fake:4000/v1", "m",
-                                    [{"role": "user", "content": "x"}])
-    assert p.decode_tps_server is None
+                                    [{"role": "user", "content": "x"}],
+                                    max_tokens=30)
+    assert p.decode_tps_server == 40.0  # server-accounted: 30 tokens / 0.75 s
     assert p.completion_time_s == 0.75
     assert p.decode_tps == 40.0  # 30 tokens / 0.75 s
 
@@ -153,7 +159,8 @@ def test_reasoning_only_stream_gets_server_decode():
     fake = "\n\n".join(lines) + "\n\n"
     with patch("arcturos.bench_openai.urlreq.urlopen", return_value=_FakeResp(fake)):
         p = run_openai_stream_point("http://fake:4000/v1", "m",
-                                    [{"role": "user", "content": "x"}])
+                                    [{"role": "user", "content": "x"}],
+                                    max_tokens=3)
     assert p.decode_tps == 5.0
     assert p.decode_tps_client is None
 
@@ -173,7 +180,8 @@ def test_burst_span_rejected_without_server_timing():
     fake = "\n\n".join(lines) + "\n\n"
     with patch("arcturos.bench_openai.urlreq.urlopen", return_value=_FakeResp(fake)):
         p = run_openai_stream_point("http://fake:4000/v1", "m",
-                                    [{"role": "user", "content": "x"}])
+                                    [{"role": "user", "content": "x"}],
+                                    max_tokens=64)
     assert p.decode_tps is None
     assert p.decode_tps_client is None
 
@@ -195,7 +203,8 @@ def test_client_rate_used_when_span_real_and_no_server_timing():
     with patch("arcturos.bench_openai.time", clock), \
          patch("arcturos.bench_openai.urlreq.urlopen", return_value=_FakeResp(fake)):
         p = run_openai_stream_point("http://fake:4000/v1", "m",
-                                    [{"role": "user", "content": "x"}])
+                                    [{"role": "user", "content": "x"}],
+                                    max_tokens=5)
     # 5 content chunks over a 0.4 s span (0.1 s per tick) -> 12.5 chunks/s
     assert p.decode_tps_client == 12.5
     assert p.decode_tps == 12.5
@@ -226,7 +235,8 @@ def test_vllm_reasoning_key_ttft_and_client_rate():
     with patch("arcturos.bench_openai.time", clock), \
          patch("arcturos.bench_openai.urlreq.urlopen", return_value=_FakeResp(fake)):
         p = run_openai_stream_point("http://fake:8000/v1", "m",
-                                    [{"role": "user", "content": "x"}])
+                                    [{"role": "user", "content": "x"}],
+                                    max_tokens=5)
     assert p.ttft_ms is not None  # first reasoning chunk counts
     assert p.completion_tokens == 5
     assert p.prompt_tokens == 10
@@ -286,7 +296,8 @@ def test_reasoning_content_stream_still_measured():
     with patch("arcturos.bench_openai.time", clock), \
          patch("arcturos.bench_openai.urlreq.urlopen", return_value=_FakeResp(fake)):
         p = run_openai_stream_point("http://fake:8000/v1", "m",
-                                    [{"role": "user", "content": "x"}])
+                                    [{"role": "user", "content": "x"}],
+                                    max_tokens=3)
     assert p.ttft_ms is not None
     assert p.decode_tps_server is None
     assert p.completion_time_s is None
@@ -319,6 +330,154 @@ def test_mtp_fields_null_when_usage_details_absent():
     fake = _sse()
     with patch("arcturos.bench_openai.urlreq.urlopen", return_value=_FakeResp(fake)):
         p = run_openai_stream_point("http://fake:8000/v1", "m",
-                                    [{"role": "user", "content": "x"}])
+                                    [{"role": "user", "content": "x"}],
+                                    max_tokens=30)
     assert p.mtp_draft_n is None
     assert p.mtp_accepted is None
+
+
+# ------------------------------------------------- n_predict enforcement ----
+
+
+def _seg_sse(content, completion, finish, prompt=100,
+             completion_time=None):
+    """One segment's SSE body: content deltas + a final usage chunk."""
+    import json as _json
+    lines = []
+    if content:
+        lines.append("data: " + _json.dumps(
+            {"choices": [{"delta": {"content": content},
+                          "finish_reason": None}]}))
+    usage = {"prompt_tokens": prompt, "completion_tokens": completion}
+    if completion_time is not None:
+        usage["completion_time"] = completion_time
+    lines.append("data: " + _json.dumps(
+        {"choices": [{"delta": {}, "finish_reason": finish}], "usage": usage}))
+    return "\n\n".join(lines) + "\n\n"
+
+
+def test_enforcement_continuation_reaches_cap():
+    """Early-EOS server (finish 'stop' below the cap) is topped up with
+    continuation requests until usage.completion_tokens sums to exactly
+    max_tokens (2026-10-26: runs #187/#188 decoded 15-116 tokens)."""
+    import json as _json
+    calls = []
+
+    def fake_urlopen(req, timeout=None):
+        body = _json.loads(req.data.decode())
+        calls.append(body)
+        if len(calls) == 1:
+            return _FakeResp(_seg_sse("part one ", 30, "stop",
+                                      completion_time=0.6))
+        return _FakeResp(_seg_sse("part two", 18, "length",
+                                  prompt=140, completion_time=0.4))
+
+    with patch("arcturos.bench_openai.urlreq.urlopen",
+               side_effect=fake_urlopen):
+        p = run_openai_stream_point("http://fake:4000/v1", "m",
+                                    [{"role": "user", "content": "hi"}],
+                                    max_tokens=48)
+    assert len(calls) == 2
+    # first segment asks for the full cap; second asks only for the rest
+    assert calls[0]["max_tokens"] == 48
+    assert calls[1]["max_tokens"] == 18
+    # continuation shape: original messages + partial reply + continue turn
+    assert calls[1]["messages"][0] == {"role": "user", "content": "hi"}
+    assert calls[1]["messages"][1] == {"role": "assistant",
+                                       "content": "part one "}
+    assert calls[1]["messages"][2]["role"] == "user"
+    # exactly the cap decoded, summed from server usage
+    assert p.completion_tokens == 48
+    assert p.target_tokens == 48  # was hardcoded 0 before enforcement
+    assert p.error is None
+    assert p.stop_reason == "length"  # last segment's finish
+    assert p.prompt_tokens == 100  # first segment's prompt
+    # aggregated server-accounted decode: 48 tokens over 1.0 s
+    assert p.completion_time_s == 1.0
+    assert p.decode_tps_server == 48.0
+    assert p.decode_tps == 48.0
+
+
+def test_enforcement_cap_honored_single_segment():
+    """A server that honors the cap (finish 'length' at max_tokens) runs
+    ONE request; target_tokens records the configured count (the old code
+    hardcoded 0, making a shortfall invisible in the store)."""
+    import json as _json
+    calls = []
+
+    def fake_urlopen(req, timeout=None):
+        calls.append(_json.loads(req.data.decode()))
+        return _FakeResp(_seg_sse("x" * 8, 48, "length",
+                                  completion_time=2.0))
+
+    with patch("arcturos.bench_openai.urlreq.urlopen",
+               side_effect=fake_urlopen):
+        p = run_openai_stream_point("http://fake:4000/v1", "m",
+                                    [{"role": "user", "content": "hi"}],
+                                    max_tokens=48)
+    assert len(calls) == 1
+    assert p.completion_tokens == 48
+    assert p.target_tokens == 48
+    assert p.error is None
+
+
+def test_enforcement_stall_guard():
+    """A server returning 0 tokens twice in a row ends the point with an
+    honest error instead of looping forever."""
+    import json as _json
+    calls = []
+
+    def fake_urlopen(req, timeout=None):
+        calls.append(_json.loads(req.data.decode()))
+        if len(calls) == 1:
+            return _FakeResp(_seg_sse("bit", 10, "stop"))
+        return _FakeResp("data: [DONE]\n\n")
+
+    with patch("arcturos.bench_openai.urlreq.urlopen",
+               side_effect=fake_urlopen):
+        p = run_openai_stream_point("http://fake:4000/v1", "m",
+                                    [{"role": "user", "content": "hi"}],
+                                    max_tokens=128)
+    assert len(calls) == 3  # 10-token segment + two 0-token segments
+    assert p.completion_tokens == 10
+    assert p.target_tokens == 128
+    assert p.error is not None
+    assert "stalled" in p.error
+
+
+def test_enforcement_native_payload_carries_ignore_eos():
+    """The native /completion path enforces the cap server-side with
+    llama.cpp's ignore_eos (exact n_predict in one request)."""
+    from arcturos import bench
+    seen = {}
+
+    class _Resp:
+        status_code = 200
+        text = "{}"
+
+        def json(self):
+            return {"timings": {}, "tokens_predicted": 16}
+
+    def fake_post(url, json=None, **kw):
+        seen.update(json)
+        return _Resp()
+
+    class _Client:
+        def __init__(self, post):
+            self.post = post
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+    plan = bench.PromptPlan(target_tokens=256, sections=1, unit_text="u")
+    with patch.object(bench, "_client",
+                      return_value=_Client(fake_post)), \
+         patch.object(bench.time, "perf_counter", side_effect=[0.0, 1.0]):
+        point = bench.run_benchmark_point("http://fake:8000", "m", plan,
+                                          n_predict=16)
+    assert seen["n_predict"] == 16
+    assert seen["ignore_eos"] is True
+    assert point.n_predict == 16

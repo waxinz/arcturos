@@ -357,6 +357,7 @@ def _openai_point_to_bench_point(
     power = power or {}
     return bench.BenchPoint(
         target_tokens=target_tokens,
+        n_predict=op.target_tokens,
         prefill_tps=op.prefill_tps_estimate,
         decode_tps=op.decode_tps,
         ttft_ms=op.ttft_ms,

@@ -33,6 +33,7 @@ class BenchmarkCreate(BaseModel):
     ttft_ms: Optional[float] = Field(None, ge=0)
     wall_s: Optional[float] = Field(None, gt=0)
     output_tokens: Optional[int] = Field(None, ge=0)
+    n_predict: Optional[int] = Field(None, ge=1)
     mtp_draft_n: Optional[int] = Field(None, ge=0)
     mtp_accepted: Optional[int] = Field(None, ge=0)
     power_watts: Optional[float] = Field(None, ge=0)

@@ -97,6 +97,7 @@ class BenchPoint:
     streams: int = 1
     decode_tps_combined: Optional[float] = None
     prefill_tps_combined: Optional[float] = None
+    n_predict: Optional[int] = None
 
 
 class RunNotFoundError(ValueError):
@@ -218,8 +219,8 @@ def run_benchmark_point(
     """Run one cold prompt against the native llama.cpp ``/completion`` endpoint.
 
     POSTs ``{"prompt": cold_prompt, "n_predict": n_predict, "stream": False,
-    "cache_prompt": False}`` to ``{base_url}/completion`` and parses the
-    inline ``timings`` object:
+    "cache_prompt": False, "ignore_eos": true}`` to ``{base_url}/completion``
+    and parses the inline ``timings`` object:
 
     * ``timings.prompt_per_second`` -> ``prefill_tps``
     * ``timings.predicted_per_second`` -> ``decode_tps``
@@ -227,6 +228,11 @@ def run_benchmark_point(
       (``None`` when the engine does not report them)
     * ``tokens_predicted`` -> ``output_tokens``; ``stop_reason`` -> ``stop_reason``
     * ``tokens_prompt`` / ``tokens_evaluated`` -> ``prompt_tokens`` if present
+
+    ``ignore_eos`` (2026-10-26) enforces n_predict as the EXACT decoded
+    token count — llama.cpp standard param; without it a model that emits
+    EOS early decodes far fewer tokens than the point's configured
+    workload (openai-transport runs #187/#188: 15-116 tokens per point).
 
     ``ttft_ms`` is always ``None`` here (native non-stream exposes no TTFT;
     deferred to a streaming variant). ``wall_s`` is the client-side round trip.
@@ -239,6 +245,7 @@ def run_benchmark_point(
         "n_predict": n_predict,
         "stream": False,
         "cache_prompt": False,
+        "ignore_eos": True,
     }
     url = f"{base_url.rstrip('/')}/completion"
     with _client(timeout, transport, api_key=api_key) as client:
@@ -256,6 +263,7 @@ def run_benchmark_point(
     timings = data.get("timings") or {}
     return BenchPoint(
         target_tokens=plan.target_tokens,
+        n_predict=n_predict,
         prefill_tps=_as_float(timings.get("prompt_per_second")),
         decode_tps=_as_float(timings.get("predicted_per_second")),
         ttft_ms=None,
@@ -331,6 +339,7 @@ def _aggregate_stream_points(points: list[BenchPoint], streams: int) -> BenchPoi
     decode_combined = _sum([p.decode_tps for p in points])
     return BenchPoint(
         target_tokens=first.target_tokens,
+        n_predict=first.n_predict,
         prefill_tps=_mean([p.prefill_tps for p in points]),
         decode_tps=_mean([p.decode_tps for p in points]),
         # Combined throughput across all parallel streams — true server
@@ -567,8 +576,8 @@ def store_benchmark_run(
                 "INSERT INTO benchmarks (run_id, context_tokens, prefill_tps, decode_tps,"
                 " ttft_ms, wall_s, output_tokens, mtp_draft_n, mtp_accepted, power_watts,"
                 " power_host, power_gpu_index, streams, decode_tps_combined,"
-                " prefill_tps_combined, created_at)"
-                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                " prefill_tps_combined, n_predict, created_at)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     run_id,
                     point.target_tokens,
@@ -585,6 +594,7 @@ def store_benchmark_run(
                     point.streams,
                     point.decode_tps_combined,
                     point.prefill_tps_combined,
+                    point.n_predict,
                     now,
                 ),
             )

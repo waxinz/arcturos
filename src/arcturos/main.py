@@ -392,11 +392,11 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
         require_parent(db, "runs", run_id)
         cur = db.execute(
             "INSERT INTO benchmarks (run_id, context_tokens, prefill_tps, decode_tps, ttft_ms, "
-            "wall_s, output_tokens, mtp_draft_n, mtp_accepted, power_watts, power_host, "
+            "wall_s, output_tokens, n_predict, mtp_draft_n, mtp_accepted, power_watts, power_host, "
             "power_gpu_index, streams, decode_tps_combined, prefill_tps_combined, created_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (run_id, body.context_tokens, body.prefill_tps, body.decode_tps, body.ttft_ms,
-             body.wall_s, body.output_tokens, body.mtp_draft_n, body.mtp_accepted,
+             body.wall_s, body.output_tokens, body.n_predict, body.mtp_draft_n, body.mtp_accepted,
              body.power_watts, body.power_host, body.power_gpu_index, body.streams,
              body.decode_tps_combined, body.prefill_tps_combined, body.created_at),
         )
@@ -1593,7 +1593,8 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
             ["run_id", "model_fingerprint", "engine", "server_url",
              "context_tokens", "prefill_tps", "decode_tps",
              "prefill_tps_combined", "decode_tps_combined", "ttft_ms",
-             "wall_s", "output_tokens", "mtp_draft_n", "mtp_accepted",
+             "wall_s", "output_tokens", "n_predict", "mtp_draft_n",
+             "mtp_accepted",
              "power_watts", "power_host", "power_gpu_index", "streams",
              "created_at"],
             f"arcturos-run-{run_id}-benchmarks.csv",
