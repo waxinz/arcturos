@@ -306,7 +306,8 @@ def test_dispatch_eval_partial_preservation(db_path, pass_preflight):
                 "usage": {"prompt_tokens": 1, "completion_tokens": 1}}
 
     with patch("arcturos.multiturn.post_openai_chat", side_effect=flaky):
-        result = ops.dispatch_eval(db_path, 1, "http://fake:4000/v1", "m", suite)
+        result = ops.dispatch_eval(db_path, 1, "http://fake:4000/v1", "m",
+                                   suite, retries=0)
     assert result["status"] == "partial"
     assert [r["item_id"] for r in result["stored"]] == ["q1"]
     assert any("q2" in e for e in result["item_errors"])
@@ -316,6 +317,32 @@ def test_dispatch_eval_partial_preservation(db_path, pass_preflight):
     assert conn.execute(
         "SELECT status FROM eval_runs").fetchone()[0] == "partial"
     conn.close()
+
+
+def test_dispatch_eval_default_retries_survive_transient_timeout(
+        db_path, pass_preflight):
+    """Default retries=1 (2026-10-26): a transient failure on the first
+    attempt retries the whole item — run #17 lost 4 of 118 items to four
+    >300s read-timeouts on a shared server under the old default 0 and
+    finished partial."""
+    _mk_suite(db_path)
+    suite = {"items": [{"id": "q1", "prompt": "hi"}]}
+    calls = {"n": 0}
+
+    def flaky(target, messages, api_key=None, **_kw):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise TimeoutError("timed out")
+        return {"choices": [{"message": {"content": "ok"}}],
+                "usage": {"prompt_tokens": 3, "completion_tokens": 2}}
+
+    with patch("arcturos.multiturn.post_openai_chat", side_effect=flaky):
+        result = ops.dispatch_eval(
+            db_path, 1, "http://fake:4000/v1", "m", suite)
+    assert result["status"] == "complete"
+    assert [r["item_id"] for r in result["stored"]] == ["q1"]
+    assert result["item_errors"] == []
+    assert calls["n"] == 2  # one timed-out attempt + the surviving retry
 
 
 # --------------------------------------------------- openai transport ------

@@ -75,6 +75,44 @@ def test_eval_job_end_to_end(client, monkeypatch):
     conn.close()
 
 
+def test_eval_job_default_retries_survive_transient_timeout(
+        client, monkeypatch):
+    """Endpoint default retries=1 (2026-10-26): one transient timeout on
+    the first attempt must not drop the item or stamp the run partial
+    (run #17 shipped 111/118 under the old default 0)."""
+    tc, db_path = client
+    monkeypatch.setattr(
+        "arcturos.ops.preflight.preflight",
+        lambda *a, **k: type("PF", (), {"ok": lambda self: True})())
+    calls = {"n": 0}
+
+    def flaky(target, messages, api_key=None, model="test", **kw):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise TimeoutError("timed out")
+        return {"choices": [{"message": {"content": "ok"}}],
+                "usage": {"prompt_tokens": 3, "completion_tokens": 2}}
+
+    monkeypatch.setattr("arcturos.multiturn.post_openai_chat", flaky)
+    res = tc.post("/api/ops/eval/jobs", json={
+        "suite_id": 1, "target": "http://fake:8080/v1",
+        "model_fingerprint": "test-model",
+        "suite": {"items": [{"id": "q1", "dimension": "reasoning",
+                             "prompt": "hi"}]},
+    })
+    assert res.status_code == 200, res.text
+    job_id = res.json()["job_id"]
+    st = _wait_job(lambda jid: tc.get(f"/api/ops/eval/jobs/{jid}"), job_id)
+    assert st["status"] == "done", st
+    assert st["item_errors"] == []
+    assert calls["n"] == 2  # one timed-out attempt + the surviving retry
+    conn = dbmod.connect(db_path)
+    assert conn.execute("SELECT COUNT(*) FROM eval_results").fetchone()[0] == 1
+    assert conn.execute(
+        "SELECT status FROM eval_runs WHERE id = 1").fetchone()[0] == "complete"
+    conn.close()
+
+
 def test_eval_job_validation_422(client):
     tc, _ = client
     res = tc.post("/api/ops/eval/jobs", json={

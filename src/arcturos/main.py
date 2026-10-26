@@ -1093,7 +1093,10 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
         name = body.get("name")
         max_tokens = body.get("max_tokens")
         temperature = body.get("temperature", 0.0)
-        retries = body.get("retries", 0)
+        # retries (2026-10-26): default 1 — one transient request stall
+        # (shared server, co-tenant load) must not drop an item and mark
+        # the run partial; run #17 finished 111/118 under the old default 0.
+        retries = body.get("retries", 1)
         concurrency = body.get("concurrency", 1)
         reasoning_effort = body.get("reasoning_effort")
         reasoning_budget = body.get("reasoning_budget")

@@ -742,7 +742,7 @@ def dispatch_eval(
     name: str | None = None,
     max_tokens: int | None = None,
     temperature: float = 0.0,
-    retries: int = 0,
+    retries: int = 1,
     concurrency: int = 1,
     on_result=None,
     abort: "AbortFlag | None" = None,
@@ -759,10 +759,17 @@ def dispatch_eval(
     llama.cpp servers ignore it.
 
     v0.2 parameters (ADR 007 §5): ``temperature`` default 0.0,
-    ``retries`` per item (default 0), ``concurrency`` across items (default
-    1, max 8). Items are committed PER ITEM — a mid-replay failure keeps
-    completed items and marks the eval_run partial (partial preservation,
-    the bench pattern). ``abort`` (ops.AbortFlag) stops between items.
+    ``concurrency`` across items (default 1, max 8). Items are committed
+    PER ITEM — a mid-replay failure keeps completed items and marks the
+    eval_run partial (partial preservation, the bench pattern).
+    ``abort`` (ops.AbortFlag) stops between items.
+
+    ``retries`` per item (2026-10-26, default 1 — was 0): a transient
+    request failure (a shared inference server stalls under co-tenant
+    load; run #17 lost 4 of 118 items to four >300s read-timeouts and
+    finished partial) retries the WHOLE item from its first turn before
+    the failure is recorded. Judge jobs already defaulted eval_retries
+    to 1; explicit 0 keeps the strict one-shot behavior.
 
     ``max_tokens`` (2026-10-25): None — the default — omits the field from
     every item's wire body so the SERVER applies its own budget. The old
@@ -1057,7 +1064,7 @@ def run_eval_job(
     name: str | None = None,
     max_tokens: int | None = None,
     temperature: float = 0.0,
-    retries: int = 0,
+    retries: int = 1,
     concurrency: int = 1,
     reasoning_effort: str | None = None,
     reasoning_budget: int | None = None,
@@ -1070,6 +1077,8 @@ def run_eval_job(
 
     ``max_tokens`` (2026-10-25): None — the default — forwards omission to
     dispatch_eval (the field is left OFF the wire body; server budget).
+    ``retries`` (2026-10-26): default 1 — forwarded to dispatch_eval
+    (transient-stall resilience on shared inference servers; see there).
     ``reasoning_effort``/``reasoning_budget`` (2026-10-15, optional):
     per-model reasoning depth forwarded to dispatch_eval — validated here
     too so a bad value 422s before the thread starts.
