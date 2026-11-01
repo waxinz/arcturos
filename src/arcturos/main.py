@@ -875,7 +875,7 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
         """
         server_url = body.get("server_url")
         targets = body.get("targets")
-        n_predict = body.get("n_predict", 1024)
+        n_predict = body.get("n_predict", 512)
         api_key = body.get("api_key")
         transport = body.get("transport", "native")
         model = body.get("model")
@@ -943,7 +943,7 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
         """
         server_url = body.get("server_url")
         targets = body.get("targets")
-        n_predict = body.get("n_predict", 1024)
+        n_predict = body.get("n_predict", 512)
         api_key = body.get("api_key")
         transport = body.get("transport", "native")
         model = body.get("model")
