@@ -220,11 +220,13 @@
   <script>
     let judgments = [];
     let resultsById = {};
+    let runsById = {};
 
     async function load() {
-      const [jres, rres] = await Promise.all([
+      const [jres, rres, runsRes] = await Promise.all([
         fetch('/api/judgments'),
         fetch('/api/eval-results'),
+        fetch('/api/eval-runs').catch(() => null),
       ]);
       if (!jres.ok) throw new Error('HTTP ' + jres.status);
       if (!rres.ok) throw new Error('HTTP ' + rres.status);
@@ -232,6 +234,12 @@
       const results = await rres.json();
       resultsById = {};
       for (const r of results) resultsById[r.id] = r;
+      // Performance lens (2026-11-03): per-run totals for the card meta
+      // line — "which run finished its work faster" at a glance.
+      runsById = {};
+      if (runsRes && runsRes.ok) {
+        for (const r of await runsRes.json()) runsById[r.id] = r;
+      }
     }
 
     // ---- recent judgment runs (one card per judged A/B run pair) -------
@@ -245,6 +253,34 @@
     // judgments stay reachable through /judgments/<id> links on the pair
     // page and the run cards) — /api/judgments stays and still feeds
     // these cards.
+    function fmtDur(ms) {
+      if (ms == null) return '—';
+      let s = Math.round(ms / 1000);
+      if (s < 60) return s + 's';
+      const m = Math.floor(s / 60); s %= 60;
+      if (m < 60) return m + 'm' + String(s).padStart(2, '0') + 's';
+      return Math.floor(m / 60) + 'h' + String(m % 60).padStart(2, '0') + 'm';
+    }
+    function runPerfLine(runLoId, runHiId, fpLo, fpHi) {
+      // "which side completed the work faster" (2026-11-03): the two
+      // runs' total item times + a median-based speed verdict (parity =
+      // within 1.1×, same threshold as the pair page). Missing perf on
+      // either run renders nothing — an absent metric stays absent.
+      const a = runsById[runLoId], b = runsById[runHiId];
+      if (!a || !b || a.total_latency_ms == null ||
+          b.total_latency_ms == null) return '';
+      let verdict = 'speed even';
+      const medA = a.median_item_latency_ms, medB = b.median_item_latency_ms;
+      if (medA != null && medB != null) {
+        const ratio = Math.max(medA, medB) / Math.min(medA, medB);
+        if (ratio >= 1.1) {
+          const fname = medA < medB ? (fpLo || '?') : (fpHi || '?');
+          verdict = fname + ' ' + ratio.toFixed(1) + '× faster';
+        }
+      }
+      return ' · runs ' + fmtDur(a.total_latency_ms) + ' vs ' +
+        fmtDur(b.total_latency_ms) + ' · ' + verdict;
+    }
     function renderJudgRuns() {
       const listEl = document.getElementById('judgrun-list');
       const emptyEl = document.getElementById('judgrun-empty');
@@ -286,7 +322,8 @@
         const meta = document.createElement('div');
         meta.className = 'jr-meta';
         meta.textContent = (g.fpLo || '?') + ' vs ' + (g.fpHi || '?') +
-          ' · judged by ' + g.judge;
+          ' · judged by ' + g.judge +
+          runPerfLine(g.runLo, g.runHi, g.fpLo, g.fpHi);
         left.appendChild(runs);
         left.appendChild(meta);
         const side = document.createElement('div');

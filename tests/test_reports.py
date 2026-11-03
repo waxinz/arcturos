@@ -566,3 +566,248 @@ def test_pair_summary_rejudge_supersedes_generation(db):
                                judge_template="blind-pair-v1")
     assert old["total"] == 2
     assert old["overall"]["counts"] == {"a": 2, "b": 0, "tie": 0, "both_bad": 0}
+
+
+# ---- performance lens (2026-11-03): the second eval dimension ----------
+
+def seed_perf_suite(db):
+    """Two replay runs, model-a slow / model-b fast, per-item latencies.
+
+    model-a: 10s/20s/30s per item; model-b: 5s/6s/7s. Returns
+    (suite_id, {fp: run_id}, {fp: [result ids]}).
+    """
+    cur = db.execute(
+        "INSERT INTO eval_suites (name, version) VALUES ('perf', 'v1')")
+    suite_id = cur.lastrowid
+    runs: dict[str, int] = {}
+    rids: dict[str, list] = {}
+    lats = {"model-a": [10000.0, 20000.0, 30000.0],
+            "model-b": [5000.0, 6000.0, 7000.0]}
+    for fp in ("model-a", "model-b"):
+        cur = db.execute(
+            "INSERT INTO eval_runs (suite_id, model_fingerprint, name, "
+            "status, created_at) VALUES (?, ?, ?, 'complete', 'now')",
+            (suite_id, fp, f"run {fp}"))
+        runs[fp] = cur.lastrowid
+        rids[fp] = []
+        for j in range(3):
+            cur = db.execute(
+                "INSERT INTO eval_results (suite_id, model_fingerprint, "
+                "item_id, output, prompt_tokens, completion_tokens, "
+                "latency_ms, eval_run_id, created_at) "
+                "VALUES (?, ?, ?, ?, 10, 20, ?, ?, 'now')",
+                (suite_id, fp, f"p{j + 1}", f"{fp} says", lats[fp][j],
+                 runs[fp]))
+            rids[fp].append(cur.lastrowid)
+    db.commit()
+    return suite_id, runs, rids
+
+
+def test_speed_comparison_bands():
+    assert reports.speed_comparison(5000.0, 9000.0) == {
+        "faster": "a", "ratio": 1.8, "band": "clear"}
+    assert reports.speed_comparison(9000.0, 5000.0) == {
+        "faster": "b", "ratio": 1.8, "band": "clear"}
+    # within 1.1x = parity: NO side gets named
+    assert reports.speed_comparison(10000.0, 10800.0) == {
+        "faster": None, "ratio": 1.08, "band": "parity"}
+    # honest Nones when either median is missing
+    assert reports.speed_comparison(None, 5000.0) == {
+        "faster": None, "ratio": None, "band": None}
+    assert reports.speed_comparison(0, 5000.0)["band"] is None
+
+
+def test_perf_stats_folds_multiturn_and_reports_median():
+    rows = [
+        # one multi-turn item: two turn rows sum into the item
+        {"item_id": "mt1", "latency_ms": 5000.0, "prompt_tokens": 10,
+         "completion_tokens": 30},
+        {"item_id": "mt1#t2", "latency_ms": 7000.0, "prompt_tokens": 12,
+         "completion_tokens": 40},
+        # two single-turn items
+        {"item_id": "p1", "latency_ms": 4000.0, "prompt_tokens": 5,
+         "completion_tokens": 10},
+        {"item_id": "p2", "latency_ms": 12000.0, "prompt_tokens": 5,
+         "completion_tokens": 10},
+    ]
+    stats = reports.perf_stats(reports.fold_item_perf(rows))
+    assert stats["items"] == 3
+    assert stats["turns"] == 4
+    # mt1 folded = 12s; median of (12s, 4s, 12s) = 12s
+    assert stats["median_item_latency_ms"] == 12000.0
+    assert stats["total_latency_ms"] == 28000.0
+    assert stats["total_completion_tokens"] == 90
+    assert stats["output_tps"] == round(90 / 28.0, 2)
+
+
+def test_perf_stats_tps_absent_when_usage_missing():
+    # qwen-style rows: completion_tokens stored as 0 -> tok/s stays None
+    rows = [{"item_id": "p1", "latency_ms": 4000.0, "prompt_tokens": 5,
+             "completion_tokens": 0}]
+    stats = reports.perf_stats(reports.fold_item_perf(rows))
+    assert stats["output_tps"] is None
+    assert stats["total_completion_tokens"] == 0
+    empty = reports.perf_stats({})
+    assert empty["items"] == 0
+    assert empty["median_item_latency_ms"] is None
+    assert empty["output_tps"] is None
+
+
+def test_suite_report_performance_runs_and_unscoped(db):
+    suite_id, runs, _ = seed_perf_suite(db)
+    rep = reports.suite_report(db, suite_id)
+    perf = rep["performance"]
+    assert perf["unscoped_rows"] == 0
+    by_run = {r["eval_run_id"]: r for r in perf["runs"]}
+    assert set(by_run) == set(runs.values())
+    a = by_run[runs["model-a"]]
+    assert a["model"] == "model-a"
+    assert a["items"] == 3
+    assert a["median_item_latency_ms"] == 20000.0
+    assert a["total_latency_ms"] == 60000.0
+    assert a["output_tps"] == round(60 / 60.0, 2)  # 3*20 tok / 60s
+    b = by_run[runs["model-b"]]
+    assert b["median_item_latency_ms"] == 6000.0
+
+
+def test_suite_report_counts_unscoped_legacy_rows(db):
+    """Legacy rows predating eval_run_id stay out of the run lens but
+    are counted honestly (append-only: seeded NULL, never updated)."""
+    cur = db.execute(
+        "INSERT INTO eval_suites (name, version) VALUES ('perf', 'v1')")
+    suite_id = cur.lastrowid
+    for fp in ("model-a", "model-b"):
+        for j in range(3):
+            db.execute(
+                "INSERT INTO eval_results (suite_id, model_fingerprint, "
+                "item_id, output, prompt_tokens, completion_tokens, "
+                "latency_ms, eval_run_id, created_at) "
+                "VALUES (?, ?, ?, ?, 10, 20, 100.0, NULL, 'now')",
+                (suite_id, fp, f"p{j + 1}", f"{fp} says"))
+    db.commit()
+    rep = reports.suite_report(db, suite_id)
+    assert rep["performance"]["runs"] == []
+    assert rep["performance"]["unscoped_rows"] == 6
+
+
+def test_suite_report_pair_performance_deduped_and_oriented(db):
+    """Both presentation orders reference the SAME two result rows —
+    per-side latency counts ONCE, and performance.a is the SORTED pair's
+    first model (suite_report is canonical, unlike pair_summary)."""
+    suite_id, runs, rids = seed_perf_suite(db)
+    a_ids, b_ids = rids["model-a"], rids["model-b"]
+    # all three items judged, each in both presentation orders
+    for i in range(3):
+        seed_judgment(db, a_ids[i], b_ids[i], "a")
+        seed_judgment(db, b_ids[i], a_ids[i], "b")
+    rep = reports.suite_report(db, suite_id)
+    pair = rep["pairs"][0]
+    perf = pair["performance"]
+    assert perf["a"]["items"] == 3          # NOT 6 — deduped by result id
+    assert perf["a"]["median_item_latency_ms"] == 20000.0
+    assert perf["b"]["median_item_latency_ms"] == 6000.0
+    assert perf["a"]["turns"] == 3
+    assert perf["speed"] == {"faster": "b", "ratio": 3.33, "band": "clear"}
+    assert perf["runs_a"] == [runs["model-a"]]
+    assert perf["runs_b"] == [runs["model-b"]]
+    # item_level rows carry both sides' stored latencies
+    lat_pairs = {(i["latency_a_ms"], i["latency_b_ms"]) for i in rep["item_level"]}
+    assert (10000.0, 5000.0) in lat_pairs and (5000.0, 10000.0) in lat_pairs
+
+
+def test_pair_summary_performance_follows_caller_order(db):
+    suite_id, runs, rids = seed_perf_suite(db)
+    for i in range(3):
+        seed_judgment(db, rids["model-a"][i], rids["model-b"][i], "a")
+    # caller order model-a first
+    s1 = reports.pair_summary(db, suite_id, "model-a", "model-b")
+    assert s1["performance"]["a"]["median_item_latency_ms"] == 20000.0
+    assert s1["performance"]["b"]["median_item_latency_ms"] == 6000.0
+    assert s1["performance"]["speed"]["faster"] == "b"
+    assert s1["performance"]["runs_a"] == [runs["model-a"]]
+    # swapped caller order MIRRORS the perf columns, same as win rates
+    s2 = reports.pair_summary(db, suite_id, "model-b", "model-a")
+    assert s2["performance"]["a"]["median_item_latency_ms"] == 6000.0
+    assert s2["performance"]["b"]["median_item_latency_ms"] == 20000.0
+    assert s2["performance"]["speed"]["faster"] == "a"
+    assert s2["performance"]["runs_a"] == [runs["model-b"]]
+
+
+def test_pair_summary_performance_multiturn_folds(db):
+    """Multi-turn judged items: turn rows sum into the item before the
+    median — the pair lens measures ITEM completion time. Every turn row
+    is judged (the real pipeline judges per-turn pairs), so the perf
+    lens sees the whole item's work."""
+    cur = db.execute(
+        "INSERT INTO eval_suites (name, version) VALUES ('perf-mt', 'v1')")
+    suite_id = cur.lastrowid
+    # model-a p1 = 4s + 10s = 14s; model-b p1 = 3s + 5s = 8s
+    lats = {
+        "model-a": {"p1#t1": 4000.0, "p1#t2": 10000.0,
+                    "p2": 20000.0, "p3": 30000.0},
+        "model-b": {"p1#t1": 3000.0, "p1#t2": 5000.0,
+                    "p2": 6000.0, "p3": 7000.0},
+    }
+    rids: dict[str, dict[str, int]] = {}
+    for fp, items in lats.items():
+        cur = db.execute(
+            "INSERT INTO eval_runs (suite_id, model_fingerprint, name, "
+            "status, created_at) VALUES (?, ?, ?, 'complete', 'now')",
+            (suite_id, fp, f"run {fp}"))
+        run_id = cur.lastrowid
+        rids[fp] = {}
+        for item_id, lat in items.items():
+            cur = db.execute(
+                "INSERT INTO eval_results (suite_id, model_fingerprint, "
+                "item_id, output, prompt_tokens, completion_tokens, "
+                "latency_ms, eval_run_id, created_at) "
+                "VALUES (?, ?, ?, ?, 10, 20, ?, ?, 'now')",
+                (suite_id, fp, item_id, f"{fp} says", lat, run_id))
+            rids[fp][item_id] = cur.lastrowid
+    db.commit()
+    for item in ("p1#t1", "p1#t2", "p2", "p3"):
+        seed_judgment(db, rids["model-a"][item], rids["model-b"][item], "a")
+    s = reports.pair_summary(db, suite_id, "model-a", "model-b")
+    perf = s["performance"]
+    assert perf["a"]["items"] == 3
+    assert perf["a"]["turns"] == 4
+    # model-a items: p1 = 14s, p2 = 20s, p3 = 30s -> median 20s
+    assert perf["a"]["median_item_latency_ms"] == 20000.0
+    # model-b items: p1 = 8s, p2 = 6s, p3 = 7s -> median 7s
+    assert perf["b"]["median_item_latency_ms"] == 7000.0
+
+
+def test_pair_summary_empty_pair_performance_honest(db):
+    suite_id, _, _ = seed_perf_suite(db)
+    s = reports.pair_summary(db, suite_id, "model-a", "model-b")
+    assert s["total"] == 0
+    perf = s["performance"]
+    assert perf["a"]["items"] == 0
+    assert perf["a"]["median_item_latency_ms"] is None
+    assert perf["speed"] == {"faster": None, "ratio": None, "band": None}
+    assert perf["by_dimension"] == {}
+
+
+def test_csv_export_performance_columns(db):
+    suite_id, result_ids = seed_fixture(db)
+    a, b = result_ids["sr-001"][0], result_ids["sr-001"][1]
+    seed_judgment(db, a, b, "a")
+    seed_judgment(db, b, a, "b")
+    report = reports.suite_report(db, suite_id)
+    import csv as _csv
+    import io as _io
+    rows = list(_csv.reader(_io.StringIO(
+        reports.export_report_csv(report))))
+    header = rows[0]
+    idx = {name: i for i, name in enumerate(header)}
+    for col in ("median_ms_a", "median_ms_b", "total_s_a", "total_s_b",
+                "tok_s_a", "tok_s_b", "speed_ratio", "speed_faster"):
+        assert col in idx
+    data = rows[1]
+    # seed_fixture: latency 100.0ms, 30 completion tokens per item
+    assert data[idx["median_ms_a"]] == "100.0"
+    assert data[idx["median_ms_b"]] == "100.0"
+    assert data[idx["total_s_a"]] == "0.1"
+    assert data[idx["tok_s_a"]] == "300.0"    # 30 tok / 0.1 s
+    assert data[idx["speed_faster"]] == ""    # ratio 1.0 -> parity, no side
+    assert float(data[idx["speed_ratio"]]) == 1.0

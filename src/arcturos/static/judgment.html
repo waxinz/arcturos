@@ -71,6 +71,8 @@
     .empty { color: var(--text-muted); padding: 2rem 0; }
     .tie-tag { color: var(--text-muted); font-weight: 800; font-size: .74rem;
                text-transform: uppercase; letter-spacing: .06em; }
+    .lat-tag { color: var(--text-muted); font-weight: 400; font-size: .72rem;
+               font-variant-numeric: tabular-nums; }
     .jumpline { margin-top: 1rem; font-size: .88rem; }
     .jumpline a { color: var(--link); font-weight: 600; }
   </style>
@@ -121,13 +123,23 @@ function $(id) { return document.getElementById(id); }
     // One response card. `slot` is the canonical side ('a'|'b'); `seen`
     // is the presentation label the judge saw ('Response 1'/'Response 2')
     // or null on legacy rows without a recorded presentation order.
+    function fmtLat(ms) {
+      if (ms == null) return '';
+      const s = ms / 1000;
+      return ' · ' + (s >= 10 ? String(Math.round(s)) : s.toFixed(1)) + 's';
+    }
     function respCard(row, slot, seen) {
       const fp = slot === 'a' ? row.fingerprint_a : row.fingerprint_b;
       const out = slot === 'a' ? row.output_a : row.output_b;
+      const lat = slot === 'a' ? row.latency_a_ms : row.latency_b_ms;
       const div = document.createElement('div');
       div.className = 'resp' + (row.winner === slot ? ' winner' : '');
-      div.innerHTML = '<h4><span></span><span class="tag"></span></h4><pre></pre>';
+      div.innerHTML = '<h4><span></span><span class="lat-tag"></span>' +
+        '<span class="tag"></span></h4><pre></pre>';
       div.querySelector('h4 span').textContent = fp;
+      // item-grain performance lens (2026-11-03): how fast THIS side
+      // produced its answer, next to the judge's preference tag
+      div.querySelector('.lat-tag').textContent = fmtLat(lat);
       div.querySelector('.tag').innerHTML = winnerTag(row, slot);
       if (seen) {
         const chip = document.createElement('div');
@@ -308,13 +320,18 @@ function $(id) { return document.getElementById(id); }
       if (!res.ok) throw new Error('HTTP ' + res.status);
       const row = await res.json();
 
-      // Meta strip: judgment id, suite, both runs (linked), judge, when.
+      // Meta strip: judgment id, suite, both runs (linked), judge, when,
+      // plus both sides' stored latencies (performance lens, 2026-11-03).
       $('meta').innerHTML =
         '<span><b>Judgment</b> #' + row.id + '</span>' +
         '<span><b>Suite</b> <a href="/evals?suite=' + row.suite_id + '">#' +
           row.suite_id + '</a></span>' +
         '<span><b>Runs</b> ' + runLink(row.run_a_id) + ' vs ' +
           runLink(row.run_b_id) + '</span>' +
+        '<span><b>' + esc(shortFp(row.fingerprint_a)) + ' latency</b> ' +
+          fmtLatMeta(row.latency_a_ms) + '</span>' +
+        '<span><b>' + esc(shortFp(row.fingerprint_b)) + ' latency</b> ' +
+          fmtLatMeta(row.latency_b_ms) + '</span>' +
         '<span><b>Judge saw first</b> ' + esc(sawFirst(row)) + '</span>';
       $('sub').textContent = 'Judgment #' + row.id + ' — item ' + row.item_id +
         '. The two responses render in the order the judge saw them; the ' +
@@ -374,6 +391,14 @@ function $(id) { return document.getElementById(id); }
       if (row.presentation === 'a_first') return row.fingerprint_a;
       if (row.presentation === 'b_first') return row.fingerprint_b;
       return '(not recorded)';
+    }
+
+    // Bare latency for the meta chips (fmtLat adds the ' · ' separator
+    // for the card headings; the chips need the value alone).
+    function fmtLatMeta(ms) {
+      if (ms == null) return '—';
+      const s = ms / 1000;
+      return (s >= 10 ? String(Math.round(s)) : s.toFixed(1)) + 's';
     }
 
     function runLink(runId) {

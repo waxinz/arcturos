@@ -114,6 +114,29 @@ def test_pair_page_has_category_summary(client):
     assert "Blind pairwise score" in text
 
 
+def test_pair_page_has_performance_card(client):
+    # 2026-11-03 performance lens: the second card mirrors the category
+    # summary's table/tiles split and carries its own honesty caption.
+    text = client.get("/judgments/pair").text
+    assert 'id="jperf"' in text
+    assert "Performance" in text
+    assert "parity = within 1.1" in text
+    assert "tok/s only where the server reported token usage" in text
+
+
+def test_run_detail_and_judgment_pages_pin_performance(client):
+    # 2026-11-03 performance lens on the remaining drill-downs: the run
+    # detail page renders a summary strip (JS-side from the run detail
+    # payload's performance block); the single-judgment page shows both
+    # sides' stored latencies next to the judge's verdict.
+    run_text = client.get("/evals/runs/1").text
+    assert "Total item time" in run_text
+    assert "Median / item" in run_text
+    assert "Output rate" in run_text
+    jtext = client.get("/judgments/1").text
+    assert "latency</b>" in jtext
+
+
 def test_nav_links_in_shared_views(client):
     # 2026-10-11 top-nav round: the rail became a two-level top bar.
     # Every page still carries the three section identities and the

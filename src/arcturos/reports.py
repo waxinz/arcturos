@@ -13,6 +13,7 @@ from __future__ import annotations
 import json
 import math
 import sqlite3
+import statistics
 from typing import Any
 
 
@@ -171,6 +172,114 @@ def _pct_entry(counts: dict[str, int]) -> dict[str, Any]:
     return out
 
 
+# ---- performance dimension (the second eval lens, 2026-11-03) ----------
+# Quality answers "who was preferred"; performance answers "who finished
+# the work faster". Both derive from the SAME stored rows (eval_results
+# carries latency_ms + token counts per replayed item), so performance
+# aggregates at REPORT time — no schema change, append-only store
+# untouched. Presentation follows the public leaderboards (Artificial
+# Analysis: intelligence next to output speed + latency; ML.ENERGY:
+# accuracy next to energy per response; Aider: percent correct next to
+# cost): quality and speed stay SEPARATE dimensions over the same unit
+# of work, latency summarizes as the MEDIAN per item (robust to the few
+# slow outliers shared servers produce), and speed never folds into the
+# quality score.
+
+
+def fold_item_perf(rows) -> dict[str, dict[str, Any]]:
+    """Fold eval-result rows to per-item performance.
+
+    One single-turn row = one item; a multi-turn item's '#t2/#t3…' turn
+    rows SUM into the base item (the model completes the item across
+    turns, so the item's latency is the turn sum and its token counts
+    are the turn totals). Returns {base_item_id: {latency_ms,
+    completion_tokens, prompt_tokens, turns}}.
+    """
+    items: dict[str, dict[str, Any]] = {}
+    for r in rows:
+        base = str(r["item_id"]).split("#")[0]
+        it = items.setdefault(base, {"latency_ms": 0.0,
+                                     "completion_tokens": 0,
+                                     "prompt_tokens": 0,
+                                     "turns": 0})
+        it["latency_ms"] += r["latency_ms"] or 0.0
+        it["completion_tokens"] += r["completion_tokens"] or 0
+        it["prompt_tokens"] += r["prompt_tokens"] or 0
+        it["turns"] += 1
+    return items
+
+
+def perf_stats(items: dict[str, dict[str, Any]]) -> dict[str, Any]:
+    """Aggregate folded per-item perf into one stats dict.
+
+    output_tps = total completion tokens / total latency seconds — None
+    when the server reported no usage (qwen-style completion_tokens=0
+    rows) or no latency. An absent metric stays absent, never zero.
+    """
+    lats = [it["latency_ms"] for it in items.values() if it["latency_ms"]]
+    total_ms = sum(it["latency_ms"] for it in items.values())
+    total_ctok = sum(it["completion_tokens"] for it in items.values())
+    total_ptok = sum(it["prompt_tokens"] for it in items.values())
+    turns = sum(it["turns"] for it in items.values())
+    tps = (round(total_ctok / (total_ms / 1000.0), 2)
+           if total_ctok and total_ms > 0 else None)
+    return {
+        "items": len(items),
+        "turns": turns,
+        "total_latency_ms": round(total_ms, 1),
+        "median_item_latency_ms": (round(statistics.median(lats), 1)
+                                   if lats else None),
+        "mean_item_latency_ms": (round(total_ms / len(items), 1)
+                                 if items else None),
+        "total_prompt_tokens": total_ptok,
+        "total_completion_tokens": total_ctok,
+        "output_tps": tps,
+    }
+
+
+def speed_comparison(median_a_ms: float | None,
+                     median_b_ms: float | None) -> dict[str, Any]:
+    """Speed verdict from two per-item medians (the pair lens).
+
+    ratio = slower/faster (>= 1). 'parity' when the slower side sits
+    within 1.1x of the faster one — below that the difference reads as
+    noise on shared servers, so NO side is named. Honest Nones when
+    either median is missing.
+    """
+    if not median_a_ms or not median_b_ms:
+        return {"faster": None, "ratio": None, "band": None}
+    ratio = max(median_a_ms, median_b_ms) / min(median_a_ms, median_b_ms)
+    if ratio <= 1.1:
+        return {"faster": None, "ratio": round(ratio, 2), "band": "parity"}
+    faster = "a" if median_a_ms < median_b_ms else "b"
+    return {"faster": faster, "ratio": round(ratio, 2), "band": "clear"}
+
+
+def run_perf_index(db: sqlite3.Connection) -> dict[int, dict[str, Any]]:
+    """eval_run_id -> light perf aggregates for the runs-list lens.
+
+    Feeds GET /api/eval-runs rows (the Results page's run tables) with
+    the same math as the report lens, kept cheap enough for the full
+    list: one grouped fetch, fold, per-run stats.
+    """
+    rows = _fetch(
+        db,
+        """SELECT eval_run_id, item_id, latency_ms, prompt_tokens,
+                  completion_tokens
+           FROM eval_results WHERE eval_run_id IS NOT NULL""",
+    )
+    by_run: dict[int, list] = {}
+    for r in rows:
+        by_run.setdefault(r["eval_run_id"], []).append(r)
+    out: dict[int, dict[str, Any]] = {}
+    for rid, rrows in by_run.items():
+        stats = perf_stats(fold_item_perf(rrows))
+        out[rid] = {"total_latency_ms": stats["total_latency_ms"],
+                    "median_item_latency_ms": stats["median_item_latency_ms"],
+                    "output_tps": stats["output_tps"]}
+    return out
+
+
 def suite_report(db: sqlite3.Connection, suite_id: int,
                  category_map: dict[str, str] | None = None,
                  dimension_map: dict[str, str] | None = None,
@@ -188,8 +297,16 @@ def suite_report(db: sqlite3.Connection, suite_id: int,
 
     Returns {"suite", "prompts", "models", "pairs", "overall", "by_category",
              "by_dimension", "generations", "reference_scores",
-             "judgments_stored", "item_level"}.
+             "judgments_stored", "item_level", "performance"}.
     Raises ValueError for unknown suite_id.
+
+    ``performance`` (2026-11-03) is the second eval lens: {"runs": [...],
+    "unscoped_rows": n}. Each run entry folds that replay run's rows to
+    per-item perf (multi-turn turns sum into the item) — items, total
+    item time, median/mean per item, token totals, output tok/s when the
+    server reported usage. Each ``pairs`` entry carries ``performance``:
+    per-side stats over the DISTINCT result rows that pair's judgments
+    reference + a speed verdict (parity within 1.1x names no side).
     """
     suite = _fetch(db, "SELECT * FROM eval_suites WHERE id = ?", (suite_id,))
     if not suite:
@@ -230,6 +347,10 @@ def suite_report(db: sqlite3.Connection, suite_id: int,
     per_dimension: dict[str, dict[str, Any]] = {}
     item_level: list[dict[str, Any]] = []
     flips: dict[str, int] = {}
+    # performance lens: the DISTINCT result rows each pair's judgments
+    # reference, per side (both presentation orders share the same rows —
+    # dedupe by result id so latency is never double-counted)
+    pair_result_ids: dict[tuple[str, str], tuple[set, set]] = {}
 
     for j in judgments:
         ra = result_ids.get(j["eval_result_a"])
@@ -237,6 +358,13 @@ def suite_report(db: sqlite3.Connection, suite_id: int,
         if ra is None or rb is None:
             continue  # defensive: judgment rows are FK-validated, but stay robust
         pair = tuple(sorted((ra["model_fingerprint"], rb["model_fingerprint"])))
+        ids = pair_result_ids.setdefault(pair, (set(), set()))
+        if ra["model_fingerprint"] == pair[0]:
+            ids[0].add(ra["id"])
+            ids[1].add(rb["id"])
+        else:
+            ids[0].add(rb["id"])
+            ids[1].add(ra["id"])
         entry = per_pair.setdefault(
             pair, {"model_a": pair[0], "model_b": pair[1],
                    "counts": {"a": 0, "b": 0, "tie": 0, "both_bad": 0}})
@@ -278,6 +406,8 @@ def suite_report(db: sqlite3.Connection, suite_id: int,
             "rationale": j["rationale"],
             "category": category,
             "dimension": dimension,
+            "latency_a_ms": ra["latency_ms"],
+            "latency_b_ms": rb["latency_ms"],
         }
         item_level.append(item)
 
@@ -305,12 +435,27 @@ def suite_report(db: sqlite3.Connection, suite_id: int,
         pct = {k: round(counts.get(k, 0) / t * 100, 1) if t else None
                for k in ("a", "b", "tie", "both_bad")}
         w = wilson_interval(counts["a"] / t if t else None, t)
+        a_ids, b_ids = pair_result_ids.get((ma, mb), (set(), set()))
+        a_rows = [result_ids[i] for i in a_ids if i in result_ids]
+        b_rows = [result_ids[i] for i in b_ids if i in result_ids]
+        a_stats = perf_stats(fold_item_perf(a_rows))
+        b_stats = perf_stats(fold_item_perf(b_rows))
         pairs_out.append({
             "model_a": ma, "model_b": mb,
             "counts": dict(counts),
             "percent": pct,
             "total": t,
             "both_bad_rate": pct["both_bad"],
+            "performance": {
+                "a": a_stats,
+                "b": b_stats,
+                "speed": speed_comparison(a_stats["median_item_latency_ms"],
+                                          b_stats["median_item_latency_ms"]),
+                "runs_a": sorted({r["eval_run_id"] for r in a_rows
+                                  if r["eval_run_id"] is not None}),
+                "runs_b": sorted({r["eval_run_id"] for r in b_rows
+                                  if r["eval_run_id"] is not None}),
+            },
             **({"wilson_a": {"low": w[0], "high": w[1]}} if w else {}),
         })
 
@@ -334,6 +479,36 @@ def suite_report(db: sqlite3.Connection, suite_id: int,
     by_category = {k: _pct_entry(v["counts"]) for k, v in per_category.items()}
     by_dimension = {k: _pct_entry(v["counts"]) for k, v in per_dimension.items()}
 
+    # performance by replay run: each run's rows fold to per-item perf —
+    # the run IS the "who completed the work faster" unit for a combined
+    # A/B kick-off (same suite, two models, two runs). Legacy rows with
+    # no eval_run_id stay out of the run lens but are counted honestly.
+    rows_by_run: dict[int, list] = {}
+    unscoped_rows = 0
+    for r in results:
+        if r["eval_run_id"] is None:
+            unscoped_rows += 1
+            continue
+        rows_by_run.setdefault(r["eval_run_id"], []).append(r)
+    perf_runs: list[dict[str, Any]] = []
+    run_meta: dict[int, sqlite3.Row] = {}
+    if rows_by_run:
+        placeholders = ",".join("?" * len(rows_by_run))
+        for m in _fetch(db,
+                        f"SELECT * FROM eval_runs WHERE id IN ({placeholders})",
+                        tuple(rows_by_run)):
+            run_meta[m["id"]] = m
+    for rid in sorted(rows_by_run):
+        meta = run_meta.get(rid)
+        perf_runs.append({
+            "eval_run_id": rid,
+            "model": meta["model_fingerprint"] if meta else None,
+            "name": meta["name"] if meta else None,
+            "status": meta["status"] if meta else None,
+            "created_at": meta["created_at"] if meta else None,
+            **perf_stats(fold_item_perf(rows_by_run[rid])),
+        })
+
     return {
         "suite": suite,
         "prompts": len({r["item_id"].split("#")[0] for r in results}),
@@ -348,6 +523,7 @@ def suite_report(db: sqlite3.Connection, suite_id: int,
         "by_category": by_category,
         "by_dimension": by_dimension,
         "generations": generations,
+        "performance": {"runs": perf_runs, "unscoped_rows": unscoped_rows},
         "reference_scores": reference_scores(
             db, suite_id,
             metadata={k: {"category": category_map.get(k, "uncategorized"),
@@ -396,15 +572,29 @@ def pair_summary(db: sqlite3.Connection, suite_id: int, model_a: str,
     numbers). The Wilson 95% interval applies to model a's win share.
 
     Returns {"suite_id", "model_a", "model_b", "run_a", "run_b",
-             "judges", "templates", "total", "rows", "overall"}; rows
-             sorted n desc then dimension name asc. run_a/run_b echo the
-             scope (nulls when lifetime-wide).
+             "judges", "templates", "total", "rows", "overall",
+             "performance"}. rows sorted n desc then dimension name asc.
+             run_a/run_b echo the scope (nulls when lifetime-wide).
+
+    ``performance`` (2026-11-03): the second lens over the SAME judged
+    pairs — per-side stats over the distinct result rows the folded
+    pairs reference (multi-turn turn rows fold into the item), a speed
+    verdict ('parity' within 1.1x names no side), per-dimension medians,
+    and the replay-run ids each side's rows came from. Orientation
+    follows the caller: performance['a'] is ALWAYS the caller's
+    model_a, matching the win-rate columns above it.
     """
     sql = """SELECT j.winner, j.judge_model, j.verdict_detail,
                     j.judge_template_version AS template, j.created_at,
                     ra.model_fingerprint AS fa, rb.model_fingerprint AS fb,
                     ra.item_id AS item_id,
-                    ra.id AS result_a_id, rb.id AS result_b_id
+                    ra.id AS result_a_id, rb.id AS result_b_id,
+                    ra.latency_ms AS latency_a_ms,
+                    rb.latency_ms AS latency_b_ms,
+                    ra.prompt_tokens AS ptok_a, rb.prompt_tokens AS ptok_b,
+                    ra.completion_tokens AS ctok_a,
+                    rb.completion_tokens AS ctok_b,
+                    ra.eval_run_id AS run_id_a, rb.eval_run_id AS run_id_b
              FROM judgments j
              JOIN eval_results ra ON ra.id = j.eval_result_a
              JOIN eval_results rb ON rb.id = j.eval_result_b
@@ -461,6 +651,17 @@ def pair_summary(db: sqlite3.Connection, suite_id: int, model_a: str,
     per_dim: dict[str, dict[str, int]] = {}
     judges: set[str] = set()
     templates: set[str] = set()
+    # performance lens (second dimension): synthetic per-turn rows per
+    # side, deduped by result id across the folded pairs — fold_item_perf
+    # then sums multi-turn turn rows into their base item
+    perf_syn_a: list[dict[str, Any]] = []
+    perf_syn_b: list[dict[str, Any]] = []
+    perf_dim_a: dict[str, list] = {}
+    perf_dim_b: dict[str, list] = {}
+    seen_a: set[int] = set()
+    seen_b: set[int] = set()
+    runs_a: set[int] = set()
+    runs_b: set[int] = set()
     for _, (_, pair_rows) in latest_gen.items():
         r = pair_rows[0]          # canonical fields identical within a pair
         # canonical-space majority (tiebreak votes count in full;
@@ -488,6 +689,43 @@ def pair_summary(db: sqlite3.Connection, suite_id: int, model_a: str,
         overall[bucket_key] += 1
         judges.add(r["judge_model"])
         templates.add(r["template"])
+        # performance lens: caller-oriented synthetic rows, deduped by
+        # result id (both presentation rows of a judged pair reference
+        # the same two results — each side's latency counts ONCE)
+        if r["fa"] == model_a:
+            ra_id, rb_id = r["result_a_id"], r["result_b_id"]
+            ra_row = {"item_id": r["item_id"],
+                      "latency_ms": r["latency_a_ms"],
+                      "prompt_tokens": r["ptok_a"],
+                      "completion_tokens": r["ctok_a"]}
+            rb_row = {"item_id": r["item_id"],
+                      "latency_ms": r["latency_b_ms"],
+                      "prompt_tokens": r["ptok_b"],
+                      "completion_tokens": r["ctok_b"]}
+            run_a_id, run_b_id = r["run_id_a"], r["run_id_b"]
+        else:
+            ra_id, rb_id = r["result_b_id"], r["result_a_id"]
+            ra_row = {"item_id": r["item_id"],
+                      "latency_ms": r["latency_b_ms"],
+                      "prompt_tokens": r["ptok_b"],
+                      "completion_tokens": r["ctok_b"]}
+            rb_row = {"item_id": r["item_id"],
+                      "latency_ms": r["latency_a_ms"],
+                      "prompt_tokens": r["ptok_a"],
+                      "completion_tokens": r["ctok_a"]}
+            run_a_id, run_b_id = r["run_id_b"], r["run_id_a"]
+        if ra_id not in seen_a:
+            seen_a.add(ra_id)
+            perf_syn_a.append(ra_row)
+            perf_dim_a.setdefault(dimension, []).append(ra_row)
+            if run_a_id is not None:
+                runs_a.add(run_a_id)
+        if rb_id not in seen_b:
+            seen_b.add(rb_id)
+            perf_syn_b.append(rb_row)
+            perf_dim_b.setdefault(dimension, []).append(rb_row)
+            if run_b_id is not None:
+                runs_b.add(run_b_id)
 
     def _row(dimension: str, counts: dict[str, int]) -> dict[str, Any]:
         n = (counts["a"] + counts["b"] + counts["tie"]
@@ -511,6 +749,30 @@ def pair_summary(db: sqlite3.Connection, suite_id: int, model_a: str,
     dim_rows = [ _row(d, c) for d, c in
                  sorted(per_dim.items(), key=lambda kv: (-sum(kv[1].values()), kv[0])) ]
     overall_row = _row("overall", overall)
+
+    # performance aggregation over the SAME folded pairs (second lens):
+    # per-side stats + speed verdict + per-dimension medians
+    a_perf = perf_stats(fold_item_perf(perf_syn_a))
+    b_perf = perf_stats(fold_item_perf(perf_syn_b))
+    by_dim_perf: dict[str, dict[str, Any]] = {}
+    for dim in sorted(set(perf_dim_a) | set(perf_dim_b)):
+        da_stats = perf_stats(fold_item_perf(perf_dim_a.get(dim, [])))
+        db_stats = perf_stats(fold_item_perf(perf_dim_b.get(dim, [])))
+        by_dim_perf[dim] = {
+            "a": da_stats,
+            "b": db_stats,
+            "speed": speed_comparison(da_stats["median_item_latency_ms"],
+                                      db_stats["median_item_latency_ms"]),
+        }
+    performance = {
+        "a": a_perf,
+        "b": b_perf,
+        "speed": speed_comparison(a_perf["median_item_latency_ms"],
+                                  b_perf["median_item_latency_ms"]),
+        "by_dimension": by_dim_perf,
+        "runs_a": sorted(runs_a),
+        "runs_b": sorted(runs_b),
+    }
     return {
         "suite_id": suite_id,
         "model_a": model_a,
@@ -522,6 +784,7 @@ def pair_summary(db: sqlite3.Connection, suite_id: int, model_a: str,
         "total": overall_row["n"],
         "rows": dim_rows,
         "overall": overall_row,
+        "performance": performance,
     }
 
 
@@ -535,9 +798,19 @@ def export_report_csv(report: dict[str, Any]) -> str:
     writer.writerow(["suite", "version", "model_a", "model_b",
                      "wins_a", "wins_b", "ties", "both_bad", "total",
                      "pct_a", "pct_b", "pct_tie", "pct_both_bad",
-                     "wilson_a_low", "wilson_a_high"])
+                     "wilson_a_low", "wilson_a_high",
+                     "median_ms_a", "median_ms_b",
+                     "total_s_a", "total_s_b",
+                     "tok_s_a", "tok_s_b",
+                     "speed_ratio", "speed_faster"])
     for pair in report["pairs"]:
         wilson = pair.get("wilson_a") or {}
+        perf = pair.get("performance") or {}
+        pa, pb = perf.get("a") or {}, perf.get("b") or {}
+        speed = perf.get("speed") or {}
+        total_s = lambda stats: (  # noqa: E731  (inline cell formatting)
+            round(stats["total_latency_ms"] / 1000.0, 1)
+            if stats.get("total_latency_ms") is not None else "")
         writer.writerow([
             report["suite"]["name"], report["suite"]["version"],
             pair["model_a"], pair["model_b"],
@@ -547,6 +820,13 @@ def export_report_csv(report: dict[str, Any]) -> str:
             pair["percent"]["a"], pair["percent"]["b"], pair["percent"]["tie"],
             pair["percent"].get("both_bad"),
             wilson.get("low", ""), wilson.get("high", ""),
+            pa.get("median_item_latency_ms", "") or "",
+            pb.get("median_item_latency_ms", "") or "",
+            total_s(pa), total_s(pb),
+            pa.get("output_tps", "") if pa.get("output_tps") is not None else "",
+            pb.get("output_tps", "") if pb.get("output_tps") is not None else "",
+            speed.get("ratio") if speed.get("ratio") is not None else "",
+            speed.get("faster") or "",
         ])
     # dimension rows appended (v0.2 headline lens)
     writer.writerow([])

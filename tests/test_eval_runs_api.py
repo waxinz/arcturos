@@ -277,3 +277,56 @@ def test_drilldown_pages_carry_shell_identity(client):
     # category summary card (leads the page, above the meta strip)
     assert 'id="jsum"' in jp.text
     assert "Category summary" in jp.text
+    # performance card (2026-11-03): the second lens, right below it
+    assert 'id="jperf"' in jp.text
+    assert "Performance" in jp.text
+
+
+def test_eval_run_list_and_detail_carry_performance(client):
+    """Performance lens on the runs list + run detail (2026-11-03).
+
+    The seed stores latency_ms=1.0, completion_tokens=2 per row -> total
+    1.0ms, median 1.0ms, output rate 2 tok / 0.001s = 2000 tok/s."""
+    tc, _ = client
+    rows = tc.get("/api/eval-runs").json()
+    assert rows, "expected seeded runs"
+    for r in rows:
+        assert r["total_latency_ms"] == 1.0
+        assert r["median_item_latency_ms"] == 1.0
+        assert r["output_tps"] == 2000.0
+    detail = tc.get("/api/eval-runs/1").json()
+    perf = detail["performance"]
+    assert perf["items"] == 1
+    assert perf["turns"] == 1
+    assert perf["median_item_latency_ms"] == 1.0
+    assert perf["total_latency_ms"] == 1.0
+    assert perf["output_tps"] == 2000.0
+    assert perf["total_completion_tokens"] == 2
+
+
+def test_judgment_rows_and_drilldown_carry_latencies(client):
+    """SxS rows + single-judgment drill-down expose both sides' stored
+    latency + completion tokens (2026-11-03, item-grain perf lens)."""
+    tc, db_path = client
+    conn = dbmod.connect(db_path)
+    cur = conn.execute(
+        "INSERT INTO judgments (eval_result_a, eval_result_b, judge_model, "
+        "judge_template_version, winner, confidence, created_at) "
+        "VALUES (1, 2, 'judge-x', 'blind-pair-v1', 'a', 0.9, 'now')")
+    jid = cur.lastrowid
+    conn.commit()
+    conn.close()
+    rows = tc.get(
+        "/api/judgments/pair?suite_id=1&model_a=model-a&model_b=model-b"
+    ).json()
+    assert rows, "expected the seeded judgment row"
+    row = rows[0]
+    assert row["latency_a_ms"] == 1.0
+    assert row["latency_b_ms"] == 1.0
+    assert row["completion_a"] == 2
+    assert row["completion_b"] == 2
+    drill = tc.get(f"/api/judgments/{jid}").json()
+    assert drill["latency_a_ms"] == 1.0
+    assert drill["latency_b_ms"] == 1.0
+    assert drill["completion_a"] == 2
+    assert drill["completion_b"] == 2

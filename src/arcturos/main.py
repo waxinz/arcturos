@@ -548,7 +548,7 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
         to /evals/runs/{id}; selecting two runs judges them against each
         other (eval_run_ids-scoped judge job).
         """
-        return fetch_all(db, """
+        rows = fetch_all(db, """
             SELECT r.id, r.suite_id, r.model_fingerprint, r.name, r.status,
                    r.created_at, s.name AS suite_name, s.version AS suite_version,
                    (SELECT COUNT(*) FROM eval_results er
@@ -556,6 +556,17 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
             FROM eval_runs r JOIN eval_suites s ON s.id = r.suite_id
             ORDER BY r.id DESC
         """)
+        # performance lens (2026-11-03): attach per-run aggregates in
+        # place — total item time, median per item, output tok/s (None
+        # when the server reported no usage). Runs with no rows keep
+        # None fields — an absent metric stays absent.
+        perf_index = reports.run_perf_index(db)
+        for row in rows:
+            perf = perf_index.get(row["id"], {})
+            row["total_latency_ms"] = perf.get("total_latency_ms")
+            row["median_item_latency_ms"] = perf.get("median_item_latency_ms")
+            row["output_tps"] = perf.get("output_tps")
+        return rows
 
     @app.get("/api/eval-runs/{run_id}")
     def get_eval_run(run_id: int, db=Depends(get_db)):
@@ -571,7 +582,11 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
             SELECT id, item_id, output, prompt_tokens, completion_tokens,
                    latency_ms, created_at, eval_run_id
             FROM eval_results WHERE eval_run_id = ? ORDER BY id""", (run_id,))
-        return {"run": run, "results": results}
+        # performance lens (2026-11-03): the run's rows fold to per-item
+        # perf (multi-turn turns sum into the item) — the run detail page
+        # renders this as a summary strip above the per-row table.
+        performance = reports.perf_stats(reports.fold_item_perf(results))
+        return {"run": run, "results": results, "performance": performance}
 
     # ------------------------------------------------- judgment SxS view --
     @app.get("/api/judgments/pair")
@@ -585,6 +600,10 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
         detail page renders the SxS diff. `fingerprint_a` names whose
         response is 'a' in that row — winner 'a' always means
         fingerprint_a's response won, whatever order the caller passed.
+        Each row also carries both sides' stored latency_ms +
+        completion_tokens (2026-11-03) so the SxS cards show how fast
+        each side produced its answer — the performance lens at item
+        grain.
         ``eval_run_a`` + ``eval_run_b`` (2026-10-25, both required to
         fire): scope the rows to that replay-run pair (either
         orientation) — the PK-anchored pair page passes the anchor
@@ -601,7 +620,10 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
                    ra.model_fingerprint AS fingerprint_a,
                    rb.model_fingerprint AS fingerprint_b,
                    ra.output AS output_a, rb.output AS output_b,
-                   ra.id AS result_a_id, rb.id AS result_b_id
+                   ra.id AS result_a_id, rb.id AS result_b_id,
+                   ra.latency_ms AS latency_a_ms, rb.latency_ms AS latency_b_ms,
+                   ra.completion_tokens AS completion_a,
+                   rb.completion_tokens AS completion_b
             FROM judgments j
             JOIN eval_results ra ON ra.id = j.eval_result_a
             JOIN eval_results rb ON rb.id = j.eval_result_b
@@ -674,9 +696,10 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
         """One judgment by its own primary key — the drill-down surface.
 
         The judgment's id is the only address: the response joins BOTH
-        stored results (outputs, fingerprints, item, suite, run ids) so
-        the detail page renders the full SxS without the caller knowing
-        any foreign key. 404 for unknown ids.
+        stored results (outputs, fingerprints, item, suite, run ids, and
+        both sides' latency + completion tokens — 2026-11-03) so the
+        detail page renders the full SxS without the caller knowing any
+        foreign key. 404 for unknown ids.
         """
         row = fetch_one(db, """
             SELECT j.id, j.judge_model,
@@ -690,6 +713,9 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
                    ra.model_fingerprint AS fingerprint_a,
                    rb.model_fingerprint AS fingerprint_b,
                    ra.output AS output_a, rb.output AS output_b,
+                   ra.latency_ms AS latency_a_ms, rb.latency_ms AS latency_b_ms,
+                   ra.completion_tokens AS completion_a,
+                   rb.completion_tokens AS completion_b,
                    ra.eval_run_id AS run_a_id, rb.eval_run_id AS run_b_id
             FROM judgments j
             JOIN eval_results ra ON ra.id = j.eval_result_a

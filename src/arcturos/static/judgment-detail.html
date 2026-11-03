@@ -70,10 +70,15 @@
     .empty { color: var(--text-muted); padding: 2rem 0; }
     .tie-tag { color: var(--text-muted); font-weight: 800; font-size: .74rem;
                text-transform: uppercase; letter-spacing: .06em; }
+    .lat-tag { color: var(--text-muted); font-weight: 400; font-size: .72rem;
+               font-variant-numeric: tabular-nums; }
+    /* performance card (2026-11-03): the second eval lens, mirrors jsum */
+    .jperf-verdict { margin: 0 0 .55rem; font-size: .86rem; }
     /* category summary card — leads the page, SxS details stay below */
     .jsum { background: var(--surface); border: 1px solid var(--border);
             border-radius: 6px; padding: .7rem .8rem; margin: 0 0 1.1rem; }
     #jsum[hidden] { display: none; }
+    #jperf[hidden] { display: none; }
     .jsum h3 { margin: 0 0 .1rem; font-size: .9rem; }
     .jsum-cap { margin: 0 0 .55rem; color: var(--text-muted); font-size: .73rem; }
     .jsum .table-wrap { overflow-x: auto; }
@@ -121,6 +126,16 @@
       <div class="table-wrap"></div>
       <div class="jsum-tiles"></div>
     </section>
+    <section id="jperf" class="jsum" hidden>
+      <h3>Performance</h3>
+      <p class="jsum-cap">Same judged items, the second dimension — how fast each
+        side completed the work. Client-side wall time per item (includes server
+        queueing); tok/s only where the server reported token usage;
+        parity = within 1.1×.</p>
+      <p class="jperf-verdict" id="jperf-verdict"></p>
+      <div class="table-wrap"></div>
+      <div class="jsum-tiles"></div>
+    </section>
     <div class="meta" id="meta"></div>
     <div id="items"><p class="empty">Loading…</p></div>
     <p id="status" class="status"></p>
@@ -140,10 +155,16 @@ function $(id) { return document.getElementById(id); }
     function respCard(row, which) {
       const fp = which === 'a' ? row.fingerprint_a : row.fingerprint_b;
       const out = which === 'a' ? row.output_a : row.output_b;
+      const lat = which === 'a' ? row.latency_a_ms : row.latency_b_ms;
       const div = document.createElement('div');
       div.className = 'resp' + (row.winner === which ? ' winner' : '');
-      div.innerHTML = '<h4><span></span><span class="tag"></span></h4><pre></pre>';
+      div.innerHTML = '<h4><span></span><span class="lat-tag"></span>' +
+        '<span class="tag"></span></h4><pre></pre>';
       div.querySelector('h4 span').textContent = fp;
+      // item-grain performance lens (2026-11-03): how fast THIS side
+      // produced its answer — next to the judge's preference tag
+      div.querySelector('.lat-tag').textContent =
+        lat != null ? ' · ' + fmtSec(lat) : '';
       div.querySelector('.tag').innerHTML = winnerTag(row, which);
       div.querySelector('pre').textContent =
         (out === null || out === undefined || out === '')
@@ -335,6 +356,97 @@ function $(id) { return document.getElementById(id); }
       card.hidden = false;
     }
 
+    // ---- performance card (2026-11-03): the second eval lens ----------
+    // Same judged items, opposite question: not "who was preferred" but
+    // "who finished the work faster". Data = sum.performance from the
+    // same pair-summary fetch (per-side medians over the judged result
+    // rows), so the speed verdict ALWAYS describes the same work the
+    // quality card scores. Follows the public-leaderboard pattern
+    // (Artificial Analysis / ML.ENERGY): quality and speed stay separate
+    // dimensions, never folded into one number.
+    function fmtSec(ms) {
+      if (ms == null) return '—';
+      const s = ms / 1000;
+      return (s >= 10 ? String(Math.round(s)) : s.toFixed(1)) + 's';
+    }
+    function fmtDur(ms) {
+      if (ms == null) return '—';
+      let s = Math.round(ms / 1000);
+      if (s < 60) return s + 's';
+      const m = Math.floor(s / 60); s %= 60;
+      if (m < 60) return m + 'm' + String(s).padStart(2, '0') + 's';
+      return Math.floor(m / 60) + 'h' + String(m % 60).padStart(2, '0') + 'm';
+    }
+    function perfCell(stats) {
+      const sub = 'total ' + fmtDur(stats.total_latency_ms) +
+        (stats.output_tps != null ? ' · ' + stats.output_tps + ' tok/s' : '');
+      return '<span class="score">' + esc(fmtSec(stats.median_item_latency_ms)) +
+        '</span><span class="sub">' + esc(sub) + '</span>';
+    }
+    function fasterLabel(spd, ma, mb) {
+      if (spd && spd.band === 'clear' && spd.faster) {
+        return (spd.faster === 'a' ? esc(ma) : esc(mb)) + ' ' + spd.ratio + '×';
+      }
+      return spd && spd.band === 'parity' ? 'even' : '—';
+    }
+    function renderPerf(perf, sum) {
+      const card = $('jperf');
+      if (!perf || !perf.a || !perf.a.items) { card.hidden = true; return; }
+      const fa = String(sum.model_a || ''), fb = String(sum.model_b || '');
+      const ma = shortFp(fa), mb = shortFp(fb);
+      const spd = perf.speed || {};
+      let verdict;
+      if (spd.band === 'clear' && spd.faster) {
+        const fmed = spd.faster === 'a'
+          ? perf.a.median_item_latency_ms : perf.b.median_item_latency_ms;
+        const smed = spd.faster === 'a'
+          ? perf.b.median_item_latency_ms : perf.a.median_item_latency_ms;
+        verdict = 'Speed: <b>' + esc(spd.faster === 'a' ? fa : fb) +
+          '</b> completed the judged items ' + spd.ratio + '× faster — ' +
+          'median per item ' + esc(fmtSec(fmed)) + ' vs ' + esc(fmtSec(smed));
+      } else if (spd.band === 'parity') {
+        verdict = 'Speed: even — median per item ' +
+          esc(fmtSec(perf.a.median_item_latency_ms)) + ' vs ' +
+          esc(fmtSec(perf.b.median_item_latency_ms)) + ' (' + spd.ratio +
+          '× apart, within parity)';
+      } else {
+        verdict = 'Speed: not comparable — one side has no stored latencies';
+      }
+      $('jperf-verdict').innerHTML = verdict;
+      const rows = [{key: 'overall', a: perf.a, b: perf.b, speed: spd}]
+        .concat(Object.entries(perf.by_dimension || {})
+          .map(([k, v]) => ({key: k, a: v.a, b: v.b, speed: v.speed})));
+      let trs = '', tiles = '';
+      for (const r of rows) {
+        const isTotal = r.key === 'overall';
+        const fa_ = r.speed && r.speed.faster === 'a';
+        const fb_ = r.speed && r.speed.faster === 'b';
+        trs += '<tr' + (isTotal ? ' class="total"' : '') + '>' +
+          '<td>' + esc(r.key) + '</td>' +
+          '<td' + (fa_ ? ' class="winner"' : '') + '>' + perfCell(r.a) + '</td>' +
+          '<td' + (fb_ ? ' class="winner"' : '') + '>' + perfCell(r.b) + '</td>' +
+          '<td>' + fasterLabel(r.speed, ma, mb) + '</td></tr>';
+        tiles += '<div class="jsum-tile">' +
+          '<div class="t-name">' + esc(r.key) + '</div>' +
+          '<div class="t-line">' +
+            '<span class="' + (fa_ ? 't-win' : 't-side') + '">' + esc(ma) +
+              ': ' + esc(fmtSec(r.a.median_item_latency_ms)) + '</span>' +
+            '<span class="t-vs">vs</span>' +
+            '<span class="' + (fb_ ? 't-win' : 't-side') + '">' + esc(mb) +
+              ': ' + esc(fmtSec(r.b.median_item_latency_ms)) + '</span>' +
+          '</div>' +
+          '<div class="t-sub">' + esc(fasterLabel(r.speed, ma, mb)) +
+            ' · totals ' + esc(fmtDur(r.a.total_latency_ms)) + ' / ' +
+            esc(fmtDur(r.b.total_latency_ms)) + '</div></div>';
+      }
+      card.querySelector('.table-wrap').innerHTML =
+        '<table><thead><tr><th>Category</th><th>' + esc(fa) + '</th><th>' +
+        esc(fb) + '</th><th>Faster</th></tr></thead><tbody>' +
+        trs + '</tbody></table>';
+      card.querySelector('.jsum-tiles').innerHTML = tiles;
+      card.hidden = false;
+    }
+
     function verdictCard(row) {
       const div = document.createElement('div');
       div.className = 'verdict';
@@ -483,9 +595,12 @@ function $(id) { return document.getElementById(id); }
           }
         } catch (err) { /* prompt panels degrade gracefully */ }
         if (sumRes && sumRes.ok) {
-          renderSummary(await sumRes.json());
+          const sum = await sumRes.json();
+          renderSummary(sum);
+          renderPerf(sum.performance, sum);
         } else {
           $('jsum').hidden = true;
+          $('jperf').hidden = true;
         }
         if (!rows.length) {
           $('items').innerHTML = '<p class="empty">No judgments for this pair yet. ' +

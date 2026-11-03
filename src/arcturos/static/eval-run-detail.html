@@ -31,6 +31,7 @@
                  border: 1px solid var(--border); border-radius: 5px;
                  color: var(--text); text-decoration: none; background: var(--surface); }
     .status { color: var(--text-muted); font-size: .85rem; margin-top: .75rem; }
+    .lat-note { color: var(--text-muted); font-weight: 400; font-size: .78rem; }
   </style>
   <script src="/static/app-time.js"></script>
   <script src="/static/theme.js"></script>
@@ -73,6 +74,20 @@ function $(id) { return document.getElementById(id); }
       return m ? 't' + m[1] : '1';
     }
 
+    function fmtSec(ms) {
+      if (ms == null) return '—';
+      const s = ms / 1000;
+      return (s >= 10 ? String(Math.round(s)) : s.toFixed(1)) + 's';
+    }
+    function fmtDur(ms) {
+      if (ms == null) return '—';
+      let s = Math.round(ms / 1000);
+      if (s < 60) return s + 's';
+      const m = Math.floor(s / 60); s %= 60;
+      if (m < 60) return m + 'm' + String(s).padStart(2, '0') + 's';
+      return Math.floor(m / 60) + 'h' + String(m % 60).padStart(2, '0') + 'm';
+    }
+
     async function load() {
       const runId = location.pathname.split('/').filter(Boolean).pop();
       try {
@@ -81,13 +96,31 @@ function $(id) { return document.getElementById(id); }
         const data = await res.json();
         const run = data.run;
         $('sub').textContent = 'Run #' + run.id + ' — ' + (run.name || '(unnamed)');
+        // Performance lens (2026-11-03): the run's own speed summary —
+        // total item time, median/mean per item, output tok/s where the
+        // server reported usage. Same math as the report lens
+        // (multi-turn turns fold into the item server-side).
+        const perf = data.performance;
+        let perfHtml = '';
+        if (perf && perf.items) {
+          perfHtml =
+            '<span><b>Items</b> ' + perf.items +
+              (perf.turns > perf.items ? ' <span class="lat-note">(' +
+                perf.turns + ' turns)</span>' : '') + '</span>' +
+            '<span><b>Total item time</b> ' + fmtDur(perf.total_latency_ms) + '</span>' +
+            '<span><b>Median / item</b> ' + fmtSec(perf.median_item_latency_ms) + '</span>' +
+            '<span><b>Mean / item</b> ' + fmtSec(perf.mean_item_latency_ms) + '</span>' +
+            '<span><b>Output rate</b> ' + (perf.output_tps != null
+              ? perf.output_tps + ' tok/s' : 'n/a — no usage reported') + '</span>';
+        }
         $('meta').innerHTML =
           '<span><b>Suite</b> <a href="/evals">' + run.suite_name + ' ' +
             run.suite_version + ' (#' + run.suite_id + ')</a></span>' +
           '<span><b>Model</b> ' + run.model_fingerprint + '</span>' +
           '<span><b>Status</b> <span class="badge ' + run.status + '">' +
             run.status + '</span></span>' +
-          '<span><b>Created</b> ' + window.fmtLocalTime(run.created_at) + '</span>';
+          '<span><b>Created</b> ' + window.fmtLocalTime(run.created_at) + '</span>' +
+          perfHtml;
         $('actions').innerHTML =
           '<a href="/evals">← All runs</a>';
         const tbody = $('rows');
