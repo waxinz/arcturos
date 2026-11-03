@@ -90,6 +90,9 @@
     .jsum th.num, .jsum td.num { text-align: right; }
     .jsum .score { font-weight: 700; }
     .jsum td.winner .score { color: var(--accent); }
+    /* Faster column carries the FULL fingerprint — wrap at the
+       family:variant boundary (<wbr>) rather than truncating */
+    .jsum td.fast { word-break: break-word; }
     .jsum .sub { display: block; color: var(--text-muted); font-size: .7rem;
                  font-weight: 400; }
     .jsum tbody tr.total td { font-weight: 700; }
@@ -103,7 +106,8 @@
                          font-size: .76rem; }
     .jsum-tile .t-vs { color: var(--text-muted); }
     .jsum-tile .t-win { color: var(--accent); font-weight: 700; }
-    .jsum-tile .t-sub { color: var(--text-muted); font-size: .7rem; margin-top: .15rem; }
+    .jsum-tile .t-sub { color: var(--text-muted); font-size: .7rem; margin-top: .15rem;
+                        word-break: break-word; }
     @media (max-width: 720px) {
       .jsum .table-wrap { display: none; }   /* desktop table stays ≥721px */
       .jsum-tiles { display: grid; }
@@ -384,9 +388,16 @@ function $(id) { return document.getElementById(id); }
       return '<span class="score">' + esc(fmtSec(stats.median_item_latency_ms)) +
         '</span><span class="sub">' + esc(sub) + '</span>';
     }
-    function fasterLabel(spd, ma, mb) {
+    function breakable(fp) {
+      // esc + zero-width break after the colon — long fingerprints wrap
+      // at the family:variant boundary instead of overflowing
+      return esc(String(fp || '')).replace(/:/g, ':<wbr>');
+    }
+    function fasterLabel(spd, fa, fb) {
       if (spd && spd.band === 'clear' && spd.faster) {
-        return (spd.faster === 'a' ? esc(ma) : esc(mb)) + ' ' + spd.ratio + '×';
+        // FULL fingerprint (owner fix 2026-11-03: shortFp's "…" hid the
+        // model name in the Faster column)
+        return breakable(spd.faster === 'a' ? fa : fb) + ' ' + spd.ratio + '×';
       }
       return spd && spd.band === 'parity' ? 'even' : '—';
     }
@@ -410,7 +421,6 @@ function $(id) { return document.getElementById(id); }
       const card = $('jperf');
       if (!perf || !perf.a || !perf.a.items) { card.hidden = true; return; }
       const fa = String(sum.model_a || ''), fb = String(sum.model_b || '');
-      const ma = shortFp(fa), mb = shortFp(fb);
       const spd = perf.speed || {};
       $('jperf-verdict').innerHTML = 'Speed: ' + speedSentence(spd, perf.a, perf.b, fa, fb);
       // quality-tied cut: on items where the judge preferred neither side,
@@ -436,17 +446,17 @@ function $(id) { return document.getElementById(id); }
           '<td>' + esc(r.key) + '</td>' +
           '<td' + (fa_ ? ' class="winner"' : '') + '>' + perfCell(r.a) + '</td>' +
           '<td' + (fb_ ? ' class="winner"' : '') + '>' + perfCell(r.b) + '</td>' +
-          '<td>' + fasterLabel(r.speed, ma, mb) + '</td></tr>';
+          '<td class="fast">' + fasterLabel(r.speed, fa, fb) + '</td></tr>';
         tiles += '<div class="jsum-tile">' +
           '<div class="t-name">' + esc(r.key) + '</div>' +
           '<div class="t-line">' +
-            '<span class="' + (fa_ ? 't-win' : 't-side') + '">' + esc(ma) +
+            '<span class="' + (fa_ ? 't-win' : 't-side') + '">' + breakable(fa) +
               ': ' + esc(fmtSec(r.a.median_item_latency_ms)) + '</span>' +
             '<span class="t-vs">vs</span>' +
-            '<span class="' + (fb_ ? 't-win' : 't-side') + '">' + esc(mb) +
+            '<span class="' + (fb_ ? 't-win' : 't-side') + '">' + breakable(fb) +
               ': ' + esc(fmtSec(r.b.median_item_latency_ms)) + '</span>' +
           '</div>' +
-          '<div class="t-sub">' + esc(fasterLabel(r.speed, ma, mb)) +
+          '<div class="t-sub">' + fasterLabel(r.speed, fa, fb) +
             ' · totals ' + esc(fmtDur(r.a.total_latency_ms)) + ' / ' +
             esc(fmtDur(r.b.total_latency_ms)) + '</div></div>';
       }
