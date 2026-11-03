@@ -133,6 +133,7 @@
         queueing); tok/s only where the server reported token usage;
         parity = within 1.1×.</p>
       <p class="jperf-verdict" id="jperf-verdict"></p>
+      <p class="jperf-verdict" id="jperf-tied" hidden></p>
       <div class="table-wrap"></div>
       <div class="jsum-tiles"></div>
     </section>
@@ -389,30 +390,40 @@ function $(id) { return document.getElementById(id); }
       }
       return spd && spd.band === 'parity' ? 'even' : '—';
     }
+    function speedSentence(spd, aS, bS, fa, fb) {
+      if (spd && spd.band === 'clear' && spd.faster) {
+        const fmed = spd.faster === 'a' ? aS.median_item_latency_ms : bS.median_item_latency_ms;
+        const smed = spd.faster === 'a' ? bS.median_item_latency_ms : aS.median_item_latency_ms;
+        return '<b>' + esc(spd.faster === 'a' ? fa : fb) +
+          '</b> completed the judged items ' + spd.ratio + '× faster — ' +
+          'median per item ' + esc(fmtSec(fmed)) + ' vs ' + esc(fmtSec(smed));
+      }
+      if (spd && spd.band === 'parity') {
+        return 'even — median per item ' +
+          esc(fmtSec(aS.median_item_latency_ms)) + ' vs ' +
+          esc(fmtSec(bS.median_item_latency_ms)) + ' (' + spd.ratio +
+          '× apart, within parity)';
+      }
+      return 'not comparable — one side has no stored latencies';
+    }
     function renderPerf(perf, sum) {
       const card = $('jperf');
       if (!perf || !perf.a || !perf.a.items) { card.hidden = true; return; }
       const fa = String(sum.model_a || ''), fb = String(sum.model_b || '');
       const ma = shortFp(fa), mb = shortFp(fb);
       const spd = perf.speed || {};
-      let verdict;
-      if (spd.band === 'clear' && spd.faster) {
-        const fmed = spd.faster === 'a'
-          ? perf.a.median_item_latency_ms : perf.b.median_item_latency_ms;
-        const smed = spd.faster === 'a'
-          ? perf.b.median_item_latency_ms : perf.a.median_item_latency_ms;
-        verdict = 'Speed: <b>' + esc(spd.faster === 'a' ? fa : fb) +
-          '</b> completed the judged items ' + spd.ratio + '× faster — ' +
-          'median per item ' + esc(fmtSec(fmed)) + ' vs ' + esc(fmtSec(smed));
-      } else if (spd.band === 'parity') {
-        verdict = 'Speed: even — median per item ' +
-          esc(fmtSec(perf.a.median_item_latency_ms)) + ' vs ' +
-          esc(fmtSec(perf.b.median_item_latency_ms)) + ' (' + spd.ratio +
-          '× apart, within parity)';
+      $('jperf-verdict').innerHTML = 'Speed: ' + speedSentence(spd, perf.a, perf.b, fa, fb);
+      // quality-tied cut: on items where the judge preferred neither side,
+      // wall time alone decides the production choice
+      const tiedEl = $('jperf-tied');
+      if (perf.tied && perf.tied.a && perf.tied.a.items) {
+        tiedEl.innerHTML = 'Quality-tied items (' + perf.tied.items +
+          ', judge preferred neither): Speed: ' +
+          speedSentence(perf.tied.speed || {}, perf.tied.a, perf.tied.b, fa, fb);
+        tiedEl.hidden = false;
       } else {
-        verdict = 'Speed: not comparable — one side has no stored latencies';
+        tiedEl.hidden = true;
       }
-      $('jperf-verdict').innerHTML = verdict;
       const rows = [{key: 'overall', a: perf.a, b: perf.b, speed: spd}]
         .concat(Object.entries(perf.by_dimension || {})
           .map(([k, v]) => ({key: k, a: v.a, b: v.b, speed: v.speed})));

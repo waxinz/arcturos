@@ -582,7 +582,12 @@ def pair_summary(db: sqlite3.Connection, suite_id: int, model_a: str,
     verdict ('parity' within 1.1x names no side), per-dimension medians,
     and the replay-run ids each side's rows came from. Orientation
     follows the caller: performance['a'] is ALWAYS the caller's
-    model_a, matching the win-rate columns above it.
+    model_a, matching the win-rate columns above it. ``performance
+    ['tied']`` (2026-11-03) cuts to the items where preference has NO
+    verdict — every judged turn of the item resolved to a draw (tie or
+    both_bad) — because on those prompts wall time alone decides the
+    production choice; None when no item is fully tied (absent stays
+    absent, never zero).
     """
     sql = """SELECT j.winner, j.judge_model, j.verdict_detail,
                     j.judge_template_version AS template, j.created_at,
@@ -660,6 +665,11 @@ def pair_summary(db: sqlite3.Connection, suite_id: int, model_a: str,
     perf_dim_b: dict[str, list] = {}
     seen_a: set[int] = set()
     seen_b: set[int] = set()
+    # quality-tied lens: an ITEM is "quality-tied" when EVERY judged
+    # turn-pair of the item resolved to a draw (tie or both_bad) — the
+    # prompts where preference has no verdict, so speed alone decides
+    judged_turns: dict[str, int] = {}
+    tied_turns: dict[str, int] = {}
     runs_a: set[int] = set()
     runs_b: set[int] = set()
     for _, (_, pair_rows) in latest_gen.items():
@@ -687,6 +697,10 @@ def pair_summary(db: sqlite3.Connection, suite_id: int, model_a: str,
                                                 "both_bad": 0})
         bucket[bucket_key] += 1
         overall[bucket_key] += 1
+        base_item = r["item_id"].split("#")[0]
+        judged_turns[base_item] = judged_turns.get(base_item, 0) + 1
+        if bucket_key in ("tie", "both_bad"):
+            tied_turns[base_item] = tied_turns.get(base_item, 0) + 1
         judges.add(r["judge_model"])
         templates.add(r["template"])
         # performance lens: caller-oriented synthetic rows, deduped by
@@ -773,6 +787,25 @@ def pair_summary(db: sqlite3.Connection, suite_id: int, model_a: str,
         "runs_a": sorted(runs_a),
         "runs_b": sorted(runs_b),
     }
+    # quality-tied cut: among items where the judge preferred NEITHER side
+    # (every judged turn a draw), wall time is the deciding metric — the
+    # production decision the tie rate alone cannot make
+    tied_items = {base for base, judged in judged_turns.items()
+                  if judged and tied_turns.get(base, 0) == judged}
+    if tied_items:
+        tied_a = perf_stats(fold_item_perf(
+            [r for r in perf_syn_a if r["item_id"].split("#")[0] in tied_items]))
+        tied_b = perf_stats(fold_item_perf(
+            [r for r in perf_syn_b if r["item_id"].split("#")[0] in tied_items]))
+        performance["tied"] = {
+            "items": len(tied_items),
+            "a": tied_a,
+            "b": tied_b,
+            "speed": speed_comparison(tied_a["median_item_latency_ms"],
+                                      tied_b["median_item_latency_ms"]),
+        }
+    else:
+        performance["tied"] = None
     return {
         "suite_id": suite_id,
         "model_a": model_a,

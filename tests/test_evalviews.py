@@ -122,6 +122,10 @@ def test_pair_page_has_performance_card(client):
     assert "Performance" in text
     assert "parity = within 1.1" in text
     assert "tok/s only where the server reported token usage" in text
+    # quality-tied cut line: on items where the judge preferred neither
+    # side, wall time alone decides the production choice
+    assert 'id="jperf-tied"' in text
+    assert "Quality-tied items" in text
 
 
 def test_run_detail_and_judgment_pages_pin_performance(client):

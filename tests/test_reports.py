@@ -777,6 +777,73 @@ def test_pair_summary_performance_multiturn_folds(db):
     assert perf["b"]["median_item_latency_ms"] == 7000.0
 
 
+def test_pair_summary_performance_tied_items_cut(db):
+    """The quality-tied cut: an item counts ONLY when every judged turn
+    resolved to a draw — those are the prompts where speed alone decides
+    the production choice. Partially-tied multi-turn items stay out."""
+    cur = db.execute(
+        "INSERT INTO eval_suites (name, version) VALUES ('perf-tie', 'v1')")
+    suite_id = cur.lastrowid
+    lats = {
+        "model-a": {"p1#t1": 4000.0, "p1#t2": 10000.0, "p2": 20000.0,
+                    "p3": 30000.0, "p4#t1": 1000.0, "p4#t2": 2000.0},
+        "model-b": {"p1#t1": 3000.0, "p1#t2": 5000.0, "p2": 6000.0,
+                    "p3": 7000.0, "p4#t1": 900.0, "p4#t2": 1500.0},
+    }
+    rids: dict[str, dict[str, int]] = {}
+    for fp, items in lats.items():
+        cur = db.execute(
+            "INSERT INTO eval_runs (suite_id, model_fingerprint, name, "
+            "status, created_at) VALUES (?, ?, ?, 'complete', 'now')",
+            (suite_id, fp, f"run {fp}"))
+        run_id = cur.lastrowid
+        rids[fp] = {}
+        for item_id, lat in items.items():
+            cur = db.execute(
+                "INSERT INTO eval_results (suite_id, model_fingerprint, "
+                "item_id, output, prompt_tokens, completion_tokens, "
+                "latency_ms, eval_run_id, created_at) "
+                "VALUES (?, ?, ?, ?, 10, 20, ?, ?, 'now')",
+                (suite_id, fp, item_id, f"{fp} says", lat, run_id))
+            rids[fp][item_id] = cur.lastrowid
+    db.commit()
+    # p1: both turns tie (fully tied) · p3: single-turn tie (tied)
+    # p2: decisive a-win · p4: one tie + one decisive b-win (partial -> out)
+    seed_judgment(db, rids["model-a"]["p1#t1"], rids["model-b"]["p1#t1"], "tie")
+    seed_judgment(db, rids["model-a"]["p1#t2"], rids["model-b"]["p1#t2"], "tie")
+    seed_judgment(db, rids["model-a"]["p2"], rids["model-b"]["p2"], "a")
+    seed_judgment(db, rids["model-a"]["p3"], rids["model-b"]["p3"], "tie")
+    seed_judgment(db, rids["model-a"]["p4#t1"], rids["model-b"]["p4#t1"], "tie")
+    seed_judgment(db, rids["model-a"]["p4#t2"], rids["model-b"]["p4#t2"], "b")
+    s = reports.pair_summary(db, suite_id, "model-a", "model-b")
+    perf = s["performance"]
+    tied = perf["tied"]
+    assert tied["items"] == 2
+    # tied items = p1 (a: 4s+10s=14s, b: 3s+5s=8s) + p3 (a: 30s, b: 7s)
+    assert tied["a"]["median_item_latency_ms"] == 22000.0
+    assert tied["b"]["median_item_latency_ms"] == 7500.0
+    assert tied["speed"] == {"faster": "b", "ratio": 2.93, "band": "clear"}
+    # overall lens unchanged by the tied cut — all four items
+    # (p1=14s, p2=20s, p3=30s, p4=1s+2s=3s -> median 17s)
+    assert perf["a"]["median_item_latency_ms"] == 17000.0
+    # orientation follows the caller, like every perf block
+    swapped = reports.pair_summary(db, suite_id, "model-b", "model-a")
+    st = swapped["performance"]["tied"]
+    assert st["items"] == 2
+    assert st["speed"]["faster"] == "a"
+
+
+def test_pair_summary_performance_tied_none_when_decisive(db):
+    """No draws anywhere -> the tied cut stays ABSENT (None), never an
+    empty fabricated block."""
+    suite_id, _, rids = seed_perf_suite(db)
+    for j in range(3):
+        seed_judgment(db, rids["model-a"][j], rids["model-b"][j], "a")
+    s = reports.pair_summary(db, suite_id, "model-a", "model-b")
+    assert s["overall"]["counts"]["tie"] == 0
+    assert s["performance"]["tied"] is None
+
+
 def test_pair_summary_empty_pair_performance_honest(db):
     suite_id, _, _ = seed_perf_suite(db)
     s = reports.pair_summary(db, suite_id, "model-a", "model-b")
