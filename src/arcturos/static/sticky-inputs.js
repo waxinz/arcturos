@@ -50,6 +50,21 @@
     else storageSet(PREFIX + el.id, el.value);
   }
 
+  // A field with a stored value OWNS it — anything that writes a shipped
+  // default programmatically must check this first (see bench-kickoff's
+  // ui-defaults fetch, which used to clobber Server URL and Model).
+  function savedValue(id) {
+    var v = storageGet(PREFIX + id);
+    return (v === null || v === '') ? null : v;
+  }
+
+  // Public API for page scripts that prefill defaults asynchronously.
+  window.ArcturosSticky = {
+    PREFIX: PREFIX,
+    saved: savedValue,
+    has: function (id) { return savedValue(id) !== null; }
+  };
+
   function restoreAll() {
     var fields = stickyFields();
     for (var i = 0; i < fields.length; i++) {

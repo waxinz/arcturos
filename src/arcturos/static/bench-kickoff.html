@@ -113,9 +113,22 @@
       // Defaults flow from arcturos.toml / arcturos.local.toml (config.py
       // exposes /api/config/ui-defaults). Keep the form usable if the
       // endpoint is unreachable: fall back to neutral placeholders.
+      // STICKY WINS: this fetch resolves asynchronously — usually AFTER
+      // sticky-inputs.js restored the operator's last-typed values — so a
+      // blind assignment clobbered exactly the two fields the config has
+      // defaults for (Server URL, Model). Ask the sticky store first; a
+      // stored value shadows the config default, and clearing the box
+      // un-sticks it so the config default comes back.
+      const stickyStore = window.ArcturosSticky;
+      function prefillDefault(id, value) {
+        if (!value) return;
+        if (stickyStore && stickyStore.has(id)) return;
+        const el = document.getElementById(id);
+        if (el) el.value = value;
+      }
       fetch('/api/config/ui-defaults').then(r => r.json()).then(cfg => {
-        if (cfg.server_url) document.getElementById('bench-url').value = cfg.server_url;
-        if (cfg.model) document.getElementById('bench-model').value = cfg.model;
+        prefillDefault('bench-url', cfg.server_url);
+        prefillDefault('bench-model', cfg.model);
       }).catch(() => {});
     </script>
   </head>

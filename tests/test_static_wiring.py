@@ -50,6 +50,25 @@ def test_every_page_includes_sticky_inputs(client):
         assert "sticky-inputs.js" in html, f"{name} is missing sticky-inputs.js"
 
 
+def test_sticky_store_consulted_before_config_prefill(client):
+    """Server URL / Model stopped remembering (2026-11-10 bug report):
+    the async /api/config/ui-defaults fetch in the kick-off page resolved
+    AFTER the DOMContentLoaded restore and clobbered exactly the two
+    fields the config ships defaults for. The page must ask the sticky
+    store first, and sticky-inputs.js must expose that store."""
+    sticky_js = client.get("/static/sticky-inputs.js").text
+    assert "window.ArcturosSticky" in sticky_js     # public API for pages
+    assert "saved:" in sticky_js
+    page = (Path(STATIC_DIR) / "bench-kickoff.html").read_text()
+    assert "ArcturosSticky" in page
+    # the prefill helper must bail out when a sticky value exists
+    assert "stickyStore.has(" in page
+    # and the blind one-line assignments that overwrote typed values
+    # must be gone
+    assert "document.getElementById('bench-url').value = cfg.server_url" not in page
+    assert "document.getElementById('bench-model').value = cfg.model" not in page
+
+
 def test_nav_run_first_under_evals():
     nav = (Path(STATIC_DIR) / "partials" / "nav.html").read_text()
     sub = re.search(r'<nav class="topnav-sub">(.*?)</nav>', nav, re.S)
