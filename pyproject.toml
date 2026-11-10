@@ -1,21 +1,52 @@
 [build-system]
-requires = ["setuptools>=68"]
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "arcturos"
-version = "0.7.0"
-description = "Local-first LLM benchmarking & evaluation suite (dashboard skeleton)"
+version = "0.7.1"
+description = "Local-first LLM benchmarking & evaluation dashboard"
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
 requires-python = ">=3.10"
 dependencies = [
     "fastapi>=0.115",
     "uvicorn>=0.30",
     "pydantic>=2.8",
+    # httpx is a RUNTIME dependency: bench.py, judging.py, ops.py and
+    # preflight.py all POST through it. It was only in requirements.txt, so
+    # a plain `pip install arcturos` crashed on import (fixed 2026-11-10).
+    "httpx>=0.27",
 ]
+
+[project.optional-dependencies]
+test = ["pytest>=8.0"]
 
 [tool.setuptools]
 package-dir = {"" = "src"}
-packages = ["arcturos"]
+# static/ asset dirs are package DATA, not importable code — but setuptools
+# still wants them named here or every build warns "Package 'arcturos.static'
+# is absent from the packages configuration". Listing them keeps the wheel
+# build clean; they contain no .py so the import surface is unchanged.
+packages = [
+    "arcturos",
+    "arcturos.static",
+    "arcturos.static.icons",
+    "arcturos.static.partials",
+    "arcturos.static.vendor",
+]
 
 [tool.setuptools.package-data]
-arcturos = ["static/*.html", "static/vendor/*"]
+# Every static surface ships with the wheel: pages, shared CSS/JS, the nav
+# partial, icons and the vendored chart library. The old list named only
+# *.html + vendor/, so a non-editable install served 404s for nav.css,
+# theme.css, app-time.js, sticky-inputs.js, partials/nav.html and the icons.
+arcturos = [
+    "static/*.html",
+    "static/*.css",
+    "static/*.js",
+    "static/partials/*",
+    "static/icons/*",
+    "static/vendor/*",
+]

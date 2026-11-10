@@ -40,10 +40,20 @@ Open `http://localhost:24816` — the top navigation walks you through the three
 | Section | Pages |
 |---|---|
 | **Benchmarks** | Start · Compare |
-| **Evals** | Create · Run · Results · Judgments · Reports |
+| **Evals** | Run · Judgments · Results · Create |
 | **Settings** | Models · Baselines |
 
+`/` and `/runs` land on Compare; `/reports` redirects to Run (the standalone
+report page was dropped — per-suite report data and CSV stay available on the
+Evals/Results views and at `GET /api/reports/suite/{suite_id}`).
+
 Eval replays and judge jobs run as live jobs with per-item progress and an operator stop button; run and judgment drill-downs expand each row to the full prompt (text and images), response, and verdict.
+
+### API & data
+
+- **API docs**: `http://localhost:24816/docs` (interactive) and `/openapi.json` — authoritative for every endpoint; the code docstrings no longer duplicate the route list.
+- **Store**: one SQLite file, `data/arcturos.db` in the checkout (WAL mode), append-only by design. Copy the file (plus any `-wal`/`-shm` siblings) to back it up.
+- **Overrides**: `ARCTUROS_PORT=8080 ./start.sh` changes the port; config keys take env overrides (`ARCTUROS_BENCH__SERVER_URL`, `ARCTUROS_DEMO__JUDGE_URL`, …). List values accept JSON: `ARCTUROS_DEMO__LIVE_TARGETS='["http://host:8000"]'`.
 
 ### Configuring defaults
 
@@ -54,8 +64,13 @@ Defaults live in `arcturos.toml` (committed template). To point your install at 
 server_url = "http://your-inference-host:8000"
 model = "your-model-name"
 
+[eval]
+# judge endpoint for blind A/B judging (preferred section)
+judge_url = "http://your-judge:4000/v1"
+
 [demo]
 live_targets = ["http://your-inference-host:8000"]
+# legacy alias — still read if [eval] judge_url is unset
 judge_url = "http://your-judge:4000/v1"
 ```
 
@@ -75,7 +90,10 @@ venv/bin/python scripts/seed_demo.py
 venv/bin/python -m pytest tests -q
 ```
 
-401 tests: append-only storage semantics, schema migrations, API contracts, judge parsing (including truncated-output guards), report math, and static-page wiring.
+441 tests in ~30 s: append-only storage semantics, schema migrations, API
+contracts, judge parsing (including truncated-output guards), report math,
+static-page wiring, and QA fixture-contract checks (the former
+`qa/suites/test_j3j4_contract.py`, now collected with the rest).
 
 ## License
 

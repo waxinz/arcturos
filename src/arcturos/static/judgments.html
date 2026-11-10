@@ -291,7 +291,12 @@
         const rb = resultsById[j.eval_result_b];
         if (!ra || !rb) continue;
         const runA = ra.eval_run_id, runB = rb.eval_run_id;
-        const lo = Math.min(runA, runB), hi = Math.max(runA, runB);
+        // Legacy judgments (pre-run-scoped era) have no eval_run_id on
+        // their result rows: Math.min(null, null) is 0, which rendered
+        // "Run #0 vs #0". A missing run id is 'no run link', not run zero.
+        const hasRuns = runA != null && runB != null && runA > 0 && runB > 0;
+        const lo = hasRuns ? Math.min(runA, runB) : null;
+        const hi = hasRuns ? Math.max(runA, runB) : null;
         const key = lo + '|' + hi + '|' + j.judge_model;
         let g = groups.get(key);
         if (!g) {
@@ -318,7 +323,9 @@
         const left = document.createElement('div');
         const runs = document.createElement('div');
         runs.className = 'jr-runs';
-        runs.textContent = 'Run #' + g.runLo + ' vs #' + g.runHi;
+        runs.textContent = g.runLo
+          ? 'Run #' + g.runLo + ' vs #' + g.runHi
+          : 'Stored results (no run link)';
         const meta = document.createElement('div');
         meta.className = 'jr-meta';
         meta.textContent = (g.fpLo || '?') + ' vs ' + (g.fpHi || '?') +

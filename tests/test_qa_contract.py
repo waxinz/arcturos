@@ -2,7 +2,9 @@
 
 These tests exercise J3/J4 contracts using qa/suites/ fixtures via
 TestClient — the same code path scripts/seed_demo.py uses in live mode.
-Run from repo root: venv/bin/python -m pytest qa/suites/test_j3j4_contract.py -q
+Run from repo root: venv/bin/python -m pytest tests/test_qa_contract.py -q
+(collected by the normal `pytest tests` run since 2026-11-10 — it used to
+live in qa/suites/ and was never collected).
 """
 
 import json
@@ -11,7 +13,7 @@ from pathlib import Path
 
 import pytest
 
-ROOT = Path(__file__).resolve().parent.parent.parent
+ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 sys.path.insert(0, str(ROOT / "scripts"))
 

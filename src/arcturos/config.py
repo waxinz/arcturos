@@ -16,6 +16,7 @@ outbound client and are never persisted (matches the store-wide rule).
 """
 from functools import lru_cache
 from pathlib import Path
+import json
 import os
 import tomllib
 
@@ -50,6 +51,22 @@ def _flatten(d, prefix=()):
     return flat
 
 
+def _parse_env_value(raw: str):
+    """Env overrides arrive as strings, but list/dict config keys need their
+    real type: ARCTUROS_DEMO__LIVE_TARGETS='["http://h:8000"]' must become a
+    one-element list, not a string that iterates character by character
+    (seed_demo walked '[', '"', … and crashed on urlopen('['))."""
+    stripped = raw.strip()
+    if stripped.startswith(("[", "{")):
+        try:
+            parsed = json.loads(stripped)
+        except json.JSONDecodeError:
+            return raw
+        if isinstance(parsed, (list, dict)):
+            return parsed
+    return raw
+
+
 @lru_cache(maxsize=1)
 def _load_all() -> dict:
     """merged triples: env > local overlay > committed template."""
@@ -68,7 +85,7 @@ def _load_all() -> dict:
     for env_name, env_value in os.environ.items():
         if env_name.startswith("ARCTUROS_") and "__" in env_name:
             key = tuple(env_name[len("ARCTUROS_"):].lower().split("__"))
-            merged[key] = env_value
+            merged[key] = _parse_env_value(env_value)
 
     return {k: v for k, v in merged.items() if v not in ("", None)}
 

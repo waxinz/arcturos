@@ -2,58 +2,31 @@
 
 Run with:  uvicorn arcturos.main:app --host 0.0.0.0 --port 24816
 
-Routes (all data paths are append-only — no UPDATE/DELETE exists):
-  GET  /                                -> dashboard HTML
-  GET  /health                          -> {"status": "ok"}
-  POST /api/runs                        -> create run
-  GET  /api/runs                        -> list runs
-  GET  /api/runs/{run_id}               -> fetch one run
-  PUT  /api/runs/{run_id}/visibility    -> soft-hide/unhide a run (append-only flag; hidden runs drop out of list views)
-  GET  /api/runs/{run_id}/visibility    -> current visibility flag
-  POST /api/runs/{run_id}/benchmarks    -> add benchmark row to a run
-  GET  /api/runs/{run_id}/benchmarks    -> list benchmarks for a run
-  POST /api/eval-suites                 -> create eval suite
-  GET  /api/eval-suites                 -> list eval suites
-  GET  /api/eval-suites/{suite_id}      -> fetch one suite
-  PUT  /api/eval-suites/{suite_id}/definition -> snapshot suite definition JSON
-  GET  /api/eval-suites/{suite_id}/definition -> latest definition snapshot
-  POST /api/eval-suites/{suite_id}/results -> add eval result
-  GET  /api/eval-suites/{suite_id}/results -> list results for a suite
-  GET  /api/eval-results                -> list all eval results
-  POST /api/judgments                   -> add judgment
-  GET  /api/judgments                   -> list judgments
-  GET  /api/models                      -> model registry cards
-  PATCH /api/models/{fingerprint}       -> rename the alias label only
-  GET  /api/baselines                   -> pinned reference runs
-  POST /api/baselines                   -> pin a run as baseline
-  DELETE /api/baselines/{baseline_id}   -> unpin (reference pointer only)
-  GET  /api/compare/benchmarks          -> metric series per run (J2)
-  GET  /api/compare/run-diff/{a}/{b}    -> per-context deltas between runs (J2)
-  GET  /api/compare/baseline-deltas     -> per-run delta tables vs a baseline reference
-  GET  /api/reports/suite/{suite_id}    -> J5 report {report, csv} for one suite
-  GET  /compare                         -> compare view HTML
-  GET  /diff                            -> run-diff view HTML
-  GET  /evals                           -> eval suite results view HTML
-  GET  /judgments                       -> judgment list view HTML
-  GET  /reports                         -> suite report view HTML
-  POST /api/ops/bench                   -> kick off a bench sweep against a server (stores run+points; transport native|openai, model?)
-  POST /api/ops/bench/jobs              -> async bench job: returns {job_id} immediately, sweep runs in background
-  GET  /api/ops/bench/jobs/{job_id}     -> job status: phase, per-point results, elapsed + ETA
-  POST /api/ops/eval                    -> replay a suite against a target (stores eval_results)
-  POST /api/ops/eval/jobs               -> async eval replay job: {job_id} immediately, per-item progress
-  GET  /api/ops/eval/jobs/{job_id}      -> eval job status: phase, per-item rows, elapsed + ETA
-  POST /api/ops/eval/jobs/{id}/abort    -> cooperative stop (completed items stay stored)
-  POST /api/ops/judge/jobs              -> async blind A/B judge job (position swap, both orders stored)
-  GET  /api/ops/judge/jobs/{job_id}     -> judge job status
-  POST /api/ops/judge/jobs/{id}/abort   -> cooperative stop of a judge job
-  GET  /evals/run                       -> eval replay job page (async, live progress)
-  GET  /api/ops/preflight               -> J6 health checks for a target (kind=bench|eval, model?)
-  GET  /api/export/runs                 -> CSV export: all runs
-  GET  /api/export/runs/{id}/benchmarks -> CSV export: one run's points
-  GET  /api/export/eval-results         -> CSV export: eval results
-  GET  /api/export/judgments            -> CSV export: judgments
-  GET  /models                          -> model registry view HTML
-  GET  /baselines                       -> baselines view HTML
+Route map: /docs (Swagger UI) and /openapi.json are AUTHORITATIVE — they
+are generated from the handlers registered in create_app() below. This
+docstring deliberately does NOT duplicate the endpoint list any more: the
+old hand-maintained map drifted (renamed params, pages added and dropped —
+e.g. /reports became a redirect) while still looking authoritative.
+
+Page routes (HTML shell; nav injected by pagelib.render_page):
+  /                     -> 308 redirect to /compare
+  /runs                 -> 308 redirect to /compare (list merged 2026-10-11)
+  /reports              -> 308 redirect to /evals/run (page dropped)
+  /kickoff, /create     -> bench kick-off form (both serve bench-kickoff.html)
+  /compare, /diff       -> benchmark compare + run-diff views
+  /runs/{run_id}        -> one benchmark run's detail
+  /evals                -> eval results view
+  /evals/runs/{run_id}  -> one replay run's detail
+  /evals/run            -> eval replay kick-off (async, live progress)
+  /evals/suites/new     -> suite create
+  /judgments            -> judging kick-off + recent judgment runs
+  /judgments/pair       -> judgment results (?judgment=<id> drill-down)
+  /judgments/{id}       -> one judgment by primary key
+  /models, /baselines   -> settings views
+  /health               -> {"status": "ok"}
+
+Data paths are append-only: measurement rows are never UPDATEd/DELETEd —
+visibility and naming are separate, reversible layers.
 """
 
 from __future__ import annotations
@@ -64,11 +37,12 @@ import time
 from pathlib import Path
 
 from fastapi import Depends, FastAPI, HTTPException, Request
-from fastapi.responses import FileResponse, RedirectResponse, Response
+from fastapi.responses import RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 from . import compare, ops, reports
 from . import config
+from . import __version__
 from . import evals as evals_mod
 from . import multiturn as multiturn_mod
 from . import judging
@@ -100,7 +74,7 @@ def create_app(db_path: str | Path | None = None) -> FastAPI:
     init_db(conn)
     conn.close()
 
-    app = FastAPI(title="Arcturos", version="0.1.0")
+    app = FastAPI(title="Arcturos", version=__version__)
     app.state.db_path = db_path
 
     # Static assets (charts, JS) + the J2 views, served alongside the API.

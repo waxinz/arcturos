@@ -18,6 +18,11 @@ live_targets = ["http://localhost:8000"]
 # Default judge / eval-replay endpoint (suite page, ab_judge.py).
 judge_url = ""
 
+[eval]
+# Blind A/B judge endpoint. PREFERRED over [demo] judge_url — the legacy
+# key above is only read when this is empty.
+judge_url = ""
+
 [ui]
 # Theme preference applied when the visitor has no saved choice.
 theme_default = "system"

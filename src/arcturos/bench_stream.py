@@ -9,10 +9,8 @@ from __future__ import annotations
 
 import json
 import time
-import uuid
 
 import urllib.request as urlreq
-import urllib.error as uerr
 
 from dataclasses import dataclass, field
 

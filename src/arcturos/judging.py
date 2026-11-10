@@ -1192,6 +1192,18 @@ def run_judge_job(
     reasoning_budget (max thinking tokens) — applied to that side's
     replay only; B's are inert in mixed mode (B is not replayed).
     """
+    # judge_url is resolved HERE, synchronously: a missing endpoint is a
+    # dispatch error (422), not a job that starts and then reports
+    # "failed: judge_url required" from inside the worker thread — the
+    # async-only failure made a misconfigured kick-off look accepted.
+    if not judge_url:
+        judge_url = config.get("eval", "judge_url", None) \
+            or config.get("demo", "judge_url", None)
+    if not judge_url:
+        raise ValueError(
+            "judge_url required (pass judge_url, or set [eval] judge_url "
+            "— legacy [demo] judge_url is also accepted — in "
+            "arcturos.local.toml)")
     combined = target_a is not None or eval_run_a is not None
     mixed_run_a = eval_run_a is not None
     mixed_run_b = eval_run_b is not None

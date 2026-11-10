@@ -285,6 +285,54 @@ def test_bench_job_status_unknown_id_404(client):
     assert "not found" in r.json()["detail"]
 
 
+def test_bench_job_abort_stops_sweep_and_unknown_404(client, monkeypatch):
+    """Operator Stop on a running bench job (ADR 006, 2026-11-10 audit):
+    the abort endpoint sets the cooperative flag, the worker reports
+    status 'aborted' with the partial run id, and unknown ids 404.
+    The sweep is faked so no server is touched."""
+    import threading
+    import time
+
+    from arcturos import ops as opsmod
+
+    started = threading.Event()
+
+    def fake_dispatch(**kw):
+        started.set()
+        abort = kw.get("abort")
+        assert abort is not None
+        deadline = time.monotonic() + 5
+        while not abort.requested and time.monotonic() < deadline:
+            time.sleep(0.02)
+        return {"status": "aborted" if abort.requested else "done",
+                "run_id": 7, "points": []}
+
+    monkeypatch.setattr(opsmod, "dispatch_bench", fake_dispatch)
+    r = client.post("/api/ops/bench/jobs",
+                    json={"server_url": "http://x", "targets": [512],
+                          "n_predict": 16})
+    assert r.status_code == 200, r.text
+    job_id = r.json()["job_id"]
+    assert started.wait(5), "worker never reached dispatch_bench"
+
+    a = client.post(f"/api/ops/bench/jobs/{job_id}/abort")
+    assert a.status_code == 200, a.text
+    assert a.json()["abort_requested"] is True
+
+    deadline = time.monotonic() + 5
+    rec = {}
+    while time.monotonic() < deadline:
+        rec = client.get(f"/api/ops/bench/jobs/{job_id}").json()
+        if rec["status"] in ("done", "error", "partial", "aborted"):
+            break
+        time.sleep(0.02)
+    assert rec["status"] == "aborted", rec
+    assert rec["run_id"] == 7
+
+    assert client.post(
+        "/api/ops/bench/jobs/does-not-exist/abort").status_code == 404
+
+
 def test_eval_dispatch_validation_errors(client):
     """POST /api/ops/eval rejects bad shapes with 422 before touching
     the target: suite_id, target URL, fingerprint, suite payload, name."""

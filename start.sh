@@ -29,6 +29,14 @@ ensure_deps() {
     echo "→ installing dependencies (first run)"
     pip install -q -r requirements.txt
   fi
+  # The app itself MUST be installed too: uvicorn resolves `arcturos.main`
+  # from the venv, and the package lives under src/ — running from the repo
+  # root without an install fails with ModuleNotFoundError (fixed 2026-11-10;
+  # `pip install -r requirements.txt` alone never installed the package).
+  if ! python -c "import arcturos" 2>/dev/null; then
+    echo "→ installing arcturos (editable)"
+    pip install -q -e .
+  fi
 }
 
 have_systemd_user() {

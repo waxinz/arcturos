@@ -29,15 +29,24 @@ from arcturos import config
 SUITES_DIR = ROOT / "qa" / "suites"
 
 
-def post(api: str, path: str, payload: dict) -> dict:
+def request_json(api: str, path: str, payload: dict, method: str = "POST") -> dict:
     req = urlreq.Request(
         api.rstrip("/") + path,
         data=json.dumps(payload).encode(),
         headers={"Content-Type": "application/json"},
-        method="POST",
+        method=method,
     )
     with urlreq.urlopen(req, timeout=10) as resp:
-        return json.loads(resp.read())
+        body = resp.read()
+        return json.loads(body) if body else {}
+
+
+def post(api: str, path: str, payload: dict) -> dict:
+    return request_json(api, path, payload, "POST")
+
+
+def put(api: str, path: str, payload: dict) -> dict:
+    return request_json(api, path, payload, "PUT")
 
 
 def get(api: str, path: str) -> dict | list:
@@ -71,7 +80,10 @@ def seed_eval_data(api: str, suites: list[dict], live_target: str | None) -> dic
         seeded[suite["suite"]] = suite_id
         # Park the full suite definition (with per-item categories) so the
         # report layer can rebuild its category breakdown at read time.
-        post(api, f"/api/eval-suites/{suite_id}/definition", suite)
+        # PUT, not POST: the definition snapshot surface is PUT-only
+        # (append-only snapshots; a POST here 405s and broke the
+        # README's demo-seed path — fixed 2026-11-10).
+        put(api, f"/api/eval-suites/{suite_id}/definition", suite)
 
         if live_target:
             results = replay_live(api, suite_id, suite["items"], live_target)

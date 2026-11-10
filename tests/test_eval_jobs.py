@@ -189,7 +189,8 @@ def test_judge_job_contestant_422(client):
 def test_judge_job_validation_422(client):
     tc, _ = client
     res = tc.post("/api/ops/judge/jobs", json={"suite_id": 1})
-    assert res.status_code == 422  # no judge_url configured
+    assert res.status_code == 422  # no judge_url configured (dispatch-time)
+    assert "judge_url" in res.json()["detail"]
     res2 = tc.post("/api/ops/judge/jobs", json={
         "suite_id": 1, "judge_url": "http://j/v1", "model_a": "only-a"})
     assert res2.status_code == 422  # model_a without model_b

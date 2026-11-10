@@ -31,7 +31,6 @@ import re
 from pathlib import Path
 from typing import Any, Callable
 from urllib import request as urlreq
-from urllib.error import HTTPError, URLError
 
 # The quality axes (ADR 007 §1). Fixed allowlist: reports group by these;
 # freeform sub-classification stays in `category`. v1.1 (2026-10-15): grew

@@ -36,5 +36,37 @@ class FlattenShape(unittest.TestCase):
             self.assertEqual(cfg.get("bench", "server_url"), "from-env")
 
 
+class EnvValueTypes(unittest.TestCase):
+    """List/dict config keys need real types from env overrides (2026-11-10).
+
+    ARCTUROS_DEMO__LIVE_TARGETS='["http://h:8000"]' used to stay a string;
+    seed_demo then iterated characters and urlopen('[') crashed."""
+
+    def test_json_list_env_becomes_a_list(self):
+        self.assertEqual(cfg._parse_env_value('["http://h:8000"]'),
+                         ["http://h:8000"])
+
+    def test_json_object_env_becomes_a_dict(self):
+        self.assertEqual(cfg._parse_env_value('{"a": 1}'), {"a": 1})
+
+    def test_plain_string_env_is_unchanged(self):
+        self.assertEqual(cfg._parse_env_value("http://h:8000"),
+                         "http://h:8000")
+
+    def test_malformed_bracket_value_stays_a_string(self):
+        self.assertEqual(cfg._parse_env_value("[not json"), "[not json")
+
+    def test_get_section_env_list_type(self):
+        cfg._load_all.cache_clear()
+        try:
+            with mock.patch.dict(os.environ,
+                                 {"ARCTUROS_DEMO__LIVE_TARGETS":
+                                  '["http://h:8000"]'}):
+                section = cfg.get_section("demo")
+        finally:
+            cfg._load_all.cache_clear()
+        self.assertEqual(section["live_targets"], ["http://h:8000"])
+
+
 if __name__ == "__main__":
     unittest.main()

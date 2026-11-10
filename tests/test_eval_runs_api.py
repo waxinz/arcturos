@@ -97,7 +97,8 @@ def test_judge_job_scoped_to_selected_runs(client, monkeypatch):
                         "VERDICT: 1\nConfidence: 0.9\nRationale: first wins"}}],
             "usage": {"prompt_tokens": 1, "completion_tokens": 1}})
     res = tc.post("/api/ops/judge/jobs", json={
-        "suite_id": 1, "eval_run_ids": [1, 2], "judge_model": "judge-x"})
+        "suite_id": 1, "eval_run_ids": [1, 2], "judge_model": "judge-x",
+        "judge_url": "http://judge.test/v1"})
     assert res.status_code == 200, res.text
     job_id = res.json()["job_id"]
     deadline = time.monotonic() + 10
@@ -138,7 +139,8 @@ def test_judge_job_eval_run_ids_validation(client, monkeypatch):
     # must be explicit: "(default)" trips the judge-not-contestant guard)
     res = tc.post("/api/ops/judge/jobs",
                   json={"suite_id": 1, "eval_run_ids": [1, 3],
-                        "judge_model": "judge-x"})
+                        "judge_model": "judge-x",
+                        "judge_url": "http://judge.test/v1"})
     assert res.status_code == 200, res.text
     tc.post(f"/api/ops/judge/jobs/{res.json()['job_id']}/abort")
 
@@ -157,7 +159,8 @@ def test_judge_job_abort_partial_preservation(client, monkeypatch):
 
     monkeypatch.setattr("arcturos.judging._post_chat", blocking_judge)
     res = tc.post("/api/ops/judge/jobs", json={
-        "suite_id": 1, "eval_run_ids": [1, 2], "judge_model": "judge-x"})
+        "suite_id": 1, "eval_run_ids": [1, 2], "judge_model": "judge-x",
+        "judge_url": "http://judge.test/v1"})
     assert res.status_code == 200
     job_id = res.json()["job_id"]
     time.sleep(0.4)                        # let the job reach the judge call
@@ -190,7 +193,8 @@ def test_judgments_pair_sxs_order_independent(client, monkeypatch):
                         "VERDICT: 2\nConfidence: 0.8\nRationale: second wins"}}],
             "usage": {"prompt_tokens": 1, "completion_tokens": 1}})
     res = tc.post("/api/ops/judge/jobs", json={
-        "suite_id": 1, "eval_run_ids": [1, 2], "judge_model": "judge-x"})
+        "suite_id": 1, "eval_run_ids": [1, 2], "judge_model": "judge-x",
+        "judge_url": "http://judge.test/v1"})
     assert res.status_code == 200, res.text
     _wait_job(tc, res.json()["job_id"])
     fwd = tc.get("/api/judgments/pair",
@@ -238,7 +242,8 @@ def test_judgment_by_id_drilldown(client, monkeypatch):
                         "VERDICT: 1\nConfidence: 0.7\nRationale: first wins"}}],
             "usage": {"prompt_tokens": 1, "completion_tokens": 1}})
     res = tc.post("/api/ops/judge/jobs", json={
-        "suite_id": 1, "eval_run_ids": [1, 2], "judge_model": "judge-x"})
+        "suite_id": 1, "eval_run_ids": [1, 2], "judge_model": "judge-x",
+        "judge_url": "http://judge.test/v1"})
     assert res.status_code == 200, res.text
     job = _wait_job(tc, res.json()["job_id"])
     assert job["status"] == "done", job
